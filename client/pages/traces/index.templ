@@ -1,0 +1,12 @@
+package traces
+
+import (
+	"github.com/mirairoad/guard/client/ui"
+	"github.com/mirairoad/guard/internal/telemetry"
+)
+
+templ Head() { <title>Traces — Guard</title> }
+templ Page() {
+	{{ summary := telemetry.SnapshotFrom(ctx) }}
+	<section class="space-y-6"><div><p class="text-xs font-bold uppercase tracking-[.22em] text-secondary">Request paths</p><h1 class="mt-2 text-3xl font-bold">Traces</h1><p class="mt-2 text-base-content/50">Recent spans with service, duration, and trace context.</p></div><div class="guard-panel overflow-hidden rounded-2xl">@ui.EventTable(summary.Recent, "traces")</div></section>
+}

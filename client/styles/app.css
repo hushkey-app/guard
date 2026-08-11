@@ -1,0 +1,21 @@
+@import "tailwindcss";
+@source "../pages";
+@source "../ui";
+@source "../public/guard.js";
+@plugin "daisyui" {
+  themes: business --default;
+}
+
+@layer base {
+  html { background: #0a0d12; }
+  body { min-height: 100vh; background-image: radial-gradient(circle at 15% 0%, rgba(91, 216, 166, .08), transparent 28rem); }
+  code, .font-mono { font-variant-ligatures: none; }
+}
+
+@layer components {
+  .guard-panel { @apply border border-base-300/60 bg-base-200/55 shadow-sm backdrop-blur; }
+  .signal-dot { @apply inline-block size-2 rounded-full bg-success shadow-[0_0_0.75rem] shadow-success/40; }
+  .event-row { @apply transition-colors hover:bg-base-200; }
+  .nav-link { @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content; }
+  .nav-link.active { @apply bg-primary/10 text-primary; }
+}

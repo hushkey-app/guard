@@ -1,0 +1,84 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/mirairoad/guard/internal/telemetry"
+	"github.com/mirairoad/howl-go/core/router"
+)
+
+templ NavLink(path, label string) {
+	<a href={ templ.SafeURL(path) } class={ "nav-link", templ.KV("active", router.Current(ctx) == path) }>
+		<span class="size-1.5 rounded-full bg-current opacity-70"></span>
+		{ label }
+	</a>
+}
+
+templ Stat(label, key, value, note string) {
+	<div class="stat guard-panel rounded-2xl p-5">
+		<div class="stat-title text-xs font-semibold uppercase tracking-[.16em]">{ label }</div>
+		<div class="stat-value mt-2 text-3xl tabular-nums" data-stat={ key }>{ value }</div>
+		<div class="stat-desc mt-2 text-base-content/45">{ note }</div>
+	</div>
+}
+
+templ Empty(message string) {
+	<div class="grid min-h-40 place-items-center rounded-2xl border border-dashed border-base-300 text-center text-base-content/45">
+		<div><div class="mb-2 text-2xl">◇</div><p>{ message }</p></div>
+	</div>
+}
+
+templ EventTable(events []telemetry.Event, signal string) {
+	<div class="overflow-x-auto">
+		<table class="table table-sm">
+			<thead><tr><th>Time</th><th>Signal</th><th>Service</th><th>Event</th><th>Context</th></tr></thead>
+			<tbody data-event-rows data-signal={ signal }>
+				for _, event := range events {
+					if signal == "" || event.Signal == signal {
+						<tr class="event-row">
+							<td class="whitespace-nowrap font-mono text-xs text-base-content/50">{ event.Timestamp.Local().Format("15:04:05.000") }</td>
+							<td><span class={ "badge badge-sm", signalClass(event) }>{ eventLabel(event) }</span></td>
+							<td><div class="font-medium">{ event.Service }</div><div class="font-mono text-[.65rem] text-base-content/40">{ event.Instance }</div></td>
+							<td class="max-w-lg"><div class="truncate">{ eventText(event) }</div></td>
+							<td class="font-mono text-[.65rem] text-base-content/40">{ shortID(event.TraceID) }</td>
+						</tr>
+					}
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+func eventText(event telemetry.Event) string {
+	if event.Message != "" { return event.Message }
+	if event.Name != "" { return event.Name }
+	if event.Value != nil { return fmt.Sprintf("%s = %g", event.Name, *event.Value) }
+	return "telemetry event"
+}
+
+func eventLabel(event telemetry.Event) string {
+	if event.Signal == "logs" && event.Severity != "" { return strings.ToLower(event.Severity) }
+	return strings.TrimSuffix(event.Signal, "s")
+}
+
+func signalClass(event telemetry.Event) string {
+	severity := strings.ToUpper(event.Severity)
+	if strings.Contains(severity, "ERROR") || strings.Contains(severity, "FATAL") { return "badge-error" }
+	switch event.Signal { case "traces": return "badge-secondary"; case "metrics": return "badge-info" }
+	return "badge-ghost"
+}
+
+func shortID(value string) string {
+	if len(value) > 12 { return value[:12] + "…" }
+	return value
+}
+
+func Ago(value time.Time) string {
+	if value.IsZero() { return "never" }
+	d := time.Since(value)
+	if d < time.Minute { return fmt.Sprintf("%ds ago", max(0, int(d.Seconds()))) }
+	if d < time.Hour { return fmt.Sprintf("%dm ago", int(d.Minutes())) }
+	return fmt.Sprintf("%dh ago", int(d.Hours()))
+}

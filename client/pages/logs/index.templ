@@ -1,0 +1,29 @@
+package logs
+
+import (
+	"github.com/mirairoad/guard/internal/telemetry"
+)
+
+templ Head() { <title>Logs — Guard</title><meta name="description" content="Search live logs received over OTLP or JSON."/> }
+
+templ Page() {
+	{{ summary := telemetry.SnapshotFrom(ctx) }}
+	<section class="space-y-6">
+		<div><p class="text-xs font-bold uppercase tracking-[.22em] text-primary">Live tail</p><h1 class="mt-2 text-3xl font-bold">Logs</h1><p class="mt-2 text-base-content/50">Search the bounded in-memory stream. Results refresh every three seconds.</p></div>
+		<label class="input input-bordered flex w-full max-w-xl items-center gap-2 bg-base-200/60"><span class="text-base-content/35">⌕</span><input data-log-query type="search" class="grow" placeholder="message, service, trace ID, attribute…"/></label>
+		<div class="guard-panel overflow-hidden rounded-2xl">
+			<div class="overflow-x-auto">
+				<table class="table table-sm">
+					<thead><tr><th>Time</th><th>Severity</th><th>Service</th><th>Message</th></tr></thead>
+					<tbody data-log-rows>
+						for _, event := range summary.Recent {
+							if event.Signal == "logs" {
+								<tr class="event-row"><td class="font-mono text-xs">{ event.Timestamp.Local().Format("15:04:05.000") }</td><td class="font-mono text-xs">{ event.Severity }</td><td>{ event.Service }</td><td class="max-w-xl truncate">{ event.Message }</td></tr>
+							}
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</section>
+}
