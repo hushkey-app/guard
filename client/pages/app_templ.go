@@ -76,14 +76,14 @@ func App(title, head string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</p></div><div class=\"flex items-center gap-2 text-xs text-base-content/55\"><span class=\"signal-dot\"></span><span data-live-status>connecting</span></div></header><main id=\"outlet\" data-route=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</p></div><button type=\"button\" data-live-toggle class=\"btn btn-ghost btn-sm gap-2\" aria-label=\"Pause live refresh\"><span class=\"signal-dot\" data-live-dot></span><span data-live-status>connecting</span><span data-live-action class=\"text-base-content/35\">Pause</span></button></header><main id=\"outlet\" data-route=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Current(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 32, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 34, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
@@ -107,7 +107,7 @@ func App(title, head string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</nav><div class=\"mt-auto rounded-xl border border-base-300/60 bg-base-200/60 p-3 text-xs leading-5 text-base-content/55\"><div class=\"mb-1 font-semibold text-base-content\">OTLP/HTTP</div><code class=\"break-all\">localhost:4318</code></div></aside></div></div></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</nav><div class=\"mt-auto rounded-xl border border-base-300/60 bg-base-200/60 p-3 text-xs leading-5 text-base-content/55\"><div class=\"mb-1 font-semibold text-base-content\">OTLP/HTTP</div><code class=\"break-all\">localhost:4318</code></div></aside></div></div><div data-detail-shell class=\"pointer-events-none fixed inset-0 z-50\"><button type=\"button\" data-detail-close aria-label=\"Close details\" class=\"absolute inset-0 bg-black/55 opacity-0 transition-opacity\"></button><aside data-detail-panel class=\"pointer-events-auto absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-base-300 bg-base-100 shadow-2xl transition-transform duration-200\"><div class=\"sticky top-0 z-10 flex items-center justify-between border-b border-base-300 bg-base-100/95 p-5 backdrop-blur\"><div class=\"min-w-0\"><p data-detail-eyebrow class=\"text-xs font-bold uppercase tracking-[.18em] text-primary\">Telemetry detail</p><h2 data-detail-title class=\"mt-1 truncate text-xl font-bold\">Event</h2></div><button type=\"button\" data-detail-close class=\"btn btn-square btn-ghost\" aria-label=\"Close details\">✕</button></div><div data-detail-content class=\"space-y-6 p-5\"></div></aside></div></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -143,7 +143,7 @@ func NotFound(path string) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(path)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 58, Col: 246}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 70, Col: 246}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {

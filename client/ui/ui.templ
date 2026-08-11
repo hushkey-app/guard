@@ -30,6 +30,28 @@ templ Empty(message string) {
 	</div>
 }
 
+templ FilterBar(signal string) {
+	<div data-filter-signal={ signal } class="guard-panel rounded-2xl p-4">
+		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+			<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">Time range</span><select data-filter="range" class="select select-bordered select-sm w-full bg-base-100"><option value="15m">Last 15 minutes</option><option value="1h" selected>Last hour</option><option value="6h">Last 6 hours</option><option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option><option value="all">All retained</option><option value="custom">Custom range</option></select></label>
+			<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">Service</span><select data-filter="service" class="select select-bordered select-sm w-full bg-base-100"><option value="">All services</option></select></label>
+			if signal == "logs" || signal == "traces" {
+				<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">{ filterLevelLabel(signal) }</span><select data-filter="severity" class="select select-bordered select-sm w-full bg-base-100"><option value="">All levels</option></select></label>
+			}
+			if signal == "metrics" {
+				<label class="form-control xl:col-span-2"><span class="label-text mb-1 text-xs text-base-content/50">Metric</span><select data-filter="name" class="select select-bordered select-sm w-full bg-base-100"><option value="">All metrics</option></select></label>
+				<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">Group by</span><select data-filter="group" class="select select-bordered select-sm w-full bg-base-100"><option value="">Metric</option><option value="service">Service</option><option value="instance">Instance</option></select></label>
+			}
+			<label class={ "form-control", templ.KV("xl:col-span-2", signal != "metrics") }><span class="label-text mb-1 text-xs text-base-content/50">Search</span><input data-filter="query" type="search" class="input input-bordered input-sm w-full bg-base-100" placeholder="name, message, trace ID, attribute…"/></label>
+			<button type="button" data-refresh-now class="btn btn-primary btn-sm self-end">Refresh</button>
+		</div>
+		<div data-custom-range class="mt-3 hidden grid gap-3 border-t border-base-300/60 pt-3 sm:grid-cols-2">
+			<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">From</span><input data-filter="from" type="datetime-local" class="input input-bordered input-sm bg-base-100"/></label>
+			<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">To</span><input data-filter="to" type="datetime-local" class="input input-bordered input-sm bg-base-100"/></label>
+		</div>
+	</div>
+}
+
 templ EventTable(events []telemetry.Event, signal string) {
 	<div class="overflow-x-auto">
 		<table class="table table-sm">
@@ -37,7 +59,7 @@ templ EventTable(events []telemetry.Event, signal string) {
 			<tbody data-event-rows data-signal={ signal }>
 				for _, event := range events {
 					if signal == "" || event.Signal == signal {
-						<tr class="event-row">
+						<tr class="event-row cursor-pointer" data-event-id={ fmt.Sprint(event.ID) } tabindex="0">
 							<td class="whitespace-nowrap font-mono text-xs text-base-content/50">{ event.Timestamp.Local().Format("15:04:05.000") }</td>
 							<td><span class={ "badge badge-sm", signalClass(event) }>{ eventLabel(event) }</span></td>
 							<td><div class="font-medium">{ event.Service }</div><div class="font-mono text-[.65rem] text-base-content/40">{ event.Instance }</div></td>
@@ -73,6 +95,11 @@ func signalClass(event telemetry.Event) string {
 func shortID(value string) string {
 	if len(value) > 12 { return value[:12] + "…" }
 	return value
+}
+
+func filterLevelLabel(signal string) string {
+	if signal == "logs" { return "Severity" }
+	return "Status"
 }
 
 func Ago(value time.Time) string {

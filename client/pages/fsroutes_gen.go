@@ -6,7 +6,8 @@ package pages
 import (
 	p0 "github.com/mirairoad/guard/client/pages/logs"
 	p1 "github.com/mirairoad/guard/client/pages/metrics"
-	p2 "github.com/mirairoad/guard/client/pages/traces"
+	p2 "github.com/mirairoad/guard/client/pages/settings"
+	p3 "github.com/mirairoad/guard/client/pages/traces"
 	"github.com/mirairoad/howl-go/core/router"
 )
 
@@ -16,6 +17,7 @@ func FsClientRoutes() []router.Route {
 		{Pattern: "/", Label: "Home", Page: Page, Head: Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
 		{Pattern: "/logs", Label: "Logs", Page: p0.Page, Head: p0.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
 		{Pattern: "/metrics", Label: "Metrics", Page: p1.Page, Head: p1.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
-		{Pattern: "/traces", Label: "Traces", Page: p2.Page, Head: p2.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
+		{Pattern: "/settings", Label: "Settings", Page: p2.Page, Head: p2.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
+		{Pattern: "/traces", Label: "Traces", Page: p3.Page, Head: p3.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
 	}
 }

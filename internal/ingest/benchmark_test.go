@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -21,7 +22,9 @@ func BenchmarkOTLPLogsHandler(b *testing.B) {
 	for _, records := range []int{1, 100} {
 		b.Run(strconv.Itoa(records)+"_records", func(b *testing.B) {
 			payload := benchmarkLogsPayload(b, records)
-			handler := Handler{Store: telemetry.NewStore(10_000)}
+			store := telemetry.NewStore(10_000)
+			b.Cleanup(func() { store.Close() })
+			handler := Handler{Store: store}
 			b.ReportAllocs()
 			b.SetBytes(int64(len(payload)))
 			b.ResetTimer()
@@ -38,7 +41,31 @@ func BenchmarkOTLPLogsHandler(b *testing.B) {
 func BenchmarkOTLPLogsHandlerParallel100(b *testing.B) {
 	const records = 100
 	payload := benchmarkLogsPayload(b, records)
-	handler := Handler{Store: telemetry.NewStore(10_000)}
+	store := telemetry.NewStore(10_000)
+	b.Cleanup(func() { store.Close() })
+	handler := Handler{Store: store}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(payload)))
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			request := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(payload))
+			request.Header.Set("Content-Type", "application/x-protobuf")
+			handler.logs(httptest.NewRecorder(), request)
+		}
+	})
+	b.ReportMetric(float64(b.N*records)/b.Elapsed().Seconds(), "events/s")
+}
+
+func BenchmarkOTLPLogsSQLiteParallel100(b *testing.B) {
+	const records = 100
+	payload := benchmarkLogsPayload(b, records)
+	store, err := telemetry.Open(filepath.Join(b.TempDir(), "guard.db"), telemetry.Settings{RetentionHours: 24, MaxEvents: 1_000_000})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { store.Close() })
+	handler := Handler{Store: store}
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
 	b.ResetTimer()
@@ -56,8 +83,10 @@ func BenchmarkOTLPLogsHTTPParallel(b *testing.B) {
 	for _, records := range []int{1, 100} {
 		b.Run(strconv.Itoa(records)+"_records", func(b *testing.B) {
 			payload := benchmarkLogsPayload(b, records)
+			store := telemetry.NewStore(10_000)
+			b.Cleanup(func() { store.Close() })
 			mux := http.NewServeMux()
-			Handler{Store: telemetry.NewStore(10_000)}.Register(mux)
+			Handler{Store: store}.Register(mux)
 			server := httptest.NewServer(mux)
 			b.Cleanup(server.Close)
 			transport := &http.Transport{

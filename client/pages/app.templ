@@ -27,7 +27,9 @@ templ App(title, head string) {
 					<header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-base-300/60 bg-base-100/80 px-4 backdrop-blur lg:px-8">
 						<label for="nav-drawer" class="btn btn-square btn-ghost btn-sm lg:hidden" aria-label="Open navigation">☰</label>
 						<div class="min-w-0 flex-1"><p class="truncate text-sm font-semibold">{ title }</p></div>
-						<div class="flex items-center gap-2 text-xs text-base-content/55"><span class="signal-dot"></span><span data-live-status>connecting</span></div>
+						<button type="button" data-live-toggle class="btn btn-ghost btn-sm gap-2" aria-label="Pause live refresh">
+							<span class="signal-dot" data-live-dot></span><span data-live-status>connecting</span><span data-live-action class="text-base-content/35">Pause</span>
+						</button>
 					</header>
 					<main id="outlet" data-route={ router.Current(ctx) } class="mx-auto max-w-[96rem] p-4 lg:p-8">{ children... }</main>
 				</div>
@@ -49,6 +51,16 @@ templ App(title, head string) {
 						</div>
 					</aside>
 				</div>
+			</div>
+			<div data-detail-shell class="pointer-events-none fixed inset-0 z-50">
+				<button type="button" data-detail-close aria-label="Close details" class="absolute inset-0 bg-black/55 opacity-0 transition-opacity"></button>
+				<aside data-detail-panel class="pointer-events-auto absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-base-300 bg-base-100 shadow-2xl transition-transform duration-200">
+					<div class="sticky top-0 z-10 flex items-center justify-between border-b border-base-300 bg-base-100/95 p-5 backdrop-blur">
+						<div class="min-w-0"><p data-detail-eyebrow class="text-xs font-bold uppercase tracking-[.18em] text-primary">Telemetry detail</p><h2 data-detail-title class="mt-1 truncate text-xl font-bold">Event</h2></div>
+						<button type="button" data-detail-close class="btn btn-square btn-ghost" aria-label="Close details">✕</button>
+					</div>
+					<div data-detail-content class="space-y-6 p-5"></div>
+				</aside>
 			</div>
 		</body>
 	</html>

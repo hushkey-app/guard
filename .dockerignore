@@ -1,0 +1,4 @@
+.git
+guard
+guard.db*
+node_modules

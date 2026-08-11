@@ -8,10 +8,7 @@ package traces
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import (
-	"github.com/mirairoad/guard/client/ui"
-	"github.com/mirairoad/guard/internal/telemetry"
-)
+import "github.com/mirairoad/guard/client/ui"
 
 func Head() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -63,16 +60,15 @@ func Page() templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		summary := telemetry.SnapshotFrom(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-6\"><div><p class=\"text-xs font-bold uppercase tracking-[.22em] text-secondary\">Request paths</p><h1 class=\"mt-2 text-3xl font-bold\">Traces</h1><p class=\"mt-2 text-base-content/50\">Recent spans with service, duration, and trace context.</p></div><div class=\"guard-panel overflow-hidden rounded-2xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-6\"><div><p class=\"text-xs font-bold uppercase tracking-[.22em] text-secondary\">Request paths</p><h1 class=\"mt-2 text-3xl font-bold\">Traces</h1><p class=\"mt-2 text-base-content/50\">Inspect spans by time, service, status, duration, parent, and trace context.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ui.EventTable(summary.Recent, "traces").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.FilterBar("traces").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"guard-panel overflow-hidden rounded-2xl\"><div class=\"overflow-x-auto\"><table class=\"table table-sm\"><thead><tr><th>Start</th><th>Status</th><th>Service</th><th>Span</th><th>Kind</th><th>Duration</th><th>Trace</th></tr></thead><tbody data-trace-rows></tbody></table></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

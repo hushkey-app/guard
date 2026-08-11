@@ -76,11 +76,14 @@ func TestOTLPProtobufAndJSON(t *testing.T) {
 	}
 	postProto(t, server.URL+"/v1/metrics", metrics, false)
 
-	summary := store.Snapshot()
+	summary, err := store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if summary.Logs != 1 || summary.Spans != 1 || summary.Metrics != 1 || summary.Errors != 2 || len(summary.Instances) != 1 {
 		t.Fatalf("unexpected summary: %#v", summary)
 	}
-	if got := store.Query(telemetry.Filter{Signal: "metrics", Limit: 1}); len(got) != 1 || got[0].Value == nil || *got[0].Value != 7 {
+	if got, err := store.Query(telemetry.Filter{Signal: "metrics", Limit: 1}); err != nil || len(got) != 1 || got[0].Value == nil || *got[0].Value != 7 {
 		t.Fatalf("unexpected metric: %#v", got)
 	}
 }
@@ -108,14 +111,17 @@ func TestSimpleLogsAndBearerToken(t *testing.T) {
 	if response.StatusCode != http.StatusAccepted {
 		t.Fatalf("accepted status = %d", response.StatusCode)
 	}
-	if got := store.Query(telemetry.Filter{Signal: "logs", Limit: 10}); len(got) != 1 || got[0].Message != "job complete" {
+	if got, err := store.Query(telemetry.Filter{Signal: "logs", Limit: 10}); err != nil || len(got) != 1 || got[0].Message != "job complete" {
 		t.Fatalf("logs = %#v", got)
 	}
 }
 
 func TestReadAPIs(t *testing.T) {
-	_, server := testServer(t, "")
-	for _, path := range []string{"/healthz", "/api/summary", "/api/events", "/api/logs"} {
+	store, server := testServer(t, "")
+	if err := store.Add(telemetry.Event{Signal: "metrics", Service: "api", Name: "requests", Value: floatPtr(3)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/healthz", "/api/summary", "/api/events", "/api/events/1", "/api/logs", "/api/facets", "/api/metrics/series?name=requests", "/api/settings"} {
 		response, err := http.Get(server.URL + path)
 		if err != nil {
 			t.Fatal(err)
@@ -128,9 +134,43 @@ func TestReadAPIs(t *testing.T) {
 	}
 }
 
+func TestSettingsRequireBearerAndPersist(t *testing.T) {
+	store, server := testServer(t, "secret")
+	body := []byte(`{"retention_hours":72,"max_events":5000}`)
+	request, _ := http.NewRequest(http.MethodPut, server.URL+"/api/settings", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthorized settings = %d", response.StatusCode)
+	}
+	request, _ = http.NewRequest(http.MethodPut, server.URL+"/api/settings", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer secret")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("settings status = %d", response.StatusCode)
+	}
+	settings, err := store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.RetentionHours != 72 || settings.MaxEvents != 5000 {
+		t.Fatalf("settings = %#v", settings)
+	}
+}
+
 func testServer(t *testing.T, token string) (*telemetry.Store, *httptest.Server) {
 	t.Helper()
 	store := telemetry.NewStore(100)
+	t.Cleanup(func() { store.Close() })
 	mux := http.NewServeMux()
 	Handler{Store: store, Token: token}.Register(mux)
 	server := httptest.NewServer(mux)
@@ -196,3 +236,5 @@ func postJSON(t *testing.T, url string, message proto.Message) {
 func stringValue(value string) *commonpb.AnyValue {
 	return &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: value}}
 }
+
+func floatPtr(value float64) *float64 { return &value }

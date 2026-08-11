@@ -8,10 +8,7 @@ package metrics
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import (
-	"github.com/mirairoad/guard/client/ui"
-	"github.com/mirairoad/guard/internal/telemetry"
-)
+import "github.com/mirairoad/guard/client/ui"
 
 func Head() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -63,16 +60,15 @@ func Page() templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		summary := telemetry.SnapshotFrom(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-6\"><div><p class=\"text-xs font-bold uppercase tracking-[.22em] text-info\">Measurements</p><h1 class=\"mt-2 text-3xl font-bold\">Metrics</h1><p class=\"mt-2 text-base-content/50\">Recent gauge, sum, histogram, and summary data points.</p></div><div class=\"guard-panel overflow-hidden rounded-2xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-6\"><div><p class=\"text-xs font-bold uppercase tracking-[.22em] text-info\">Measurements</p><h1 class=\"mt-2 text-3xl font-bold\">Metrics</h1><p class=\"mt-2 text-base-content/50\">Chart gauges, sums, histograms, and summaries; group series by service or instance.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ui.EventTable(summary.Recent, "metrics").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.FilterBar("metrics").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"guard-panel rounded-2xl p-5\"><div class=\"mb-4 flex items-center justify-between\"><h2 class=\"font-semibold\">Series</h2><span data-metric-series-count class=\"badge badge-info badge-sm\">0 series</span></div><div data-metric-chart class=\"min-h-72\"></div><div data-metric-legend class=\"mt-4 flex flex-wrap gap-3\"></div></div><div data-metric-summary class=\"grid gap-4 md:grid-cols-2 xl:grid-cols-3\"></div><div class=\"guard-panel overflow-hidden rounded-2xl\"><div class=\"overflow-x-auto\"><table class=\"table table-sm\"><thead><tr><th>Time</th><th>Metric</th><th>Service</th><th>Type</th><th>Value</th><th>Attributes</th></tr></thead><tbody data-metric-rows></tbody></table></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

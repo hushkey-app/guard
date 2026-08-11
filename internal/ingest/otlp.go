@@ -35,9 +35,15 @@ func (h Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/traces", h.traces)
 	mux.HandleFunc("POST /v1/metrics", h.metrics)
 	mux.HandleFunc("GET /api/events", h.events)
+	mux.HandleFunc("GET /api/events/{id}", h.event)
 	mux.HandleFunc("GET /api/logs", h.events)
 	mux.HandleFunc("POST /api/logs", h.simpleLog)
+	mux.HandleFunc("GET /api/facets", h.facets)
+	mux.HandleFunc("GET /api/metrics/series", h.metricSeries)
 	mux.HandleFunc("GET /api/summary", h.summary)
+	mux.HandleFunc("GET /api/settings", h.settings)
+	mux.HandleFunc("PUT /api/settings", h.settings)
+	mux.HandleFunc("POST /api/settings/purge", h.purge)
 	mux.HandleFunc("GET /healthz", h.health)
 }
 
@@ -60,7 +66,10 @@ func (h Handler) logs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.Store.Add(logEvents(&req)...)
+	if err := h.Store.Add(logEvents(&req)...); err != nil {
+		http.Error(w, "store logs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeProto(w, jsonMode, &collectorlogspb.ExportLogsServiceResponse{})
 }
 
@@ -74,7 +83,10 @@ func (h Handler) traces(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.Store.Add(traceEvents(&req)...)
+	if err := h.Store.Add(traceEvents(&req)...); err != nil {
+		http.Error(w, "store traces: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeProto(w, jsonMode, &collectortracepb.ExportTraceServiceResponse{})
 }
 
@@ -88,7 +100,10 @@ func (h Handler) metrics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.Store.Add(metricEvents(&req)...)
+	if err := h.Store.Add(metricEvents(&req)...); err != nil {
+		http.Error(w, "store metrics: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeProto(w, jsonMode, &collectormetricspb.ExportMetricsServiceResponse{})
 }
 
@@ -138,14 +153,58 @@ func writeProto(w http.ResponseWriter, jsonMode bool, message proto.Message) {
 }
 
 func (h Handler) events(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	signal := r.URL.Query().Get("signal")
-	if r.URL.Path == "/api/logs" {
-		signal = "logs"
+	filter, err := requestFilter(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	writeJSON(w, h.Store.Query(telemetry.Filter{
-		Signal: signal, Service: r.URL.Query().Get("service"), Query: r.URL.Query().Get("q"), Limit: limit,
-	}))
+	if r.URL.Path == "/api/logs" {
+		filter.Signal = "logs"
+	}
+	events, err := h.Store.Query(filter)
+	if err != nil {
+		http.Error(w, "query telemetry: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, events)
+}
+
+func requestFilter(r *http.Request) (telemetry.Filter, error) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	filter := telemetry.Filter{Signal: r.URL.Query().Get("signal"), Service: r.URL.Query().Get("service"),
+		Severity: r.URL.Query().Get("severity"), Name: r.URL.Query().Get("name"), Query: r.URL.Query().Get("q"), Limit: limit}
+	var err error
+	if value := r.URL.Query().Get("from"); value != "" {
+		filter.From, err = time.Parse(time.RFC3339Nano, value)
+		if err != nil {
+			return filter, fmt.Errorf("invalid from time: %w", err)
+		}
+	}
+	if value := r.URL.Query().Get("to"); value != "" {
+		filter.To, err = time.Parse(time.RFC3339Nano, value)
+		if err != nil {
+			return filter, fmt.Errorf("invalid to time: %w", err)
+		}
+	}
+	return filter, nil
+}
+
+func (h Handler) event(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid event id", http.StatusBadRequest)
+		return
+	}
+	event, err := h.Store.Event(id)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no rows") {
+			http.Error(w, "event not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, event)
 }
 
 type simpleLog struct {
@@ -173,13 +232,90 @@ func (h Handler) simpleLog(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message is required", http.StatusBadRequest)
 		return
 	}
-	h.Store.Add(telemetry.Event{Signal: "logs", Timestamp: input.Timestamp, Service: input.Service, Instance: input.Instance,
-		Severity: input.Severity, Message: input.Message, TraceID: input.TraceID, SpanID: input.SpanID, Attributes: input.Attributes})
+	if err := h.Store.Add(telemetry.Event{Signal: "logs", Timestamp: input.Timestamp, Service: input.Service, Instance: input.Instance,
+		Severity: input.Severity, Message: input.Message, TraceID: input.TraceID, SpanID: input.SpanID, Attributes: input.Attributes}); err != nil {
+		http.Error(w, "store log: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h Handler) summary(w http.ResponseWriter, _ *http.Request) { writeJSON(w, h.Store.Snapshot()) }
+func (h Handler) summary(w http.ResponseWriter, _ *http.Request) {
+	summary, err := h.Store.Snapshot()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, summary)
+}
+
+func (h Handler) facets(w http.ResponseWriter, _ *http.Request) {
+	value, err := h.Store.Facets()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, value)
+}
+
+func (h Handler) metricSeries(w http.ResponseWriter, r *http.Request) {
+	filter, err := requestFilter(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	filter.Name = r.URL.Query().Get("name")
+	value, err := h.Store.Metrics(filter, r.URL.Query().Get("group_by"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, value)
+}
+
+func (h Handler) settings(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		value, err := h.Store.Settings()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, value)
+		return
+	}
+	if !h.authorize(w, r) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	var value telemetry.Settings
+	if err := json.NewDecoder(r.Body).Decode(&value); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.Store.UpdateSettings(value); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	value, _ = h.Store.Settings()
+	writeJSON(w, value)
+}
+
+func (h Handler) purge(w http.ResponseWriter, r *http.Request) {
+	if !h.authorize(w, r) {
+		return
+	}
+	removed, err := h.Store.Purge()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]int64{"removed": removed})
+}
 func (h Handler) health(w http.ResponseWriter, _ *http.Request) {
+	if _, err := h.Store.Settings(); err != nil {
+		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 func writeJSON(w http.ResponseWriter, value any) {
@@ -221,12 +357,17 @@ func traceEvents(req *collectortracepb.ExportTraceServiceRequest) []telemetry.Ev
 				attrs := clone(base)
 				merge(attrs, attributes(span.Attributes))
 				severity := "OK"
+				statusMessage := ""
 				if span.Status != nil && span.Status.Code == tracepb.Status_STATUS_CODE_ERROR {
 					severity = "ERROR"
 				}
+				if span.Status != nil {
+					statusMessage = span.Status.Message
+				}
+				kind := strings.TrimPrefix(span.Kind.String(), "SPAN_KIND_")
 				out = append(out, telemetry.Event{Signal: "traces", Timestamp: unixNano(span.StartTimeUnixNano), Service: service,
-					Instance: instance, Scope: scope, Name: span.Name, Severity: severity,
-					TraceID: hex.EncodeToString(span.TraceId), SpanID: hex.EncodeToString(span.SpanId),
+					Instance: instance, Scope: scope, Name: span.Name, Severity: severity, Message: statusMessage, Kind: kind,
+					TraceID: hex.EncodeToString(span.TraceId), SpanID: hex.EncodeToString(span.SpanId), ParentSpanID: hex.EncodeToString(span.ParentSpanId),
 					DurationMS: float64(span.EndTimeUnixNano-span.StartTimeUnixNano) / float64(time.Millisecond), Attributes: attrs})
 			}
 		}
@@ -244,33 +385,38 @@ func metricEvents(req *collectormetricspb.ExportMetricsServiceRequest) []telemet
 				scope = sm.Scope.Name
 			}
 			for _, metric := range sm.Metrics {
-				appendPoint := func(ts uint64, value float64, attrs []*commonpb.KeyValue) {
+				appendPoint := func(ts uint64, value float64, attrs []*commonpb.KeyValue, metricType string, details map[string]any) {
 					all := clone(base)
 					merge(all, attributes(attrs))
+					merge(all, details)
 					v := value
 					out = append(out, telemetry.Event{Signal: "metrics", Timestamp: unixNano(ts), Service: service,
-						Instance: instance, Scope: scope, Name: metric.Name, Value: &v, Attributes: all})
+						Instance: instance, Scope: scope, Name: metric.Name, Value: &v, Unit: metric.Unit, MetricType: metricType, Attributes: all})
 				}
 				switch data := metric.Data.(type) {
 				case *metricspb.Metric_Gauge:
 					for _, p := range data.Gauge.DataPoints {
-						appendPoint(p.TimeUnixNano, number(p), p.Attributes)
+						appendPoint(p.TimeUnixNano, number(p), p.Attributes, "gauge", nil)
 					}
 				case *metricspb.Metric_Sum:
 					for _, p := range data.Sum.DataPoints {
-						appendPoint(p.TimeUnixNano, number(p), p.Attributes)
+						appendPoint(p.TimeUnixNano, number(p), p.Attributes, "sum", map[string]any{"guard.aggregation_temporality": data.Sum.AggregationTemporality.String(), "guard.monotonic": data.Sum.IsMonotonic})
 					}
 				case *metricspb.Metric_Histogram:
 					for _, p := range data.Histogram.DataPoints {
-						appendPoint(p.TimeUnixNano, p.GetSum(), p.Attributes)
+						appendPoint(p.TimeUnixNano, p.GetSum(), p.Attributes, "histogram", map[string]any{"guard.count": p.Count, "guard.min": p.GetMin(), "guard.max": p.GetMax(), "guard.bucket_counts": p.BucketCounts, "guard.explicit_bounds": p.ExplicitBounds})
 					}
 				case *metricspb.Metric_ExponentialHistogram:
 					for _, p := range data.ExponentialHistogram.DataPoints {
-						appendPoint(p.TimeUnixNano, p.GetSum(), p.Attributes)
+						appendPoint(p.TimeUnixNano, p.GetSum(), p.Attributes, "exponential histogram", map[string]any{"guard.count": p.Count, "guard.min": p.GetMin(), "guard.max": p.GetMax(), "guard.scale": p.Scale, "guard.zero_count": p.ZeroCount})
 					}
 				case *metricspb.Metric_Summary:
 					for _, p := range data.Summary.DataPoints {
-						appendPoint(p.TimeUnixNano, p.Sum, p.Attributes)
+						quantiles := make(map[string]float64, len(p.QuantileValues))
+						for _, q := range p.QuantileValues {
+							quantiles[strconv.FormatFloat(q.Quantile, 'g', -1, 64)] = q.Value
+						}
+						appendPoint(p.TimeUnixNano, p.Sum, p.Attributes, "summary", map[string]any{"guard.count": p.Count, "guard.quantiles": quantiles})
 					}
 				}
 			}
