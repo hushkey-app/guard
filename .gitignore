@@ -2,5 +2,4 @@
 /guard.db
 /guard.db-shm
 /guard.db-wal
-/node_modules/
 /.DS_Store

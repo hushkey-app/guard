@@ -1,15 +1,9 @@
-.PHONY: all deps assets generate run test clean
+.PHONY: all generate run test clean
 
 MODULE := github.com/mirairoad/guard
 
-all: assets generate
+all: generate
 	go build -o guard .
-
-deps:
-	npm install
-
-assets:
-	npm run css:build
 
 generate:
 	go run github.com/mirairoad/howl-go/core/cmd/fsroutes -module $(MODULE)/client/pages
@@ -22,4 +16,4 @@ test: generate
 	go test ./...
 
 clean:
-	rm -f guard client/public/app.css
+	rm -f guard

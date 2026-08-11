@@ -6,13 +6,16 @@ presents logs, traces, metrics, and reporting instances in one compact UI.
 
 ## Run
 
-Requirements: Go 1.25+, Node 20+ for the CSS build.
+Requirement: Go 1.25+.
 
 ```bash
-npm install
 make
 ./guard
 ```
+
+The compiled Tailwind and daisyUI stylesheet is committed and embedded in the
+Go binary, so running or building Guard does not require Node.js or contact a
+CSS CDN.
 
 Open <http://localhost:4318>. Guard writes telemetry to `guard.db` by default.
 The Settings page controls time and row retention. Set `GUARD_TOKEN` to require
