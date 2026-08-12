@@ -395,6 +395,36 @@ func TestSaveViewRejectsInvalidQuery(t *testing.T) {
 	}
 }
 
+// An event with no attributes at all used to be stored as the JSON scalar
+// `null`, and one of those anywhere in the catalogue's sample failed the whole
+// request — which the dashboard shows as a builder that will not open.
+func TestFieldCatalogSurvivesEventsWithoutAttributes(t *testing.T) {
+	store, _ := seed(t)
+	if err := store.Add(
+		Event{Signal: "logs", Service: "api", Message: "no attributes here", Timestamp: time.Now().UTC()},
+		Event{Signal: "logs", Service: "api", Message: "empty map", Attributes: map[string]any{}, Timestamp: time.Now().UTC()},
+	); err != nil {
+		t.Fatal(err)
+	}
+	fields, err := store.FieldCatalog()
+	if err != nil {
+		t.Fatalf("catalogue failed: %v", err)
+	}
+	for _, field := range fields.Attributes {
+		if field.Ref == "attr:" || field.Label == "" {
+			t.Errorf("empty attribute offered: %#v", field)
+		}
+	}
+	// The attributes that do exist still have to be there.
+	var found bool
+	for _, field := range fields.Attributes {
+		found = found || field.Ref == "attr:http.route"
+	}
+	if !found {
+		t.Error("http.route went missing")
+	}
+}
+
 func TestFieldCatalogOffersIndexedAttributes(t *testing.T) {
 	store, _ := seed(t)
 	fields, err := store.FieldCatalog()

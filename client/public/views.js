@@ -120,11 +120,23 @@ function openEvent(id) {
 // ---------------------------------------------------------------------------
 
 async function openBuilder(id) {
-  await loadCatalogue(true);
-  editing = id === "new" ? null : views.find((view) => String(view.id) === String(id));
+  // The shell opens before the catalogue is fetched, on purpose. If that
+  // request fails there is nothing to populate the pickers from — and a button
+  // that silently does nothing is the hardest kind of failure to report, so the
+  // panel opens and says what went wrong instead.
   const shell = qs("[data-builder-shell]");
+  editing = id === "new" ? null : views.find((view) => String(view.id) === String(id));
   qs("[data-builder-title]").textContent = editing ? editing.name : "New panel";
   qs("[data-builder-status]").textContent = "";
+  shell.classList.add("open");
+  document.body.classList.add("overflow-hidden");
+
+  try {
+    await loadCatalogue(true);
+  } catch (failure) {
+    qs("[data-builder-status]").textContent = `Could not load the field catalogue: ${failure.message}`;
+    return;
+  }
 
   populateChoices();
   const query = editing?.query || {};
@@ -151,8 +163,6 @@ async function openBuilder(id) {
   filters.replaceChildren(...(query.filters || []).map(addFilterRow));
 
   applyNeeds();
-  shell.classList.add("open");
-  document.body.classList.add("overflow-hidden");
   preview();
 }
 

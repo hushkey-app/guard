@@ -255,8 +255,15 @@ func (s *Store) FieldCatalog() (model.Fields, error) {
 		})
 	}
 
-	rows, err := s.db.Query(`SELECT DISTINCT j.key FROM (SELECT attributes_json FROM events ORDER BY id DESC LIMIT 2000) e,
-json_each(e.attributes_json) j ORDER BY j.key LIMIT 300`)
+	// json_each over anything that is not an object or an array yields one row
+	// with a NULL key, and an event stored with no attributes at all is the JSON
+	// scalar `null`. One such row anywhere in the sample is enough to fail the
+	// whole catalogue — and the catalogue is what the builder populates every
+	// picker from, so the failure reads as "the builder does not open".
+	rows, err := s.db.Query(`SELECT DISTINCT j.key FROM (SELECT attributes_json FROM events
+WHERE json_valid(attributes_json) AND json_type(attributes_json) = 'object'
+ORDER BY id DESC LIMIT 2000) e, json_each(e.attributes_json) j
+WHERE j.key IS NOT NULL ORDER BY j.key LIMIT 300`)
 	if err != nil {
 		return out, err
 	}

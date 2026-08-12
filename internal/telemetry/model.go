@@ -313,9 +313,16 @@ signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,
 			if e.Service == "" {
 				e.Service = "unknown-service"
 			}
-			attrs, err := json.Marshal(e.Attributes)
-			if err != nil {
-				return fmt.Errorf("encode attributes: %w", err)
+			// A nil map marshals to the JSON scalar `null`, not to an object,
+			// and every query that walks the attributes has to special-case it
+			// from then on. An event with no attributes has an empty set of
+			// them, so store that.
+			attrs := []byte("{}")
+			if len(e.Attributes) > 0 {
+				var err error
+				if attrs, err = json.Marshal(e.Attributes); err != nil {
+					return fmt.Errorf("encode attributes: %w", err)
+				}
 			}
 			var metricValue any
 			if e.Value != nil {
