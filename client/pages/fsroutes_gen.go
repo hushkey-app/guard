@@ -14,10 +14,10 @@ import (
 // FsClientRoutes is the route table derived from the page tree.
 func FsClientRoutes() []router.Route {
 	return []router.Route{
-		{Pattern: "/", Label: "Home", Page: Page, Head: Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
-		{Pattern: "/logs", Label: "Logs", Page: p0.Page, Head: p0.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
-		{Pattern: "/metrics", Label: "Metrics", Page: p1.Page, Head: p1.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
-		{Pattern: "/settings", Label: "Settings", Page: p2.Page, Head: p2.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
-		{Pattern: "/traces", Label: "Traces", Page: p3.Page, Head: p3.Head, Mount: nil, Unmount: nil, Layouts: nil, Client: false},
+		{Pattern: "/", Label: "Home", Page: Page, Head: Head, Mount: Mount, Unmount: Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/logs", Label: "Logs", Page: p0.Page, Head: p0.Head, Mount: p0.Mount, Unmount: p0.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/metrics", Label: "Metrics", Page: p1.Page, Head: p1.Head, Mount: p1.Mount, Unmount: p1.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/settings", Label: "Settings", Page: p2.Page, Head: p2.Head, Mount: p2.Mount, Unmount: p2.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/traces", Label: "Traces", Page: p3.Page, Head: p3.Head, Mount: p3.Mount, Unmount: p3.Unmount, Layouts: nil, Client: true, Raw: false},
 	}
 }

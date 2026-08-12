@@ -1,8 +1,24 @@
 const number = new Intl.NumberFormat();
 const palette = ["#5bd8a6", "#60a5fa", "#c084fc", "#f59e0b", "#fb7185", "#22d3ee", "#a3e635", "#f472b6"];
 const svgNS = "http://www.w3.org/2000/svg";
+const pageSize = 50;
+const signalPages = new Map([["logs", 0], ["traces", 0], ["metrics", 0]]);
+const signalRequests = new Map();
+const facetsTTL = 60_000;
+let facetsCache = null;
+let facetsFetchedAt = 0;
+let facetsRequest = null;
 let live = localStorage.getItem("guard.live") !== "off";
 let filterTimer;
+let initializedPage = null;
+let initialRefresh = null;
+let liveTimer;
+let refreshInFlight = false;
+let lastInteraction = 0;
+let renderGeneration = 0;
+let summarySignature = "";
+const signalSignatures = new Map();
+let metricsSignature = "";
 
 const text = (value) => document.createTextNode(value ?? "");
 const qs = (selector, root = document) => root.querySelector(selector);
@@ -26,16 +42,22 @@ function updateLiveControl(status = live ? "receiving" : "paused") {
   for (const node of qsa("[data-live-dot]")) node.classList.toggle("opacity-30", !live);
 }
 
+// The class strings below are written out in full on purpose: Tailwind scans
+// this file (see the @source list in client/styles/app.css) and only emits the
+// utilities it can see literally.
+const cellBase = "cn-table-cell cn-table-cell-aria";
+const muted = "text-muted-foreground";
+
 function td(value, className = "") {
   const cell = document.createElement("td");
-  cell.className = className;
+  cell.className = `${cellBase} ${className}`.trim();
   cell.appendChild(text(value));
   return cell;
 }
 
 function eventRow(event) {
   const row = document.createElement("tr");
-  row.className = "event-row cursor-pointer";
+  row.className = "cn-table-row cursor-pointer focus:bg-accent focus:outline-none";
   row.tabIndex = 0;
   row.dataset.eventId = event.id;
   return row;
@@ -45,16 +67,27 @@ function shortID(value) { return value ? `${value.slice(0, 12)}${value.length > 
 function eventText(event) { return event.message || (event.value !== undefined ? `${event.name} = ${event.value}${event.unit ? ` ${event.unit}` : ""}` : event.name) || "telemetry event"; }
 function timeText(value) { return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 }); }
 
-function badge(value, tone = "badge-ghost") {
+// style-nova ships default/secondary/destructive/outline badges; severity and
+// span status need two more tones, built from the same theme tokens.
+const tones = {
+  neutral: "cn-badge-variant-secondary",
+  error: "cn-badge-variant-destructive",
+  warning: "border-warning/40 bg-warning/15 text-warning",
+  ok: "border-primary/40 bg-primary/15 text-primary",
+  trace: "border-chart-3/40 bg-chart-3/15 text-chart-3",
+  metric: "border-chart-2/40 bg-chart-2/15 text-chart-2",
+};
+
+function badge(value, tone = tones.neutral) {
   const node = document.createElement("span");
-  node.className = `badge badge-sm ${tone}`;
+  node.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${tone}`;
   node.appendChild(text(value));
   return node;
 }
 
 function emptyRow(body, columns, message) {
   const row = document.createElement("tr");
-  const cell = td(message, "py-12 text-center text-base-content/40");
+  const cell = td(message, `py-12 text-center ${muted}`);
   cell.colSpan = columns;
   row.appendChild(cell);
   body.replaceChildren(row);
@@ -67,9 +100,10 @@ function renderLogs(events) {
   body.replaceChildren(...events.map((event) => {
     const row = eventRow(event);
     const severity = document.createElement("td");
-    severity.appendChild(badge(event.severity || "INFO", /error|fatal/i.test(event.severity || "") ? "badge-error" : /warn/i.test(event.severity || "") ? "badge-warning" : "badge-ghost"));
-    row.append(td(timeText(event.timestamp), "whitespace-nowrap font-mono text-xs text-base-content/50"), severity,
-      td(event.service, "font-medium"), td(event.message || "—", "max-w-xl truncate"), td(shortID(event.trace_id), "font-mono text-[.65rem] text-base-content/40"));
+    severity.className = cellBase;
+    severity.appendChild(badge(event.severity || "INFO", /error|fatal/i.test(event.severity || "") ? tones.error : /warn/i.test(event.severity || "") ? tones.warning : tones.neutral));
+    row.append(td(timeText(event.timestamp), `whitespace-nowrap font-mono text-xs ${muted}`), severity,
+      td(event.service, "font-medium"), td(event.message || "—", "max-w-xl truncate"), td(shortID(event.trace_id), `font-mono text-[.65rem] ${muted}`));
     return row;
   }));
 }
@@ -81,10 +115,11 @@ function renderTraces(events) {
   body.replaceChildren(...events.map((event) => {
     const row = eventRow(event);
     const status = document.createElement("td");
-    status.appendChild(badge((event.severity || "OK").toLowerCase(), /error/i.test(event.severity || "") ? "badge-error" : "badge-success"));
-    row.append(td(timeText(event.timestamp), "whitespace-nowrap font-mono text-xs text-base-content/50"), status,
-      td(event.service, "font-medium"), td(event.name || "unnamed span", "max-w-sm truncate"), td((event.kind || "internal").toLowerCase(), "text-xs text-base-content/60"),
-      td(`${number.format(event.duration_ms || 0)} ms`, "whitespace-nowrap font-mono text-xs"), td(shortID(event.trace_id), "font-mono text-[.65rem] text-base-content/40"));
+    status.className = cellBase;
+    status.appendChild(badge((event.severity || "OK").toLowerCase(), /error/i.test(event.severity || "") ? tones.error : tones.ok));
+    row.append(td(timeText(event.timestamp), `whitespace-nowrap font-mono text-xs ${muted}`), status,
+      td(event.service, "font-medium"), td(event.name || "unnamed span", "max-w-sm truncate"), td((event.kind || "internal").toLowerCase(), `text-xs ${muted}`),
+      td(`${number.format(event.duration_ms || 0)} ms`, "whitespace-nowrap font-mono text-xs"), td(shortID(event.trace_id), `font-mono text-[.65rem] ${muted}`));
     return row;
   }));
 }
@@ -95,10 +130,10 @@ function renderMetricRows(events) {
   if (!events.length) return emptyRow(body, 6, "No metric points match this view.");
   body.replaceChildren(...events.map((event) => {
     const row = eventRow(event);
-    row.append(td(timeText(event.timestamp), "whitespace-nowrap font-mono text-xs text-base-content/50"), td(event.name, "font-mono text-xs"),
-      td(event.service, "font-medium"), td(event.metric_type || "number", "text-xs text-base-content/60"),
+    row.append(td(timeText(event.timestamp), `whitespace-nowrap font-mono text-xs ${muted}`), td(event.name, "font-mono text-xs"),
+      td(event.service, "font-medium"), td(event.metric_type || "number", `text-xs ${muted}`),
       td(`${number.format(event.value ?? 0)}${event.unit ? ` ${event.unit}` : ""}`, "whitespace-nowrap font-mono text-xs"),
-      td(`${Object.keys(event.attributes || {}).length} fields`, "text-xs text-base-content/45"));
+      td(`${Object.keys(event.attributes || {}).length} fields`, `text-xs ${muted}`));
     return row;
   }));
 }
@@ -111,10 +146,11 @@ function renderOverview(events) {
   body.replaceChildren(...events.map((event) => {
     const row = eventRow(event);
     const signal = document.createElement("td");
+    signal.className = cellBase;
     const label = event.signal === "logs" ? (event.severity || "log").toLowerCase() : event.signal.replace(/s$/, "");
-    const tone = event.signal === "traces" ? "badge-secondary" : event.signal === "metrics" ? "badge-info" : /error|fatal/i.test(event.severity || "") ? "badge-error" : "badge-ghost";
+    const tone = event.signal === "traces" ? tones.trace : event.signal === "metrics" ? tones.metric : /error|fatal/i.test(event.severity || "") ? tones.error : tones.neutral;
     signal.appendChild(badge(label, tone));
-    row.append(td(timeText(event.timestamp), "font-mono text-xs text-base-content/50"), signal, td(event.service), td(eventText(event), "max-w-lg truncate"), td(shortID(event.trace_id), "font-mono text-[.65rem] text-base-content/40"));
+    row.append(td(timeText(event.timestamp), `font-mono text-xs ${muted}`), signal, td(event.service), td(eventText(event), "max-w-lg truncate"), td(shortID(event.trace_id), `font-mono text-[.65rem] ${muted}`));
     return row;
   }));
 }
@@ -125,13 +161,13 @@ function renderInstances(instances) {
   if (!instances.length) { list.replaceChildren(); return; }
   list.replaceChildren(...instances.map((instance) => {
     const row = document.createElement("div");
-    row.className = "flex items-center gap-3 rounded-xl bg-base-100/55 p-3";
+    row.className = "flex items-center gap-3 rounded-xl bg-muted/40 p-3";
     const dot = document.createElement("span"); dot.className = "signal-dot";
     const names = document.createElement("div"); names.className = "min-w-0 flex-1";
     const service = document.createElement("p"); service.className = "truncate text-sm font-medium"; service.appendChild(text(instance.service));
-    const id = document.createElement("p"); id.className = "truncate font-mono text-[.65rem] text-base-content/40"; id.appendChild(text(instance.instance || "default"));
+    const id = document.createElement("p"); id.className = `truncate font-mono text-[.65rem] ${muted}`; id.appendChild(text(instance.instance || "default"));
     names.append(service, id);
-    const seen = document.createElement("span"); seen.className = "text-xs text-base-content/40"; seen.appendChild(text(relativeTime(instance.last_seen)));
+    const seen = document.createElement("span"); seen.className = `text-xs ${muted}`; seen.appendChild(text(relativeTime(instance.last_seen)));
     row.append(dot, names, seen); return row;
   }));
 }
@@ -143,9 +179,10 @@ function relativeTime(value) {
   return `${Math.floor(seconds / 3600)}h ago`;
 }
 
-function filterParams(signal) {
+function filterParams(signal, paginate = false) {
   const root = qs(`[data-filter-signal="${signal}"]`);
-  const params = new URLSearchParams({ signal, limit: signal === "metrics" ? "500" : "250" });
+  const params = new URLSearchParams({ signal, limit: paginate ? String(pageSize + 1) : signal === "metrics" ? "500" : "250" });
+  if (paginate) params.set("offset", String((signalPages.get(signal) || 0) * pageSize));
   if (!root) return params;
   const value = (name) => qs(`[data-filter="${name}"]`, root)?.value || "";
   for (const name of ["service", "severity", "name"]) if (value(name)) params.set(name, value(name));
@@ -163,6 +200,9 @@ function filterParams(signal) {
 async function refreshSummary() {
   try {
     const data = await request("/api/summary");
+    const signature = `${renderGeneration}:${data.logs}:${data.errors}:${data.spans}:${data.metrics}:${(data.instances || []).map((item) => `${item.service}/${item.instance}/${item.last_seen}`).join(",")}:${(data.recent || []).map((event) => event.id).join(",")}`;
+    if (signature === summarySignature) return;
+    summarySignature = signature;
     setStat("logs", data.logs); setStat("errors", data.errors); setStat("spans", data.spans); setStat("metrics", data.metrics); setStat("instances", data.instances?.length);
     renderInstances(data.instances || []); renderOverview(data.recent || []);
     updateLiveControl();
@@ -171,11 +211,38 @@ async function refreshSummary() {
 
 async function refreshSignal(signal) {
 	if (!qs(`[data-filter-signal="${signal}"]`)) return;
-  const params = filterParams(signal);
+  const requestID = (signalRequests.get(signal) || 0) + 1;
+  signalRequests.set(signal, requestID);
+  const params = filterParams(signal, true);
   const events = await request(`/api/events?${params}`);
-  if (signal === "logs") renderLogs(events);
-  if (signal === "traces") renderTraces(events);
-  if (signal === "metrics") renderMetricRows(events);
+  if (signalRequests.get(signal) !== requestID) return;
+  const page = signalPages.get(signal) || 0;
+  if (!events.length && page > 0) {
+    signalPages.set(signal, page - 1);
+    return refreshSignal(signal);
+  }
+  const hasNext = events.length > pageSize;
+  const visible = events.slice(0, pageSize);
+  // Events are immutable; IDs fully describe whether this page needs repainting.
+  const signature = `${renderGeneration}:${params}:${hasNext}:${visible.map((event) => event.id).join(",")}`;
+  if (signalSignatures.get(signal) === signature) return;
+  signalSignatures.set(signal, signature);
+  if (signal === "logs") renderLogs(visible);
+  if (signal === "traces") renderTraces(visible);
+  if (signal === "metrics") renderMetricRows(visible);
+  renderPagination(signal, visible.length, hasNext);
+}
+
+function renderPagination(signal, count, hasNext) {
+  const root = qs(`[data-pagination="${signal}"]`);
+  if (!root) return;
+  const page = signalPages.get(signal) || 0;
+  const first = count ? page * pageSize + 1 : 0;
+  const last = page * pageSize + count;
+  qs("[data-page-summary]", root).textContent = count ? `Showing ${number.format(first)}–${number.format(last)} · ${pageSize} per page` : "No matching events";
+  qs("[data-page-number]", root).textContent = `Page ${number.format(page + 1)}`;
+  qs('[data-page-action="previous"]', root).disabled = page === 0;
+  qs('[data-page-action="next"]', root).disabled = !hasNext;
 }
 
 function updateSelect(select, values, label) {
@@ -186,13 +253,28 @@ function updateSelect(select, values, label) {
   select.value = current;
 }
 
-async function refreshFacets() {
+function applyFacets(facets) {
   if (!qs("[data-filter-signal]")) return;
-  const facets = await request("/api/facets");
   for (const select of qsa('[data-filter="service"]')) updateSelect(select, facets.services || [], "All services");
   for (const root of qsa('[data-filter-signal="logs"]')) updateSelect(qs('[data-filter="severity"]', root), facets.severities || [], "All levels");
   for (const root of qsa('[data-filter-signal="traces"]')) updateSelect(qs('[data-filter="severity"]', root), ["OK", "ERROR"], "All statuses");
   for (const select of qsa('[data-filter="name"]')) updateSelect(select, facets.metric_names || [], "All metrics");
+}
+
+async function refreshFacets(force = false) {
+  if (!qs("[data-filter-signal]")) return;
+  if (facetsCache) applyFacets(facetsCache);
+  if (!force && facetsCache && Date.now() - facetsFetchedAt < facetsTTL) return;
+  if (!facetsRequest) {
+    facetsRequest = request("/api/facets")
+      .then((facets) => {
+        facetsCache = facets;
+        facetsFetchedAt = Date.now();
+        return facets;
+      })
+      .finally(() => { facetsRequest = null; });
+  }
+  applyFacets(await facetsRequest);
 }
 
 async function refreshMetrics() {
@@ -201,6 +283,14 @@ async function refreshMetrics() {
   const group = qs('[data-filter-signal="metrics"] [data-filter="group"]')?.value || "";
   params.set("group_by", group); params.set("limit", "5000");
   const series = await request(`/api/metrics/series?${params}`);
+  // Avoid serialising thousands of points on every live tick. Metric points are
+  // append-only, so the count and final point identify a changed series.
+  const signature = `${renderGeneration}:${params}:${series.map((item) => {
+    const last = item.points?.at(-1);
+    return `${item.key}/${item.points?.length || 0}/${last?.timestamp || ""}/${last?.value ?? ""}`;
+  }).join(",")}`;
+  if (signature === metricsSignature) return;
+  metricsSignature = signature;
   renderChart(series); renderMetricCards(series);
 }
 
@@ -209,7 +299,7 @@ function renderChart(series) {
   if (!host) return;
   const shown = series.filter((item) => item.points?.length).slice(0, palette.length);
   qs("[data-metric-series-count]").textContent = `${shown.length} ${shown.length === 1 ? "series" : "series"}`;
-  if (!shown.length) { host.replaceChildren(Object.assign(document.createElement("div"), { className: "grid min-h-72 place-items-center text-base-content/40", textContent: "Choose a metric or wait for points to arrive." })); qs("[data-metric-legend]").replaceChildren(); return; }
+  if (!shown.length) { host.replaceChildren(Object.assign(document.createElement("div"), { className: `grid min-h-72 place-items-center ${muted}`, textContent: "Choose a metric or wait for points to arrive." })); qs("[data-metric-legend]").replaceChildren(); return; }
   const all = shown.flatMap((item) => item.points);
   let minX = Math.min(...all.map((p) => new Date(p.timestamp).getTime())), maxX = Math.max(...all.map((p) => new Date(p.timestamp).getTime()));
   let minY = Math.min(...all.map((p) => p.value)), maxY = Math.max(...all.map((p) => p.value));
@@ -221,35 +311,35 @@ function renderChart(series) {
   const svg = document.createElementNS(svgNS, "svg"); svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("class", "h-72 w-full overflow-visible"); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Metric series chart");
   for (let i = 0; i < 5; i++) {
     const gy = pad.top + i * (height - pad.top - pad.bottom) / 4;
-    const line = document.createElementNS(svgNS, "line"); for (const [key, value] of Object.entries({ x1: pad.left, x2: width - pad.right, y1: gy, y2: gy })) line.setAttribute(key, value); line.setAttribute("stroke", "currentColor"); line.setAttribute("class", "text-base-content/10"); svg.appendChild(line);
-    const label = document.createElementNS(svgNS, "text"); label.setAttribute("x", pad.left - 10); label.setAttribute("y", gy + 4); label.setAttribute("text-anchor", "end"); label.setAttribute("class", "fill-base-content/45 text-[11px]"); label.textContent = number.format(maxY - i * (maxY - minY) / 4); svg.appendChild(label);
+    const line = document.createElementNS(svgNS, "line"); for (const [key, value] of Object.entries({ x1: pad.left, x2: width - pad.right, y1: gy, y2: gy })) line.setAttribute(key, value); line.setAttribute("stroke", "currentColor"); line.setAttribute("class", "text-border"); svg.appendChild(line);
+    const label = document.createElementNS(svgNS, "text"); label.setAttribute("x", pad.left - 10); label.setAttribute("y", gy + 4); label.setAttribute("text-anchor", "end"); label.setAttribute("class", "fill-muted-foreground text-[11px]"); label.textContent = number.format(maxY - i * (maxY - minY) / 4); svg.appendChild(label);
   }
   shown.forEach((item, index) => {
     const polyline = document.createElementNS(svgNS, "polyline"); polyline.setAttribute("fill", "none"); polyline.setAttribute("stroke", palette[index]); polyline.setAttribute("stroke-width", "2.5"); polyline.setAttribute("stroke-linejoin", "round"); polyline.setAttribute("stroke-linecap", "round"); polyline.setAttribute("points", item.points.map((p) => `${x(p.timestamp)},${y(p.value)}`).join(" ")); svg.appendChild(polyline);
     for (const point of item.points) { const circle = document.createElementNS(svgNS, "circle"); circle.setAttribute("cx", x(point.timestamp)); circle.setAttribute("cy", y(point.value)); circle.setAttribute("r", "3"); circle.setAttribute("fill", palette[index]); svg.appendChild(circle); }
   });
-  const start = document.createElementNS(svgNS, "text"); start.setAttribute("x", pad.left); start.setAttribute("y", height - 8); start.setAttribute("class", "fill-base-content/45 text-[11px]"); start.textContent = new Date(minX).toLocaleTimeString(); svg.appendChild(start);
-  const end = document.createElementNS(svgNS, "text"); end.setAttribute("x", width - pad.right); end.setAttribute("y", height - 8); end.setAttribute("text-anchor", "end"); end.setAttribute("class", "fill-base-content/45 text-[11px]"); end.textContent = new Date(maxX).toLocaleTimeString(); svg.appendChild(end);
+  const start = document.createElementNS(svgNS, "text"); start.setAttribute("x", pad.left); start.setAttribute("y", height - 8); start.setAttribute("class", "fill-muted-foreground text-[11px]"); start.textContent = new Date(minX).toLocaleTimeString(); svg.appendChild(start);
+  const end = document.createElementNS(svgNS, "text"); end.setAttribute("x", width - pad.right); end.setAttribute("y", height - 8); end.setAttribute("text-anchor", "end"); end.setAttribute("class", "fill-muted-foreground text-[11px]"); end.textContent = new Date(maxX).toLocaleTimeString(); svg.appendChild(end);
   host.replaceChildren(svg);
-  const legend = qs("[data-metric-legend]"); legend.replaceChildren(...shown.map((item, index) => { const node = document.createElement("span"); node.className = "inline-flex items-center gap-2 text-xs text-base-content/60"; const dot = document.createElement("span"); dot.className = "size-2 rounded-full"; dot.style.background = palette[index]; node.append(dot, text(item.key)); return node; }));
+  const legend = qs("[data-metric-legend]"); legend.replaceChildren(...shown.map((item, index) => { const node = document.createElement("span"); node.className = `inline-flex items-center gap-2 text-xs ${muted}`; const dot = document.createElement("span"); dot.className = "size-2 rounded-full"; dot.style.background = palette[index]; node.append(dot, text(item.key)); return node; }));
 }
 
 function renderMetricCards(series) {
   const host = qs("[data-metric-summary]"); if (!host) return;
   host.replaceChildren(...series.slice(0, 12).map((item) => {
     const values = item.points.map((p) => p.value); const latest = values.at(-1) ?? 0; const avg = values.reduce((a, b) => a + b, 0) / Math.max(values.length, 1);
-    const card = document.createElement("article"); card.className = "metric-card";
-    const title = document.createElement("p"); title.className = "truncate font-mono text-xs text-base-content/55"; title.appendChild(text(item.key));
-    const value = document.createElement("p"); value.className = "mt-3 text-2xl font-bold tabular-nums"; value.appendChild(text(`${number.format(latest)}${item.unit ? ` ${item.unit}` : ""}`));
-    const meta = document.createElement("p"); meta.className = "mt-2 text-xs text-base-content/45"; meta.appendChild(text(`${item.type || "number"} · avg ${number.format(avg)} · min ${number.format(Math.min(...values))} · max ${number.format(Math.max(...values))} · ${values.length} points`));
+    const card = document.createElement("article"); card.className = "rounded-xl bg-card p-4 text-card-foreground ring-1 ring-foreground/10";
+    const title = document.createElement("p"); title.className = `truncate font-mono text-xs ${muted}`; title.appendChild(text(item.key));
+    const value = document.createElement("p"); value.className = "mt-3 text-2xl font-semibold tabular-nums"; value.appendChild(text(`${number.format(latest)}${item.unit ? ` ${item.unit}` : ""}`));
+    const meta = document.createElement("p"); meta.className = `mt-2 text-xs ${muted}`; meta.appendChild(text(`${item.type || "number"} · avg ${number.format(avg)} · min ${number.format(Math.min(...values))} · max ${number.format(Math.max(...values))} · ${values.length} points`));
     card.append(title, value, meta); return card;
   }));
 }
 
 function detailField(label, value) {
-  const node = document.createElement("div"); node.className = "detail-field";
-  const key = document.createElement("p"); key.className = "detail-label"; key.appendChild(text(label));
-  const content = document.createElement("p"); content.className = "detail-value"; content.appendChild(text(value || "—"));
+  const node = document.createElement("div"); node.className = "min-w-0 bg-card p-3";
+  const key = document.createElement("p"); key.className = `text-[.65rem] font-semibold uppercase tracking-[.15em] ${muted}`; key.appendChild(text(label));
+  const content = document.createElement("p"); content.className = "mt-1 break-words font-mono text-xs"; content.appendChild(text(value || "—"));
   node.append(key, content); return node;
 }
 
@@ -257,11 +347,12 @@ async function openDetail(id) {
   const event = await request(`/api/events/${id}`);
   qs("[data-detail-eyebrow]").textContent = `${event.signal.replace(/s$/, "")} detail`;
   qs("[data-detail-title]").textContent = eventText(event);
-  const grid = document.createElement("div"); grid.className = "detail-grid";
+  // 1px of the border colour shows between the cells as the grid gap.
+  const grid = document.createElement("div"); grid.className = "grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border";
   const fields = [["Timestamp", new Date(event.timestamp).toLocaleString()], ["Received", new Date(event.received_at).toLocaleString()], ["Service", event.service], ["Instance", event.instance], ["Scope", event.scope], ["Severity / status", event.severity], ["Span kind", event.kind], ["Duration", event.duration_ms ? `${event.duration_ms} ms` : ""], ["Metric type", event.metric_type], ["Value", event.value !== undefined ? `${event.value}${event.unit ? ` ${event.unit}` : ""}` : ""], ["Trace ID", event.trace_id], ["Span ID", event.span_id], ["Parent span", event.parent_span_id]];
   grid.append(...fields.filter(([, value]) => value !== "" && value !== undefined).map(([label, value]) => detailField(label, value)));
-  const attrs = document.createElement("section"); const heading = document.createElement("h3"); heading.className = "mb-3 font-semibold"; heading.appendChild(text(`Attributes · ${Object.keys(event.attributes || {}).length}`));
-  const pre = document.createElement("pre"); pre.className = "overflow-x-auto rounded-xl bg-base-200 p-4 font-mono text-xs leading-6 text-base-content/70"; pre.appendChild(text(JSON.stringify(event.attributes || {}, null, 2))); attrs.append(heading, pre);
+  const attrs = document.createElement("section"); const heading = document.createElement("h3"); heading.className = "mb-3 font-medium"; heading.appendChild(text(`Attributes · ${Object.keys(event.attributes || {}).length}`));
+  const pre = document.createElement("pre"); pre.className = "overflow-x-auto rounded-xl bg-code p-4 font-mono text-xs leading-6 text-code-foreground"; pre.appendChild(text(JSON.stringify(event.attributes || {}, null, 2))); attrs.append(heading, pre);
   qs("[data-detail-content]").replaceChildren(grid, attrs); qs("[data-detail-shell]").classList.add("open"); document.body.classList.add("overflow-hidden");
 }
 
@@ -296,16 +387,67 @@ async function purgeNow() {
   catch (error) { status.textContent = error.message; }
 }
 
-async function refreshPage() {
-  await Promise.allSettled([refreshSummary(), refreshFacets(), refreshSignal("logs"), refreshSignal("traces"), refreshSignal("metrics"), refreshMetrics(), loadSettings()]);
+async function refreshPage({ facets = false } = {}) {
+  const work = [refreshSignal("logs"), refreshSignal("traces"), refreshSignal("metrics"), refreshMetrics(), loadSettings()];
+  if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
+  if (facets) work.push(refreshFacets());
+  await Promise.allSettled(work);
+}
+
+function updatePageTitle() {
+  const label = document.title.replace(/\s+[—-]\s+Guard$/, "");
+  for (const node of qsa("[data-page-title]")) node.textContent = label;
+}
+
+async function liveTick() {
+  if (live && !refreshInFlight && document.visibilityState === "visible" && Date.now() - lastInteraction > 500) {
+    refreshInFlight = true;
+    try { await refreshPage(); } finally { refreshInFlight = false; }
+  }
+  liveTimer = setTimeout(liveTick, 3000);
+}
+
+globalThis.guardPageMount = (page) => {
+  // The cold document can start fetching as soon as guard.js executes, without
+  // waiting for the WASM binary. Its later Mount consumes that same promise;
+  // AOT navigations start a fresh page-specific load here.
+  updatePageTitle();
+  renderGeneration++;
+  if (page === initializedPage && initialRefresh) {
+    const pending = initialRefresh;
+    initialRefresh = null;
+    return pending;
+  }
+  initializedPage = page;
+  return refreshPage({ facets: true });
+};
+globalThis.guardPageUnmount = () => {
+  clearTimeout(filterTimer);
+  filterTimer = undefined;
+  for (const signal of signalRequests.keys()) signalRequests.set(signal, signalRequests.get(signal) + 1);
+};
+
+for (const eventName of ["scroll", "wheel", "touchmove", "pointermove"]) {
+  document.addEventListener(eventName, () => { lastInteraction = Date.now(); }, { passive: true });
 }
 
 document.addEventListener("click", (event) => {
+  // The sidebar is a CSS-only drawer below lg; navigating has to close it,
+  // because on those widths nothing else will.
+  if (event.target.closest("[data-nav-link]")) { const drawer = qs("#nav-drawer"); if (drawer) drawer.checked = false; }
   const toggle = event.target.closest("[data-live-toggle]");
   if (toggle) { live = !live; localStorage.setItem("guard.live", live ? "on" : "off"); updateLiveControl(); if (live) refreshPage(); return; }
   if (event.target.closest("[data-detail-close]")) { closeDetail(); return; }
+  const pageButton = event.target.closest("[data-page-action]");
+  if (pageButton && !pageButton.disabled) {
+    const signal = pageButton.closest("[data-pagination]").dataset.pagination;
+    const direction = pageButton.dataset.pageAction === "next" ? 1 : -1;
+    signalPages.set(signal, Math.max(0, (signalPages.get(signal) || 0) + direction));
+    refreshSignal(signal).catch(() => {});
+    return;
+  }
   const row = event.target.closest("[data-event-id]"); if (row) { openDetail(row.dataset.eventId).catch(() => {}); return; }
-  if (event.target.closest("[data-refresh-now]")) { refreshPage(); return; }
+  if (event.target.closest("[data-refresh-now]")) { refreshPage({ facets: true }); return; }
   if (event.target.closest("[data-purge-now]")) purgeNow();
 });
 
@@ -316,12 +458,18 @@ document.addEventListener("keydown", (event) => {
 
 document.addEventListener("input", (event) => {
   if (!event.target.matches("[data-filter]")) return;
+  const signal = event.target.closest("[data-filter-signal]")?.dataset.filterSignal;
+  if (signal) signalPages.set(signal, 0);
   clearTimeout(filterTimer); filterTimer = setTimeout(refreshPage, 180);
 });
 
 document.addEventListener("change", (event) => {
   if (event.target.matches('[data-filter="range"]')) qs("[data-custom-range]", event.target.closest("[data-filter-signal]"))?.classList.toggle("hidden", event.target.value !== "custom");
-  if (event.target.matches("[data-filter]")) refreshPage();
+  if (event.target.matches("[data-filter]")) {
+    const signal = event.target.closest("[data-filter-signal]")?.dataset.filterSignal;
+    if (signal) signalPages.set(signal, 0);
+    refreshPage();
+  }
 });
 
 document.addEventListener("submit", (event) => {
@@ -330,5 +478,6 @@ document.addEventListener("submit", (event) => {
 });
 
 updateLiveControl();
-refreshPage();
-setInterval(() => { if (live) refreshPage(); }, 3000);
+initializedPage = location.pathname === "/" ? "home" : location.pathname.split("/").filter(Boolean)[0];
+initialRefresh = refreshPage({ facets: true });
+liveTimer = setTimeout(liveTick, 3000);

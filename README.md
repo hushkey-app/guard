@@ -13,13 +13,41 @@ make
 ./guard
 ```
 
-The compiled Tailwind and daisyUI stylesheet is committed and embedded in the
-Go binary, so running or building Guard does not require Node.js or contact a
-CSS CDN.
+The compiled stylesheet is committed and embedded in the Go binary, so running
+or building Guard does not require Node.js or contact a CSS CDN.
+
+## Interface
+
+The dashboard is built from [shadcn-templ](https://github.com/axadrn/shadcn-templ)
+v2 components — card, table, button, badge, input, field, item, alert, empty —
+imported directly as Go packages and rendered by Howl on the server and in
+WebAssembly. Filter controls stay native, because `guard.js` drives them.
+
+One stylesheet, `client/public/app.css`, holds Tailwind, the shadcn base and the
+`style-nova` component style. It is committed; rebuild it with `make css` after
+using a Tailwind class no source used before. That target is the only thing in
+Guard that needs Node, and `make`, `make dev` and `docker build` never run it.
+
+Agents should read `docs/shadcn-templ.md` for the offline API and integration
+digest before changing the UI.
 
 Open <http://localhost:4318>. Guard writes telemetry to `guard.db` by default.
 The Settings page controls time and row retention. Set `GUARD_TOKEN` to require
 a bearer token on ingestion and settings mutations.
+
+## Dashboard rendering
+
+Home, Logs, Metrics, Traces, and Settings are howl-go `.client.templ` routes.
+After the lazy WebAssembly renderer is ready, sidebar navigation renders their
+data-free shells locally with no page HTML request. Each route's `Mount()` then
+starts its initial JSON request; the live watcher refreshes only the mounted
+page's data every three seconds. `Unmount()` invalidates requests from the page
+being left.
+
+Summary counts and instance totals are maintained transactionally during
+ingestion, so `/api/summary` does not scan the events table. Filter facets are
+loaded on mount and cached in the browser for 60 seconds rather than polled on
+every live tick.
 
 Configuration is available as flags or environment variables:
 

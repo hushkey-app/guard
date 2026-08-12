@@ -36,6 +36,20 @@ func TestStoreBoundsFiltersAndSummarizes(t *testing.T) {
 	if len(filtered) != 1 || filtered[0].Severity != "ERROR" {
 		t.Fatalf("filtered events = %#v", filtered)
 	}
+	paged, err := store.Query(Filter{Limit: 1, Offset: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paged) != 1 || paged[0].Signal != "traces" {
+		t.Fatalf("second event page = %#v", paged)
+	}
+	empty, err := store.Query(Filter{Signal: "does-not-exist", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty == nil || len(empty) != 0 {
+		t.Fatalf("empty query = %#v, want non-nil empty slice", empty)
+	}
 
 	summary, err := store.Snapshot()
 	if err != nil {
@@ -133,3 +147,4 @@ func TestSQLiteBatchesConcurrentWriters(t *testing.T) {
 		t.Fatalf("batched summary = %#v, want %d events", summary, writers)
 	}
 }
+

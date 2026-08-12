@@ -1,111 +1,251 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
-	"time"
-
-	"github.com/mirairoad/guard/internal/telemetry"
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/empty"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/axadrn/shadcn-templ/v2/components/table"
 	"github.com/mirairoad/howl-go/core/router"
 )
 
+// NavLink styles itself from aria-current rather than from a class computed
+// here, because the sidebar lives outside #outlet: a client-side navigation
+// never re-renders it, so anything decided at render time freezes on whichever
+// page was loaded first. The client runtime maintains aria-current on every
+// same-origin link after each navigation, and the server sets the same
+// attribute for the cold load — one source of truth, no flash.
+//
+// router.Under, not ==, so /logs stays lit on /logs/42. The client applies the
+// same rule.
 templ NavLink(path, label string) {
-	<a href={ templ.SafeURL(path) } class={ "nav-link", templ.KV("active", router.Current(ctx) == path) }>
+	<a
+		href={ templ.SafeURL(path) }
+		data-nav-link="true"
+		aria-current={ Current(router.Under(ctx, path)) }
+		class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-primary aria-[current=page]:hover:bg-sidebar-accent"
+	>
 		<span class="size-1.5 rounded-full bg-current opacity-70"></span>
 		{ label }
 	</a>
 }
 
-templ Stat(label, key, value, note string) {
-	<div class="stat guard-panel rounded-2xl p-5">
-		<div class="stat-title text-xs font-semibold uppercase tracking-[.16em]">{ label }</div>
-		<div class="stat-value mt-2 text-3xl tabular-nums" data-stat={ key }>{ value }</div>
-		<div class="stat-desc mt-2 text-base-content/45">{ note }</div>
+// PageHeading is the eyebrow/title/lede block every route opens with.
+templ PageHeading(eyebrow, title, lede string) {
+	<div>
+		<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">{ eyebrow }</p>
+		<h1 class="mt-2 text-3xl font-semibold tracking-tight">{ title }</h1>
+		<p class="mt-2 max-w-3xl text-muted-foreground">{ lede }</p>
 	</div>
+}
+
+templ Stat(label, key, value, note string) {
+	@card.Card(card.Props{Size: card.SizeSm}) {
+		@card.Content() {
+			<p class="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">{ label }</p>
+			<p class="mt-2 text-3xl font-semibold tabular-nums" data-stat={ key }>{ value }</p>
+			<p class="mt-2 text-xs text-muted-foreground">{ note }</p>
+		}
+	}
 }
 
 templ Empty(message string) {
-	<div class="grid min-h-40 place-items-center rounded-2xl border border-dashed border-base-300 text-center text-base-content/45">
-		<div><div class="mb-2 text-2xl">◇</div><p>{ message }</p></div>
-	</div>
+	@empty.Empty(empty.Props{Class: "min-h-40 border border-dashed border-border"}) {
+		@empty.Header() {
+			@empty.Media(empty.MediaProps{Variant: empty.MediaVariantIcon}) {
+				◇
+			}
+			@empty.Description() {
+				{ message }
+			}
+		}
+	}
 }
 
+// FilterBar is the query surface above every signal table. The controls stay
+// native — guard.js reads .value off them and re-queries on input/change — and
+// wear the shadcn surface through the Input component and style-nova's
+// cn-native-select.
 templ FilterBar(signal string) {
-	<div data-filter-signal={ signal } class="guard-panel rounded-2xl p-4">
-		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-			<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">Time range</span><select data-filter="range" class="select select-bordered select-sm w-full bg-base-100"><option value="15m">Last 15 minutes</option><option value="1h" selected>Last hour</option><option value="6h">Last 6 hours</option><option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option><option value="all">All retained</option><option value="custom">Custom range</option></select></label>
-			<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">Service</span><select data-filter="service" class="select select-bordered select-sm w-full bg-base-100"><option value="">All services</option></select></label>
-			if signal == "logs" || signal == "traces" {
-				<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">{ filterLevelLabel(signal) }</span><select data-filter="severity" class="select select-bordered select-sm w-full bg-base-100"><option value="">All levels</option></select></label>
-			}
-			if signal == "metrics" {
-				<label class="form-control xl:col-span-2"><span class="label-text mb-1 text-xs text-base-content/50">Metric</span><select data-filter="name" class="select select-bordered select-sm w-full bg-base-100"><option value="">All metrics</option></select></label>
-				<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">Group by</span><select data-filter="group" class="select select-bordered select-sm w-full bg-base-100"><option value="">Metric</option><option value="service">Service</option><option value="instance">Instance</option></select></label>
-			}
-			<label class={ "form-control", templ.KV("xl:col-span-2", signal != "metrics") }><span class="label-text mb-1 text-xs text-base-content/50">Search</span><input data-filter="query" type="search" class="input input-bordered input-sm w-full bg-base-100" placeholder="name, message, trace ID, attribute…"/></label>
-			<button type="button" data-refresh-now class="btn btn-primary btn-sm self-end">Refresh</button>
-		</div>
-		<div data-custom-range class="mt-3 hidden grid gap-3 border-t border-base-300/60 pt-3 sm:grid-cols-2">
-			<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">From</span><input data-filter="from" type="datetime-local" class="input input-bordered input-sm bg-base-100"/></label>
-			<label class="form-control"><span class="label-text mb-1 text-xs text-base-content/50">To</span><input data-filter="to" type="datetime-local" class="input input-bordered input-sm bg-base-100"/></label>
-		</div>
-	</div>
-}
-
-templ EventTable(events []telemetry.Event, signal string) {
-	<div class="overflow-x-auto">
-		<table class="table table-sm">
-			<thead><tr><th>Time</th><th>Signal</th><th>Service</th><th>Event</th><th>Context</th></tr></thead>
-			<tbody data-event-rows data-signal={ signal }>
-				for _, event := range events {
-					if signal == "" || event.Signal == signal {
-						<tr class="event-row cursor-pointer" data-event-id={ fmt.Sprint(event.ID) } tabindex="0">
-							<td class="whitespace-nowrap font-mono text-xs text-base-content/50">{ event.Timestamp.Local().Format("15:04:05.000") }</td>
-							<td><span class={ "badge badge-sm", signalClass(event) }>{ eventLabel(event) }</span></td>
-							<td><div class="font-medium">{ event.Service }</div><div class="font-mono text-[.65rem] text-base-content/40">{ event.Instance }</div></td>
-							<td class="max-w-lg"><div class="truncate">{ eventText(event) }</div></td>
-							<td class="font-mono text-[.65rem] text-base-content/40">{ shortID(event.TraceID) }</td>
-						</tr>
+	<div data-filter-signal={ signal }>
+		@card.Card(card.Props{Size: card.SizeSm}) {
+			@card.Content() {
+				<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+					@Select("range", "Time range", "") {
+						<option value="15m">Last 15 minutes</option>
+						<option value="1h" selected>Last hour</option>
+						<option value="6h">Last 6 hours</option>
+						<option value="24h">Last 24 hours</option>
+						<option value="7d">Last 7 days</option>
+						<option value="all">All retained</option>
+						<option value="custom">Custom range</option>
 					}
-				}
-			</tbody>
-		</table>
+					@Select("service", "Service", "") {
+						<option value="">All services</option>
+					}
+					if signal == "logs" || signal == "traces" {
+						@Select("severity", filterLevelLabel(signal), "") {
+							<option value="">All levels</option>
+						}
+					}
+					if signal == "metrics" {
+						@Select("name", "Metric", "xl:col-span-2") {
+							<option value="">All metrics</option>
+						}
+						@Select("group", "Group by", "") {
+							<option value="">Metric</option>
+							<option value="service">Service</option>
+							<option value="instance">Instance</option>
+						}
+					}
+					@Field(searchSpan(signal), signal+"-query", "Search") {
+						@input.Input(input.Props{
+							ID:          signal + "-query",
+							Type:        "search",
+							Placeholder: "name, message, trace ID, attribute…",
+							Attributes:  templ.Attributes{"data-filter": "query"},
+						})
+					}
+					<div class="flex items-end">
+						@button.Button(button.Props{
+							Size:       button.SizeSm,
+							Class:      "w-full",
+							Attributes: templ.Attributes{"data-refresh-now": true},
+						}) {
+							Refresh
+						}
+					</div>
+				</div>
+				<div data-custom-range class="hidden">
+					<div class="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
+						@Field("", signal+"-from", "From") {
+							@input.Input(input.Props{
+								ID:         signal + "-from",
+								Type:       "datetime-local",
+								Attributes: templ.Attributes{"data-filter": "from"},
+							})
+						}
+						@Field("", signal+"-to", "To") {
+							@input.Input(input.Props{
+								ID:         signal + "-to",
+								Type:       "datetime-local",
+								Attributes: templ.Attributes{"data-filter": "to"},
+							})
+						}
+					</div>
+				</div>
+			}
+		}
 	</div>
 }
 
-func eventText(event telemetry.Event) string {
-	if event.Message != "" { return event.Message }
-	if event.Name != "" { return event.Name }
-	if event.Value != nil { return fmt.Sprintf("%s = %g", event.Name, *event.Value) }
-	return "telemetry event"
+// Select is a native <select> wearing style-nova's cn-native-select surface.
+// shadcn-templ's own select is a JavaScript listbox; guard.js talks to these
+// through .value, so the platform control is both simpler and correct here.
+templ Select(name, label, class string) {
+	<label class={ "flex flex-col gap-1.5", class }>
+		<span class="text-xs font-medium text-muted-foreground">{ label }</span>
+		<span class="relative flex items-center">
+			<select
+				data-filter={ name }
+				class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"
+			>
+				{ children... }
+			</select>
+			@chevron()
+		</span>
+	</label>
 }
 
-func eventLabel(event telemetry.Event) string {
-	if event.Signal == "logs" && event.Severity != "" { return strings.ToLower(event.Severity) }
-	return strings.TrimSuffix(event.Signal, "s")
+// Field labels a control that is not one of shadcn's own form components.
+templ Field(class, id, label string) {
+	<div class={ "flex flex-col gap-1.5", class }>
+		<label for={ id } class="text-xs font-medium text-muted-foreground">{ label }</label>
+		{ children... }
+	</div>
 }
 
-func signalClass(event telemetry.Event) string {
-	severity := strings.ToUpper(event.Severity)
-	if strings.Contains(severity, "ERROR") || strings.Contains(severity, "FATAL") { return "badge-error" }
-	switch event.Signal { case "traces": return "badge-secondary"; case "metrics": return "badge-info" }
-	return "badge-ghost"
+templ Pagination(signal string) {
+	<div data-pagination={ signal } class="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
+		<p data-page-summary class="text-xs text-muted-foreground">Showing the newest events</p>
+		<div class="flex items-center gap-2">
+			@button.Button(button.Props{
+				Variant:  button.VariantOutline,
+				Size:     button.SizeSm,
+				Disabled: true,
+				Attributes: templ.Attributes{
+					"data-page-action": "previous",
+					"aria-label":       "Previous " + signal + " page",
+				},
+			}) {
+				← Previous
+			}
+			<span data-page-number class="min-w-0 text-center text-xs font-medium text-muted-foreground">Page 1</span>
+			@button.Button(button.Props{
+				Variant:  button.VariantOutline,
+				Size:     button.SizeSm,
+				Disabled: true,
+				Attributes: templ.Attributes{
+					"data-page-action": "next",
+					"aria-label":       "Next " + signal + " page",
+				},
+			}) {
+				Next →
+			}
+		</div>
+	</div>
 }
 
-func shortID(value string) string {
-	if len(value) > 12 { return value[:12] + "…" }
-	return value
+// TableHead renders a signal table's header row. The bodies are filled by
+// guard.js, so the column list is the only thing the page owns.
+templ TableHead(columns []string) {
+	@table.Header() {
+		@table.Row() {
+			for _, column := range columns {
+				@table.Head(table.HeadProps{Class: "text-xs font-medium uppercase tracking-wider text-muted-foreground"}) {
+					{ column }
+				}
+			}
+		}
+	}
+}
+
+templ chevron() {
+	<svg class="cn-native-select-icon pointer-events-none absolute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="m6 9 6 6 6-6"></path>
+	</svg>
+}
+
+templ IconSettings() {
+	<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+		<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path>
+		<path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3V9.55h.09A1.7 1.7 0 0 0 4.1 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.56 3.7l.06.06A1.7 1.7 0 0 0 8.5 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2.3h4.05v.09A1.7 1.7 0 0 0 15 4.1a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.5a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09v4.05h-.09A1.7 1.7 0 0 0 19.4 15Z"></path>
+	</svg>
 }
 
 func filterLevelLabel(signal string) string {
-	if signal == "logs" { return "Severity" }
+	if signal == "logs" {
+		return "Severity"
+	}
 	return "Status"
 }
 
-func Ago(value time.Time) string {
-	if value.IsZero() { return "never" }
-	d := time.Since(value)
-	if d < time.Minute { return fmt.Sprintf("%ds ago", max(0, int(d.Seconds()))) }
-	if d < time.Hour { return fmt.Sprintf("%dm ago", int(d.Minutes())) }
-	return fmt.Sprintf("%dh ago", int(d.Hours()))
+// The metrics bar spends two columns on the metric picker, so its search box
+// takes one; every other signal gives search the width it can spare.
+func searchSpan(signal string) string {
+	if signal == "metrics" {
+		return ""
+	}
+	return "xl:col-span-2"
+}
+
+// current renders aria-current as the ARIA spec spells it: "page" for the one
+// the user is on, "false" otherwise — a value the aria-[current=page] variant
+// does not match, so the attribute can stay on every link and only the styling
+// changes.
+func Current(active bool) string {
+	if active {
+		return "page"
+	}
+	return "false"
 }

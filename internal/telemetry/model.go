@@ -16,88 +16,21 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mirairoad/guard/internal/telemetry/model"
+
 	_ "modernc.org/sqlite"
 )
 
-type Event struct {
-	ID           uint64         `json:"id"`
-	Signal       string         `json:"signal"`
-	Timestamp    time.Time      `json:"timestamp"`
-	ReceivedAt   time.Time      `json:"received_at"`
-	Service      string         `json:"service"`
-	Instance     string         `json:"instance,omitempty"`
-	Scope        string         `json:"scope,omitempty"`
-	Name         string         `json:"name,omitempty"`
-	Severity     string         `json:"severity,omitempty"`
-	Message      string         `json:"message,omitempty"`
-	TraceID      string         `json:"trace_id,omitempty"`
-	SpanID       string         `json:"span_id,omitempty"`
-	ParentSpanID string         `json:"parent_span_id,omitempty"`
-	Kind         string         `json:"kind,omitempty"`
-	DurationMS   float64        `json:"duration_ms,omitempty"`
-	Value        *float64       `json:"value,omitempty"`
-	Unit         string         `json:"unit,omitempty"`
-	MetricType   string         `json:"metric_type,omitempty"`
-	Attributes   map[string]any `json:"attributes,omitempty"`
-}
-
-type Filter struct {
-	Signal   string
-	Service  string
-	Severity string
-	Name     string
-	Query    string
-	From     time.Time
-	To       time.Time
-	Limit    int
-}
-
-type Instance struct {
-	Service  string    `json:"service"`
-	Instance string    `json:"instance"`
-	LastSeen time.Time `json:"last_seen"`
-	Logs     int       `json:"logs"`
-	Errors   int       `json:"errors"`
-	Spans    int       `json:"spans"`
-	Metrics  int       `json:"metrics"`
-}
-
-type Summary struct {
-	StartedAt time.Time  `json:"started_at"`
-	Capacity  int        `json:"capacity"`
-	Stored    int        `json:"stored"`
-	Received  uint64     `json:"received"`
-	Logs      int        `json:"logs"`
-	Errors    int        `json:"errors"`
-	Spans     int        `json:"spans"`
-	Metrics   int        `json:"metrics"`
-	Instances []Instance `json:"instances"`
-	Recent    []Event    `json:"recent"`
-}
-
-type Settings struct {
-	DatabasePath   string `json:"database_path"`
-	RetentionHours int    `json:"retention_hours"`
-	MaxEvents      int    `json:"max_events"`
-}
-
-type Facets struct {
-	Services    []string `json:"services"`
-	Severities  []string `json:"severities"`
-	MetricNames []string `json:"metric_names"`
-}
-
-type MetricPoint struct {
-	Timestamp time.Time `json:"timestamp"`
-	Value     float64   `json:"value"`
-}
-
-type MetricSeries struct {
-	Key    string        `json:"key"`
-	Unit   string        `json:"unit,omitempty"`
-	Type   string        `json:"type,omitempty"`
-	Points []MetricPoint `json:"points"`
-}
+// The data types live in ./model so the generated client can import them from
+// a wasm build; these aliases mean nothing else in guard had to change.
+type Event = model.Event
+type Filter = model.Filter
+type Instance = model.Instance
+type Summary = model.Summary
+type Settings = model.Settings
+type Facets = model.Facets
+type MetricPoint = model.MetricPoint
+type MetricSeries = model.MetricSeries
 
 type Store struct {
 	db         *sql.DB
@@ -114,6 +47,16 @@ type Store struct {
 type writeRequest struct {
 	events []Event
 	done   chan error
+}
+
+type summaryCounts struct{ stored, logs, errors, spans, metrics int }
+
+func (c *summaryCounts) add(other summaryCounts) {
+	c.stored += other.stored
+	c.logs += other.logs
+	c.errors += other.errors
+	c.spans += other.spans
+	c.metrics += other.metrics
 }
 
 var memoryStoreID atomic.Uint64
@@ -208,6 +151,7 @@ CREATE INDEX IF NOT EXISTS idx_events_signal_time ON events(signal, timestamp_ns
 CREATE INDEX IF NOT EXISTS idx_events_service_time ON events(service, timestamp_ns DESC);
 CREATE INDEX IF NOT EXISTS idx_events_trace ON events(trace_id);
 CREATE INDEX IF NOT EXISTS idx_events_metric_time ON events(name, timestamp_ns DESC) WHERE signal = 'metrics';
+CREATE INDEX IF NOT EXISTS idx_events_time ON events(timestamp_ns DESC, id DESC);
 CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   retention_hours INTEGER NOT NULL,
@@ -217,7 +161,26 @@ CREATE TABLE IF NOT EXISTS metadata (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   started_at_ns INTEGER NOT NULL,
   total_received INTEGER NOT NULL DEFAULT 0
-);`
+);
+CREATE TABLE IF NOT EXISTS event_totals (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  stored INTEGER NOT NULL DEFAULT 0,
+  logs INTEGER NOT NULL DEFAULT 0,
+  errors INTEGER NOT NULL DEFAULT 0,
+  spans INTEGER NOT NULL DEFAULT 0,
+  metrics INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS event_instances (
+  service TEXT NOT NULL,
+  instance TEXT NOT NULL,
+  last_seen_ns INTEGER NOT NULL,
+  logs INTEGER NOT NULL DEFAULT 0,
+  errors INTEGER NOT NULL DEFAULT 0,
+  spans INTEGER NOT NULL DEFAULT 0,
+  metrics INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(service, instance)
+);
+CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen_ns DESC);`
 	_, err := s.db.Exec(schema)
 	if err != nil {
 		return fmt.Errorf("migrate sqlite: %w", err)
@@ -228,7 +191,18 @@ CREATE TABLE IF NOT EXISTS metadata (
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO metadata(id, started_at_ns, total_received) VALUES(1, ?, 0)`, time.Now().UTC().UnixNano()); err != nil {
 		return fmt.Errorf("initialize metadata: %w", err)
 	}
-	return nil
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO event_totals(id) VALUES(1)`); err != nil {
+		return fmt.Errorf("initialize event totals: %w", err)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := rebuildSummaryStats(tx); err != nil {
+		return fmt.Errorf("initialize summary statistics: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Close() error {
@@ -307,6 +281,9 @@ func (s *Store) writeLoop() {
 }
 
 func (s *Store) insertRequests(requests []writeRequest) error {
+	type instanceKey struct{ service, instance string }
+	instances := make(map[instanceKey]summaryCounts)
+	totals := summaryCounts{}
 	now := time.Now().UTC()
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -342,7 +319,37 @@ signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,
 				e.Severity, e.Message, e.TraceID, e.SpanID, e.ParentSpanID, e.Kind, e.DurationMS, metricValue, e.Unit, e.MetricType, string(attrs)); err != nil {
 				return fmt.Errorf("insert telemetry: %w", err)
 			}
+			increment := summaryCounts{stored: 1}
+			switch e.Signal {
+			case "logs":
+				increment.logs = 1
+			case "traces":
+				increment.spans = 1
+			case "metrics":
+				increment.metrics = 1
+			}
+			severity := strings.ToUpper(e.Severity)
+			if strings.Contains(severity, "ERROR") || strings.Contains(severity, "FATAL") {
+				increment.errors = 1
+			}
+			totals.add(increment)
+			key := instanceKey{service: e.Service, instance: e.Instance}
+			value := instances[key]
+			value.add(increment)
+			instances[key] = value
 			total++
+		}
+	}
+	if _, err := tx.Exec(`UPDATE event_totals SET stored=stored+?,logs=logs+?,errors=errors+?,spans=spans+?,metrics=metrics+? WHERE id=1`,
+		totals.stored, totals.logs, totals.errors, totals.spans, totals.metrics); err != nil {
+		return err
+	}
+	for key, value := range instances {
+		if _, err := tx.Exec(`INSERT INTO event_instances(service,instance,last_seen_ns,logs,errors,spans,metrics)
+VALUES(?,?,?,?,?,?,?) ON CONFLICT(service,instance) DO UPDATE SET
+last_seen_ns=MAX(last_seen_ns,excluded.last_seen_ns),logs=logs+excluded.logs,errors=errors+excluded.errors,spans=spans+excluded.spans,metrics=metrics+excluded.metrics`,
+			key.service, key.instance, now.UnixNano(), value.logs, value.errors, value.spans, value.metrics); err != nil {
+			return err
 		}
 	}
 	if _, err := tx.Exec(`UPDATE metadata SET total_received = total_received + ? WHERE id = 1`, total); err != nil {
@@ -363,9 +370,12 @@ func (s *Store) Query(f Filter) ([]Event, error) {
 	if f.Limit <= 0 || f.Limit > 1000 {
 		f.Limit = 100
 	}
+	if f.Offset < 0 {
+		f.Offset = 0
+	}
 	where, args := filterSQL(f)
 	rows, err := s.db.Query(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json
-FROM events `+where+` ORDER BY timestamp_ns DESC, id DESC LIMIT ?`, append(args, f.Limit)...)
+FROM events `+where+` ORDER BY timestamp_ns DESC, id DESC LIMIT ? OFFSET ?`, append(args, f.Limit, f.Offset)...)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +443,7 @@ func scanEvent(row scanner) (Event, error) {
 }
 
 func scanEvents(rows *sql.Rows) ([]Event, error) {
-	var out []Event
+	out := make([]Event, 0)
 	for rows.Next() {
 		e, err := scanEvent(rows)
 		if err != nil {
@@ -461,14 +471,11 @@ func (s *Store) Snapshot() (Summary, error) {
 		return summary, err
 	}
 	summary.StartedAt = time.Unix(0, started).UTC()
-	if err := s.db.QueryRow(`SELECT COUNT(*),
-COALESCE(SUM(signal='logs'),0), COALESCE(SUM(UPPER(severity) LIKE '%ERROR%' OR UPPER(severity) LIKE '%FATAL%'),0),
-COALESCE(SUM(signal='traces'),0), COALESCE(SUM(signal='metrics'),0) FROM events`).Scan(&summary.Stored, &summary.Logs, &summary.Errors, &summary.Spans, &summary.Metrics); err != nil {
+	if err := s.db.QueryRow(`SELECT stored,logs,errors,spans,metrics FROM event_totals WHERE id=1`).Scan(&summary.Stored, &summary.Logs, &summary.Errors, &summary.Spans, &summary.Metrics); err != nil {
 		return summary, err
 	}
-	rows, err := s.db.Query(`SELECT service,instance,MAX(received_at_ns),
-SUM(signal='logs'),SUM(UPPER(severity) LIKE '%ERROR%' OR UPPER(severity) LIKE '%FATAL%'),SUM(signal='traces'),SUM(signal='metrics')
-FROM events GROUP BY service,instance ORDER BY MAX(received_at_ns) DESC LIMIT 100`)
+	rows, err := s.db.Query(`SELECT service,instance,last_seen_ns,logs,errors,spans,metrics
+FROM event_instances ORDER BY last_seen_ns DESC LIMIT 100`)
 	if err != nil {
 		return summary, err
 	}
@@ -597,10 +604,33 @@ func (s *Store) Purge() (int64, error) {
 		return removed, err
 	}
 	bounded, _ := result.RowsAffected()
+	if removed+bounded > 0 {
+		if err := rebuildSummaryStats(tx); err != nil {
+			return removed + bounded, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return removed + bounded, err
 	}
 	return removed + bounded, nil
+}
+
+func rebuildSummaryStats(tx *sql.Tx) error {
+	if _, err := tx.Exec(`UPDATE event_totals SET (stored,logs,errors,spans,metrics) = (
+SELECT COUNT(*),COALESCE(SUM(signal='logs'),0),
+COALESCE(SUM(UPPER(severity) LIKE '%ERROR%' OR UPPER(severity) LIKE '%FATAL%'),0),
+COALESCE(SUM(signal='traces'),0),COALESCE(SUM(signal='metrics'),0) FROM events
+) WHERE id=1`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM event_instances`); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`INSERT INTO event_instances(service,instance,last_seen_ns,logs,errors,spans,metrics)
+SELECT service,instance,MAX(received_at_ns),
+SUM(signal='logs'),SUM(UPPER(severity) LIKE '%ERROR%' OR UPPER(severity) LIKE '%FATAL%'),SUM(signal='traces'),SUM(signal='metrics')
+FROM events GROUP BY service,instance`)
+	return err
 }
 
 type snapshotKey struct{}

@@ -1,0 +1,30 @@
+package traces
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/table"
+	"github.com/mirairoad/guard/client/lifecycle"
+	"github.com/mirairoad/guard/client/ui"
+)
+
+templ Head() {
+	<title>Traces — Guard</title>
+	<meta name="description" content="Inspect spans by time, service, status, duration and trace context."/>
+}
+
+templ Page() {
+	<section class="space-y-6">
+		@ui.PageHeading("Request paths", "Traces", "Inspect spans by time, service, status, duration, parent, and trace context.")
+		@ui.FilterBar("traces")
+		@card.Card(card.Props{Class: "gap-0 py-0"}) {
+			@table.Table() {
+				@ui.TableHead([]string{"Start", "Status", "Service", "Span", "Kind", "Duration", "Trace"})
+				@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-trace-rows": true}})
+			}
+			@ui.Pagination("traces")
+		}
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("traces") }
+func Unmount() { lifecycle.Unmount("traces") }

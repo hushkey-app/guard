@@ -30,21 +30,14 @@ type Handler struct {
 	Token string
 }
 
+// Register mounts the OTLP receiver. Only the protobuf half lives here: the
+// JSON API the dashboard reads is declared in server/apis and registered from
+// main.go, because a typed envelope around an OTLP ExportRequest would buy
+// nothing and these three routes must stay byte-compatible with every exporter.
 func (h Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/logs", h.logs)
 	mux.HandleFunc("POST /v1/traces", h.traces)
 	mux.HandleFunc("POST /v1/metrics", h.metrics)
-	mux.HandleFunc("GET /api/events", h.events)
-	mux.HandleFunc("GET /api/events/{id}", h.event)
-	mux.HandleFunc("GET /api/logs", h.events)
-	mux.HandleFunc("POST /api/logs", h.simpleLog)
-	mux.HandleFunc("GET /api/facets", h.facets)
-	mux.HandleFunc("GET /api/metrics/series", h.metricSeries)
-	mux.HandleFunc("GET /api/summary", h.summary)
-	mux.HandleFunc("GET /api/settings", h.settings)
-	mux.HandleFunc("PUT /api/settings", h.settings)
-	mux.HandleFunc("POST /api/settings/purge", h.purge)
-	mux.HandleFunc("GET /healthz", h.health)
 }
 
 func (h Handler) authorize(w http.ResponseWriter, r *http.Request) bool {
@@ -150,177 +143,6 @@ func writeProto(w http.ResponseWriter, jsonMode bool, message proto.Message) {
 		return
 	}
 	w.Write(body)
-}
-
-func (h Handler) events(w http.ResponseWriter, r *http.Request) {
-	filter, err := requestFilter(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if r.URL.Path == "/api/logs" {
-		filter.Signal = "logs"
-	}
-	events, err := h.Store.Query(filter)
-	if err != nil {
-		http.Error(w, "query telemetry: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, events)
-}
-
-func requestFilter(r *http.Request) (telemetry.Filter, error) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	filter := telemetry.Filter{Signal: r.URL.Query().Get("signal"), Service: r.URL.Query().Get("service"),
-		Severity: r.URL.Query().Get("severity"), Name: r.URL.Query().Get("name"), Query: r.URL.Query().Get("q"), Limit: limit}
-	var err error
-	if value := r.URL.Query().Get("from"); value != "" {
-		filter.From, err = time.Parse(time.RFC3339Nano, value)
-		if err != nil {
-			return filter, fmt.Errorf("invalid from time: %w", err)
-		}
-	}
-	if value := r.URL.Query().Get("to"); value != "" {
-		filter.To, err = time.Parse(time.RFC3339Nano, value)
-		if err != nil {
-			return filter, fmt.Errorf("invalid to time: %w", err)
-		}
-	}
-	return filter, nil
-}
-
-func (h Handler) event(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid event id", http.StatusBadRequest)
-		return
-	}
-	event, err := h.Store.Event(id)
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no rows") {
-			http.Error(w, "event not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, event)
-}
-
-type simpleLog struct {
-	Timestamp  time.Time      `json:"timestamp"`
-	Service    string         `json:"service"`
-	Instance   string         `json:"instance"`
-	Severity   string         `json:"severity"`
-	Message    string         `json:"message"`
-	TraceID    string         `json:"trace_id"`
-	SpanID     string         `json:"span_id"`
-	Attributes map[string]any `json:"attributes"`
-}
-
-func (h Handler) simpleLog(w http.ResponseWriter, r *http.Request) {
-	if !h.authorize(w, r) {
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	var input simpleLog
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(input.Message) == "" {
-		http.Error(w, "message is required", http.StatusBadRequest)
-		return
-	}
-	if err := h.Store.Add(telemetry.Event{Signal: "logs", Timestamp: input.Timestamp, Service: input.Service, Instance: input.Instance,
-		Severity: input.Severity, Message: input.Message, TraceID: input.TraceID, SpanID: input.SpanID, Attributes: input.Attributes}); err != nil {
-		http.Error(w, "store log: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusAccepted)
-}
-
-func (h Handler) summary(w http.ResponseWriter, _ *http.Request) {
-	summary, err := h.Store.Snapshot()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, summary)
-}
-
-func (h Handler) facets(w http.ResponseWriter, _ *http.Request) {
-	value, err := h.Store.Facets()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, value)
-}
-
-func (h Handler) metricSeries(w http.ResponseWriter, r *http.Request) {
-	filter, err := requestFilter(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	filter.Name = r.URL.Query().Get("name")
-	value, err := h.Store.Metrics(filter, r.URL.Query().Get("group_by"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, value)
-}
-
-func (h Handler) settings(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		value, err := h.Store.Settings()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, value)
-		return
-	}
-	if !h.authorize(w, r) {
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-	var value telemetry.Settings
-	if err := json.NewDecoder(r.Body).Decode(&value); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := h.Store.UpdateSettings(value); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	value, _ = h.Store.Settings()
-	writeJSON(w, value)
-}
-
-func (h Handler) purge(w http.ResponseWriter, r *http.Request) {
-	if !h.authorize(w, r) {
-		return
-	}
-	removed, err := h.Store.Purge()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, map[string]int64{"removed": removed})
-}
-func (h Handler) health(w http.ResponseWriter, _ *http.Request) {
-	if _, err := h.Store.Settings(); err != nil {
-		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	writeJSON(w, map[string]string{"status": "ok"})
-}
-func writeJSON(w http.ResponseWriter, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(value)
 }
 
 func logEvents(req *collectorlogspb.ExportLogsServiceRequest) []telemetry.Event {

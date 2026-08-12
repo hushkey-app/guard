@@ -1,0 +1,30 @@
+package logs
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/table"
+	"github.com/mirairoad/guard/client/lifecycle"
+	"github.com/mirairoad/guard/client/ui"
+)
+
+templ Head() {
+	<title>Logs — Guard</title>
+	<meta name="description" content="Search live logs received over OTLP or JSON."/>
+}
+
+templ Page() {
+	<section class="space-y-6">
+		@ui.PageHeading("Live tail", "Logs", "Filter retained logs, pause the live stream, and open any row for complete context.")
+		@ui.FilterBar("logs")
+		@card.Card(card.Props{Class: "gap-0 py-0"}) {
+			@table.Table() {
+				@ui.TableHead([]string{"Time", "Severity", "Service", "Message", "Trace"})
+				@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-log-rows": true}})
+			}
+			@ui.Pagination("logs")
+		}
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("logs") }
+func Unmount() { lifecycle.Unmount("logs") }

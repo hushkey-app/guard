@@ -1,0 +1,156 @@
+package settings
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/alert"
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/field"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/axadrn/shadcn-templ/v2/components/item"
+	"github.com/mirairoad/guard/client/lifecycle"
+	"github.com/mirairoad/guard/client/ui"
+)
+
+templ Head() {
+	<title>Settings — Guard</title>
+	<meta name="description" content="Configure Guard storage and telemetry retention."/>
+}
+
+templ Page() {
+	<section class="space-y-8">
+		@ui.PageHeading("Workspace", "Settings", "Manage Guard's storage, configuration, and administrative controls.")
+		<div class="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
+			// A second navigation level so the primary sidebar stays focused as
+			// this section grows.
+			<aside class="lg:sticky lg:top-24">
+				<p class="mb-3 px-3 text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Settings</p>
+				@item.Group(item.GroupProps{Class: "gap-1", Attributes: templ.Attributes{"aria-label": "Settings sections"}}) {
+					@item.Item(item.Props{Href: "/settings", Size: item.SizeSm, Variant: item.VariantOutline, Class: "border-primary/35 bg-primary/10", Attributes: templ.Attributes{"aria-current": "page"}}) {
+						@item.Media(item.MediaProps{Variant: item.MediaVariantIcon}) {
+							▤
+						}
+						@item.Content() {
+							@item.Title() {
+								Data storage
+							}
+							@item.Description() {
+								Retention and cleanup
+							}
+						}
+					}
+					@item.Item(item.Props{Size: item.SizeSm, Class: "opacity-50", Attributes: templ.Attributes{"aria-disabled": "true"}}) {
+						@item.Media(item.MediaProps{Variant: item.MediaVariantIcon}) {
+							⌘
+						}
+						@item.Content() {
+							@item.Title() {
+								Config files
+							}
+							@item.Description() {
+								Coming soon
+							}
+						}
+					}
+				}
+				<p class="mt-4 px-3 text-xs leading-relaxed text-muted-foreground">New settings pages can be added here without crowding the main navigation.</p>
+			</aside>
+			<div class="min-w-0 space-y-6">
+				<div>
+					<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Storage policy</p>
+					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Data storage</h2>
+					<p class="mt-2 text-muted-foreground">Control how much telemetry Guard keeps in its SQLite database.</p>
+				</div>
+				@card.Card() {
+					@card.Content() {
+						<form data-settings-form class="space-y-5">
+							@field.Field() {
+								@field.Label(field.LabelProps{For: "setting-database-path"}) {
+									SQLite database
+								}
+								@input.Input(input.Props{
+									ID:         "setting-database-path",
+									ReadOnly:   true,
+									Class:      "font-mono",
+									Attributes: templ.Attributes{"data-setting": "database_path"},
+								})
+								@field.Description() {
+									Set with <code class="font-mono">GUARD_DB_PATH</code> or <code class="font-mono">-db</code>, then mount its directory as a Docker volume.
+								}
+							}
+							<div class="grid gap-4 sm:grid-cols-2">
+								@field.Field() {
+									@field.Label(field.LabelProps{For: "setting-retention-hours"}) {
+										Retention
+									}
+									<div class="flex items-stretch">
+										@input.Input(input.Props{
+											ID:         "setting-retention-hours",
+											Type:       "number",
+											Required:   true,
+											Class:      "rounded-r-none",
+											Attributes: templ.Attributes{"data-setting": "retention_hours", "min": "1", "max": "8760"},
+										})
+										<span class="grid place-items-center rounded-r-lg border border-l-0 border-input px-3 text-sm text-muted-foreground">hours</span>
+									</div>
+									@field.Description() {
+										Events older than this are removed.
+									}
+								}
+								@field.Field() {
+									@field.Label(field.LabelProps{For: "setting-max-events"}) {
+										Maximum events
+									}
+									@input.Input(input.Props{
+										ID:         "setting-max-events",
+										Type:       "number",
+										Required:   true,
+										Attributes: templ.Attributes{"data-setting": "max_events", "min": "100", "max": "100000000"},
+									})
+									@field.Description() {
+										Oldest events are removed after this limit.
+									}
+								}
+							</div>
+							@field.Field() {
+								@field.Label(field.LabelProps{For: "setting-token"}) {
+									Admin token
+									<span class="font-normal text-muted-foreground">(only when GUARD_TOKEN is set)</span>
+								}
+								@input.Input(input.Props{
+									ID:          "setting-token",
+									Type:        "password",
+									Placeholder: "Bearer token for saving settings",
+									Class:       "font-mono",
+									Attributes:  templ.Attributes{"data-setting": "token", "autocomplete": "off"},
+								})
+								@field.Description() {
+									Kept only in this browser tab; it is never written to SQLite.
+								}
+							}
+							<div class="flex flex-wrap items-center gap-3 border-t border-border pt-5">
+								@button.Button(button.Props{Type: button.TypeSubmit}) {
+									Save policy
+								}
+								@button.Button(button.Props{Variant: button.VariantGhost, Attributes: templ.Attributes{"data-purge-now": true}}) {
+									Run cleanup now
+								}
+								<span data-settings-status class="text-sm text-muted-foreground"></span>
+							</div>
+						</form>
+					}
+				}
+				@alert.Alert() {
+					@alert.Title() {
+						Safe Docker path
+					}
+					@alert.Description() {
+						Use <code class="font-mono">GUARD_DB_PATH=/data/guard.db</code> and mount a named volume at <code class="font-mono">/data</code>. Keep the database and its WAL files on the same local volume.
+					}
+				}
+			</div>
+		</div>
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("settings") }
+func Unmount() { lifecycle.Unmount("settings") }

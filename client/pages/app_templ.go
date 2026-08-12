@@ -9,6 +9,7 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
 	"github.com/mirairoad/guard/client/ui"
 	"github.com/mirairoad/howl-go/core/router"
 )
@@ -34,28 +35,67 @@ func App(title, head string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\" data-theme=\"business\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><!-- `style-nova` is not decoration: style-nova.css nests every cn-* rule\n\t     under it, so shadcn components are unstyled without it on an ancestor.\n\t     `dark` is what the dark: variants key off. --><html lang=\"en\" class=\"dark style-nova\" data-transition-none><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 14, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 21, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"stylesheet\" href=\"/static/app.css\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"stylesheet\" href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templ.JSONScript("howl-wasm-routes", router.NeedsWasm(router.Routes(ctx))).Render(ctx, templ_7745c5c3_Buffer)
+		var templ_7745c5c3_Var3 templ.SafeURL
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(router.Asset(ctx, "app.css"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 22, Col: 61}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<script src=\"/static/app.js\" type=\"module\"></script><script src=\"/static/guard.js\" type=\"module\"></script><!--page-head-->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><!-- What the client runtime needs to know about the Go half. Guard\n\t\t\t     renders everything on the server, so this publishes an empty\n\t\t\t     wasm list and no data endpoint — and the client makes no\n\t\t\t     speculative fetch for either. -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templ.JSONScript("howl-client", router.ClientConfig(ctx)).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<script src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 string
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Asset(ctx, "app.js"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 28, Col: 44}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" type=\"module\"></script><script src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Asset(ctx, "guard.js"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 29, Col: 46}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" type=\"module\"></script><!--page-head-->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -63,33 +103,113 @@ func App(title, head string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<!--/page-head--></head><body class=\"min-h-screen text-base-content\"><div class=\"drawer lg:drawer-open\"><input id=\"nav-drawer\" type=\"checkbox\" class=\"drawer-toggle\"><div class=\"drawer-content min-w-0\"><header class=\"sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-base-300/60 bg-base-100/80 px-4 backdrop-blur lg:px-8\"><label for=\"nav-drawer\" class=\"btn btn-square btn-ghost btn-sm lg:hidden\" aria-label=\"Open navigation\">☰</label><div class=\"min-w-0 flex-1\"><p class=\"truncate text-sm font-semibold\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<!--/page-head--></head><body class=\"min-h-screen bg-background font-sans text-foreground antialiased\"><!-- The sidebar is a sibling of this checkbox so `peer-checked:` can\n\t\t\t     reach it: below lg it slides in, from lg it is simply always\n\t\t\t     open. No JavaScript owns the navigation. --><input id=\"nav-drawer\" type=\"checkbox\" class=\"peer sr-only\"> <label for=\"nav-drawer\" aria-hidden=\"true\" class=\"fixed inset-0 z-30 hidden bg-black/60 peer-checked:block lg:peer-checked:hidden\"></label><aside class=\"fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r border-sidebar-border bg-sidebar p-4 transition-transform duration-200 peer-checked:translate-x-0 lg:translate-x-0\"><a href=\"/\" class=\"mb-7 flex items-center gap-3 px-2 py-1\"><div class=\"grid size-9 place-items-center rounded-xl bg-primary text-lg font-black text-primary-foreground\">G</div><div><div class=\"font-semibold tracking-tight\">Guard</div><div class=\"text-[.65rem] uppercase tracking-[.2em] text-muted-foreground\">watch the pack</div></div></a><nav class=\"flex flex-col gap-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(title)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 29, Col: 83}
+		for _, route := range router.Nav(router.Routes(ctx)) {
+			if route.Pattern != "/settings" {
+				templ_7745c5c3_Err = ui.NavLink(route.Pattern, route.Label).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</p></div><button type=\"button\" data-live-toggle class=\"btn btn-ghost btn-sm gap-2\" aria-label=\"Pause live refresh\"><span class=\"signal-dot\" data-live-dot></span><span data-live-status>connecting</span><span data-live-action class=\"text-base-content/35\">Pause</span></button></header><main id=\"outlet\" data-route=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Current(ctx))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 34, Col: 55}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</nav><div class=\"mt-auto flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 text-xs leading-5 text-muted-foreground\"><div class=\"min-w-0\"><div class=\"mb-1 font-semibold text-foreground\">OTLP/HTTP</div><code class=\"break-all font-mono\">localhost:4318</code></div><!-- Ghost by default, tinted by aria-current: the same reason\n\t\t\t\t\t     NavLink works that way — this sits outside #outlet, so a\n\t\t\t\t\t     variant chosen at render time would freeze. -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" class=\"mx-auto max-w-[96rem] p-4 lg:p-8\">")
+		templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = ui.IconSettings().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Href:    "/settings",
+			Size:    button.SizeIconSm,
+			Variant: button.VariantGhost,
+			Class:   "aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground",
+			Attributes: templ.Attributes{
+				"aria-label":    "Open settings",
+				"title":         "Settings",
+				"data-nav-link": "true",
+				"aria-current":  ui.Current(router.Current(ctx) == "/settings"),
+			},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></aside><div class=\"flex min-h-screen flex-col lg:pl-64\"><header class=\"sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-background px-4 lg:px-8\"><label for=\"nav-drawer\" class=\"grid size-8 cursor-pointer place-items-center rounded-lg border border-border text-muted-foreground hover:text-foreground lg:hidden\" aria-label=\"Open navigation\">☰</label><div class=\"min-w-0 flex-1\"><p data-page-title class=\"truncate text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var7 string
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(title)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 83, Col: 69}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</p></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var8 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<span class=\"signal-dot\" data-live-dot></span> <span data-live-status>connecting</span> <span data-live-action class=\"text-muted-foreground\">Pause</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantGhost,
+			Size:       button.SizeSm,
+			Class:      "gap-2",
+			Attributes: templ.Attributes{"data-live-toggle": true, "aria-label": "Pause live refresh"},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</header><main id=\"outlet\" data-route=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var9 string
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Current(ctx))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 96, Col: 54}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" class=\"mx-auto w-full max-w-[96rem] p-4 lg:p-8\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -97,17 +217,37 @@ func App(title, head string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</main></div><div class=\"drawer-side z-30\"><label for=\"nav-drawer\" aria-label=\"Close navigation\" class=\"drawer-overlay\"></label><aside class=\"flex min-h-full w-64 flex-col border-r border-base-300/60 bg-base-100 p-4\"><a href=\"/\" class=\"mb-7 flex items-center gap-3 px-2 py-1\"><div class=\"grid size-9 place-items-center rounded-xl bg-primary text-lg font-black text-primary-content\">G</div><div><div class=\"font-bold tracking-tight\">Guard</div><div class=\"text-[.65rem] uppercase tracking-[.2em] text-base-content/40\">watch the pack</div></div></a><nav class=\"space-y-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</main></div><!-- Row detail. Present on every page because guard.js fills it from\n\t\t\t     whichever table was clicked; closed it is off-canvas and inert. --><div data-detail-shell class=\"fixed inset-0 z-50\"><button type=\"button\" data-detail-close aria-label=\"Close details\" class=\"absolute inset-0 bg-black/60 transition-opacity\"></button><aside data-detail-panel class=\"pointer-events-auto absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-border bg-card text-card-foreground shadow-2xl transition-transform duration-200\"><div class=\"flex items-center justify-between gap-4 border-b border-border p-5\"><div class=\"min-w-0\"><p data-detail-eyebrow class=\"text-xs font-semibold uppercase tracking-[.18em] text-primary\">Telemetry detail</p><h2 data-detail-title class=\"mt-1 truncate text-xl font-semibold\">Event</h2></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		for _, route := range router.Nav(router.Routes(ctx)) {
-			templ_7745c5c3_Err = ui.NavLink(route.Pattern, route.Label).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "✕")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantGhost,
+			Size:       button.SizeIconSm,
+			Attributes: templ.Attributes{"data-detail-close": true, "aria-label": "Close details"},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</nav><div class=\"mt-auto rounded-xl border border-base-300/60 bg-base-200/60 p-3 text-xs leading-5 text-base-content/55\"><div class=\"mb-1 font-semibold text-base-content\">OTLP/HTTP</div><code class=\"break-all\">localhost:4318</code></div></aside></div></div><div data-detail-shell class=\"pointer-events-none fixed inset-0 z-50\"><button type=\"button\" data-detail-close aria-label=\"Close details\" class=\"absolute inset-0 bg-black/55 opacity-0 transition-opacity\"></button><aside data-detail-panel class=\"pointer-events-auto absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-base-300 bg-base-100 shadow-2xl transition-transform duration-200\"><div class=\"sticky top-0 z-10 flex items-center justify-between border-b border-base-300 bg-base-100/95 p-5 backdrop-blur\"><div class=\"min-w-0\"><p data-detail-eyebrow class=\"text-xs font-bold uppercase tracking-[.18em] text-primary\">Telemetry detail</p><h2 data-detail-title class=\"mt-1 truncate text-xl font-bold\">Event</h2></div><button type=\"button\" data-detail-close class=\"btn btn-square btn-ghost\" aria-label=\"Close details\">✕</button></div><div data-detail-content class=\"space-y-6 p-5\"></div></aside></div></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div><div data-detail-content class=\"flex-1 space-y-6 overflow-y-auto p-5\"></div></aside></div></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -131,25 +271,51 @@ func NotFound(path string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var5 == nil {
-			templ_7745c5c3_Var5 = templ.NopComponent
+		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var11 == nil {
+			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<section class=\"grid min-h-[60vh] place-items-center text-center\"><div><p class=\"text-7xl font-black text-primary\">404</p><h1 class=\"mt-4 text-2xl font-bold\">Nothing on watch here</h1><p class=\"mt-2 text-base-content/50\">No route at <code>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<section class=\"grid min-h-[60vh] place-items-center text-center\"><div><p class=\"text-7xl font-black text-primary\">404</p><h1 class=\"mt-4 text-2xl font-semibold\">Nothing on watch here</h1><p class=\"mt-2 text-muted-foreground\">No route at <code class=\"font-mono\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(path)
+		var templ_7745c5c3_Var12 string
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(path)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 70, Col: 246}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 128, Col: 83}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</code>.</p><a href=\"/\" class=\"btn btn-primary btn-sm mt-6\">Back to overview</a></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</code>.</p>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var13 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "Back to overview")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{Href: "/", Size: button.SizeSm, Class: "mt-6"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var13), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
