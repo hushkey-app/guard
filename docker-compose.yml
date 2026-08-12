@@ -1,0 +1,15 @@
+services:
+  guard:
+    build: .
+    ports:
+      - "4318:4318"
+    environment:
+      GUARD_DB_PATH: /data/guard.db
+      GUARD_RETENTION_HOURS: "168"
+      GUARD_MAX_EVENTS: "1000000"
+    volumes:
+      - guard-data:/data
+    restart: unless-stopped
+
+volumes:
+  guard-data:

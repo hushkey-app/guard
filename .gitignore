@@ -1,0 +1,7 @@
+/guard
+/guard.db
+/guard.db-shm
+/guard.db-wal
+/.DS_Store
+.howl/
+/client/styles/app.sources.css

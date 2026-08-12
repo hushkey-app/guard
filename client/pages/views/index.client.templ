@@ -1,0 +1,34 @@
+package views
+
+import (
+	"github.com/mirairoad/guard/client/lifecycle"
+	"github.com/mirairoad/guard/client/ui"
+	"github.com/mirairoad/guard/client/ui/components"
+)
+
+templ Head() {
+	<title>Views — Guard</title>
+	<meta name="description" content="Build panels from the telemetry guard has received, and keep them."/>
+}
+
+// Page is furniture and templates only. The panels themselves are stored
+// questions the browser fetches, so nothing on this route can be rendered
+// ahead of knowing what they are — client/public/views.js clones the templates
+// below, one per saved view. The reasoning is in client/ui/components.
+templ Page() {
+	<section data-views-page class="space-y-6">
+		@ui.PageHeading("Saved questions", "Views",
+			"A panel is a query you kept: filter the telemetry, group it, choose how it should be drawn. Everything guard has received is available to all of them.")
+		@components.Toolbar()
+		@components.GridEmpty()
+		@components.Grid()
+		@components.Builder()
+		@components.PanelTemplate()
+		@components.PanelBodies()
+		@components.FilterRow()
+		@components.SpanRow()
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("views") }
+func Unmount() { lifecycle.Unmount("views") }
