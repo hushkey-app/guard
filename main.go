@@ -82,7 +82,17 @@ func main() {
 	// The JSON API. The table is generated from server/apis/, so an endpoint's
 	// file is its URL and nothing is registered by hand.
 	apistore.Use(store)
-	api.Register(mux, api.Config{Authorize: bearer(token)}, apis.FsApiRoutes()...)
+	routes := apis.FsApiRoutes()
+	api.Register(mux, api.Config{Authorize: bearer(token)}, routes...)
+
+	// Built at startup from the same table that was just registered, so it
+	// cannot describe an endpoint this binary does not serve.
+	mux.HandleFunc("GET /api/openapi.json", api.OpenAPI(api.Info{
+		Title:       "Guard",
+		Version:     "0.1.0",
+		Description: "OTLP/HTTP telemetry receiver.",
+	}, routes...))
+	mux.HandleFunc("GET /api/docs", api.Docs("/api/openapi.json"))
 
 	log.Fatal(a.Listen(mux))
 }
