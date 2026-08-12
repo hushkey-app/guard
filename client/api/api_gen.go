@@ -18,6 +18,17 @@ type Client struct{ *api.Transport }
 
 func New(baseURL string) *Client { return &Client{Transport: api.NewTransport(baseURL)} }
 
+// CreateView calls POST /api/views.
+func (c *Client) CreateView(ctx context.Context, body model.View) (model.View, error) {
+	return api.Call[model.View](ctx, c.Transport, "POST", "/api/views", nil, body)
+}
+
+// DeleteView calls DELETE /api/views/{id}.
+func (c *Client) DeleteView(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/views/{id}", id), nil, nil)
+	return err
+}
+
 // Event calls GET /api/events/{id}.
 func (c *Client) Event(ctx context.Context, id string) (model.Event, error) {
 	return api.Call[model.Event](ctx, c.Transport, "GET", api.Path("/api/events/{id}", id), nil, nil)
@@ -48,6 +59,11 @@ func (c *Client) MetricSeries(ctx context.Context, query contract.SeriesQuery) (
 	return api.Call[[]model.MetricSeries](ctx, c.Transport, "GET", "/api/metrics/series", query, nil)
 }
 
+// PreviewView calls POST /api/views/preview.
+func (c *Client) PreviewView(ctx context.Context, body contract.PreviewRequest) (model.Frame, error) {
+	return api.Call[model.Frame](ctx, c.Transport, "POST", "/api/views/preview", nil, body)
+}
+
 // Purge calls POST /api/settings/purge.
 func (c *Client) Purge(ctx context.Context) (contract.Purged, error) {
 	return api.Call[contract.Purged](ctx, c.Transport, "POST", "/api/settings/purge", nil, nil)
@@ -63,9 +79,34 @@ func (c *Client) Summary(ctx context.Context) (model.Summary, error) {
 	return api.Call[model.Summary](ctx, c.Transport, "GET", "/api/summary", nil, nil)
 }
 
+// Trace calls GET /api/traces/{id}.
+func (c *Client) Trace(ctx context.Context, id string) (model.Trace, error) {
+	return api.Call[model.Trace](ctx, c.Transport, "GET", api.Path("/api/traces/{id}", id), nil, nil)
+}
+
 // UpdateSettings calls PUT /api/settings.
 func (c *Client) UpdateSettings(ctx context.Context, body model.Settings) (model.Settings, error) {
 	return api.Call[model.Settings](ctx, c.Transport, "PUT", "/api/settings", nil, body)
+}
+
+// UpdateView calls PUT /api/views/{id}.
+func (c *Client) UpdateView(ctx context.Context, id string, body model.View) (model.View, error) {
+	return api.Call[model.View](ctx, c.Transport, "PUT", api.Path("/api/views/{id}", id), nil, body)
+}
+
+// ViewCatalogue calls GET /api/views/catalogue.
+func (c *Client) ViewCatalogue(ctx context.Context) (contract.Catalogue, error) {
+	return api.Call[contract.Catalogue](ctx, c.Transport, "GET", "/api/views/catalogue", nil, nil)
+}
+
+// ViewData calls GET /api/views/data.
+func (c *Client) ViewData(ctx context.Context, query contract.ViewDataQuery) (model.Frame, error) {
+	return api.Call[model.Frame](ctx, c.Transport, "GET", "/api/views/data", query, nil)
+}
+
+// Views calls GET /api/views.
+func (c *Client) Views(ctx context.Context) ([]model.View, error) {
+	return api.Call[[]model.View](ctx, c.Transport, "GET", "/api/views", nil, nil)
 }
 
 // WriteLog calls POST /api/logs.

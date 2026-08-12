@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mirairoad/guard/internal/telemetry/model"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -66,4 +67,57 @@ type SeriesQuery struct {
 // Purged reports what the retention sweep removed.
 type Purged struct {
 	Removed int64 `json:"removed"`
+}
+
+// PreviewRequest runs a query that has not been saved — what the view builder
+// posts on every change, so the panel on screen is the panel you would get.
+type PreviewRequest struct {
+	Panel string          `json:"panel"`
+	Query model.ViewQuery `json:"query"`
+}
+
+func (p PreviewRequest) Validate() error { return p.Query.ValidateFor(p.Panel) }
+
+// ViewDataQuery runs a saved view. Range, From and To override the window the
+// view was saved with, which is what lets one time picker drive every panel on
+// the dashboard without rewriting sixteen stored queries.
+type ViewDataQuery struct {
+	ID    int64     `query:"id"`
+	Range string    `query:"range"`
+	From  time.Time `query:"from"`
+	To    time.Time `query:"to"`
+}
+
+func (q ViewDataQuery) Validate() error {
+	if q.ID <= 0 {
+		return api.Invalid("id", "is required")
+	}
+	if q.Range != "" && q.Range != "all" {
+		if _, err := model.ParseDuration(q.Range); err != nil {
+			return api.Invalid("range", err.Error())
+		}
+	}
+	return nil
+}
+
+// Apply layers the caller's window over the stored one. An empty override
+// leaves the view's own window alone: a panel saved as "last 7 days" next to
+// fifteen hourly ones is a deliberate thing to build.
+func (q ViewDataQuery) Apply(stored model.ViewQuery) model.ViewQuery {
+	if q.Range == "" && q.From.IsZero() && q.To.IsZero() {
+		return stored
+	}
+	stored.Range, stored.From, stored.To = q.Range, q.From, q.To
+	return stored
+}
+
+// Catalogue is everything the builder needs to offer a choice: the panels this
+// binary can render, the aggregations the compiler implements, and the fields
+// this instance has actually seen. One request, because all three change at
+// once — a panel added without its fields is a builder that offers a control
+// with nothing to put in it.
+type Catalogue struct {
+	Panels       []model.PanelSpec `json:"panels"`
+	Aggregations []string          `json:"aggregations"`
+	Fields       model.Fields      `json:"fields"`
 }

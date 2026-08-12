@@ -8,6 +8,8 @@ import (
 	e1 "github.com/mirairoad/guard/server/apis/logs"
 	e2 "github.com/mirairoad/guard/server/apis/metrics"
 	e3 "github.com/mirairoad/guard/server/apis/settings"
+	e4 "github.com/mirairoad/guard/server/apis/traces"
+	e5 "github.com/mirairoad/guard/server/apis/views"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -25,6 +27,14 @@ func FsApiRoutes() []api.Route {
 		api.At("PUT", "/api/settings", e3.Update),
 		api.At("POST", "/api/settings/purge", e3.Purge),
 		api.At("GET", "/api/summary", Summary),
+		api.At("GET", "/api/traces/{id}", e4.ByID),
+		api.At("GET", "/api/views", e5.List),
+		api.At("POST", "/api/views", e5.Create),
+		api.At("GET", "/api/views/catalogue", e5.Catalogue),
+		api.At("GET", "/api/views/data", e5.Data),
+		api.At("POST", "/api/views/preview", e5.Preview),
+		api.At("DELETE", "/api/views/{id}", e5.Remove),
+		api.At("PUT", "/api/views/{id}", e5.Update),
 		api.At("GET", "/healthz", Health),
 	}
 }

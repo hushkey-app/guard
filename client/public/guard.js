@@ -1,6 +1,13 @@
-const number = new Intl.NumberFormat();
-const palette = ["#5bd8a6", "#60a5fa", "#c084fc", "#f59e0b", "#fb7185", "#22d3ee", "#a3e635", "#f472b6"];
-const svgNS = "http://www.w3.org/2000/svg";
+// The dashboard's own client code: the signal tables, the filter bar, the live
+// tick and the detail panel.
+//
+// The shared vocabulary lives in core.js, the panel renderers in charts.js, and
+// everything under /views in views.js. This file imports all three; none of
+// them imports this one, so the dependency runs one way.
+import { adminHeaders, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
+import { drawWaterfall } from "./charts.js";
+import { mountViews, refreshViews, unmountViews } from "./views.js";
+
 const pageSize = 50;
 const signalPages = new Map([["logs", 0], ["traces", 0], ["metrics", 0]]);
 const signalRequests = new Map();
@@ -20,17 +27,6 @@ let summarySignature = "";
 const signalSignatures = new Map();
 let metricsSignature = "";
 
-const text = (value) => document.createTextNode(value ?? "");
-const qs = (selector, root = document) => root.querySelector(selector);
-const qsa = (selector, root = document) => [...root.querySelectorAll(selector)];
-
-async function request(path, options = {}) {
-  const response = await fetch(path, { headers: { Accept: "application/json", ...(options.headers || {}) }, ...options });
-  if (!response.ok) throw new Error((await response.text()).trim() || response.statusText);
-  if (response.status === 204) return null;
-  return response.json();
-}
-
 function setStat(name, value) {
   for (const node of qsa(`[data-stat="${name}"]`)) node.textContent = number.format(value ?? 0);
 }
@@ -46,7 +42,6 @@ function updateLiveControl(status = live ? "receiving" : "paused") {
 // this file (see the @source list in client/styles/app.css) and only emits the
 // utilities it can see literally.
 const cellBase = "cn-table-cell cn-table-cell-aria";
-const muted = "text-muted-foreground";
 
 function td(value, className = "") {
   const cell = document.createElement("td");
@@ -63,9 +58,7 @@ function eventRow(event) {
   return row;
 }
 
-function shortID(value) { return value ? `${value.slice(0, 12)}${value.length > 12 ? "…" : ""}` : "—"; }
 function eventText(event) { return event.message || (event.value !== undefined ? `${event.name} = ${event.value}${event.unit ? ` ${event.unit}` : ""}` : event.name) || "telemetry event"; }
-function timeText(value) { return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 }); }
 
 // style-nova ships default/secondary/destructive/outline badges; severity and
 // span status need two more tones, built from the same theme tokens.
@@ -170,13 +163,6 @@ function renderInstances(instances) {
     const seen = document.createElement("span"); seen.className = `text-xs ${muted}`; seen.appendChild(text(relativeTime(instance.last_seen)));
     row.append(dot, names, seen); return row;
   }));
-}
-
-function relativeTime(value) {
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  return `${Math.floor(seconds / 3600)}h ago`;
 }
 
 function filterParams(signal, paginate = false) {
@@ -354,9 +340,31 @@ async function openDetail(id) {
   const attrs = document.createElement("section"); const heading = document.createElement("h3"); heading.className = "mb-3 font-medium"; heading.appendChild(text(`Attributes · ${Object.keys(event.attributes || {}).length}`));
   const pre = document.createElement("pre"); pre.className = "overflow-x-auto rounded-xl bg-code p-4 font-mono text-xs leading-6 text-code-foreground"; pre.appendChild(text(JSON.stringify(event.attributes || {}, null, 2))); attrs.append(heading, pre);
   qs("[data-detail-content]").replaceChildren(grid, attrs); qs("[data-detail-shell]").classList.add("open"); document.body.classList.add("overflow-hidden");
+  if (event.trace_id) showTrace(event.trace_id).catch(() => {});
+}
+
+// Opening a span opens its whole trace above the table.
+//
+// A span list answers "what happened"; only the timeline answers "what was
+// waiting on what", which is the question a slow request actually raises. The
+// card is on the traces page only — the same renderer serves the waterfall
+// panel on /views, from the same endpoint.
+async function showTrace(traceID) {
+  const card = qs("[data-trace-card]");
+  if (!card) return;
+  const trace = await request(`/api/traces/${encodeURIComponent(traceID)}`);
+  qs("[data-trace-id]", card).textContent = trace.trace_id;
+  qs("[data-trace-duration]", card).textContent = `${number.format(Math.round(trace.duration_ms))} ms · ${trace.spans.length} spans`;
+  qs("[data-trace-services]", card).textContent = `${trace.services.join(" · ")}${trace.errors ? ` · ${trace.errors} errored` : ""}`;
+  drawWaterfall(qs("[data-waterfall]", card), trace, { onSpan: (id) => openDetail(id).catch(() => {}) });
+  card.hidden = false;
 }
 
 function closeDetail() { qs("[data-detail-shell]")?.classList.remove("open"); document.body.classList.remove("overflow-hidden"); }
+
+// views.js opens the detail panel when a scatter point is clicked — one panel
+// per document, owned here, reachable from there.
+globalThis.guardOpenDetail = (id) => openDetail(id).catch(() => {});
 
 async function loadSettings() {
   const form = qs("[data-settings-form]"); if (!form) return;
@@ -365,12 +373,6 @@ async function loadSettings() {
   for (const key of ["database_path", "retention_hours", "max_events"]) qs(`[data-setting="${key}"]`, form).value = settings[key] ?? "";
   qs('[data-setting="token"]', form).value = sessionStorage.getItem("guard.token") || "";
 	form.dataset.loaded = "true";
-}
-
-function adminHeaders() {
-  const token = qs('[data-setting="token"]')?.value || sessionStorage.getItem("guard.token") || "";
-  if (token) sessionStorage.setItem("guard.token", token);
-  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
 async function saveSettings(form) {
@@ -390,6 +392,7 @@ async function purgeNow() {
 async function refreshPage({ facets = false } = {}) {
   const work = [refreshSignal("logs"), refreshSignal("traces"), refreshSignal("metrics"), refreshMetrics(), loadSettings()];
   if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
+  if (qs("[data-view-grid]")) work.push(refreshViews());
   if (facets) work.push(refreshFacets());
   await Promise.allSettled(work);
 }
@@ -419,12 +422,14 @@ globalThis.guardPageMount = (page) => {
     return pending;
   }
   initializedPage = page;
+  if (page === "views") return mountViews();
   return refreshPage({ facets: true });
 };
 globalThis.guardPageUnmount = () => {
   clearTimeout(filterTimer);
   filterTimer = undefined;
   for (const signal of signalRequests.keys()) signalRequests.set(signal, signalRequests.get(signal) + 1);
+  unmountViews();
 };
 
 for (const eventName of ["scroll", "wheel", "touchmove", "pointermove"]) {
@@ -438,6 +443,7 @@ document.addEventListener("click", (event) => {
   const toggle = event.target.closest("[data-live-toggle]");
   if (toggle) { live = !live; localStorage.setItem("guard.live", live ? "on" : "off"); updateLiveControl(); if (live) refreshPage(); return; }
   if (event.target.closest("[data-detail-close]")) { closeDetail(); return; }
+  if (event.target.closest("[data-trace-close]")) { qs("[data-trace-card]").hidden = true; return; }
   const pageButton = event.target.closest("[data-page-action]");
   if (pageButton && !pageButton.disabled) {
     const signal = pageButton.closest("[data-pagination]").dataset.pagination;

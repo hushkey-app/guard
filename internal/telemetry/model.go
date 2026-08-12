@@ -185,6 +185,12 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	if err != nil {
 		return fmt.Errorf("migrate sqlite: %w", err)
 	}
+	// Saved views, and the generated columns their group-by clauses index
+	// against. Separate because it has to inspect the table it is altering —
+	// SQLite has no ADD COLUMN IF NOT EXISTS.
+	if err := migrateViews(s.db); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO settings(id, retention_hours, max_events) VALUES(1, ?, ?)`, defaults.RetentionHours, defaults.MaxEvents); err != nil {
 		return fmt.Errorf("initialize settings: %w", err)
 	}

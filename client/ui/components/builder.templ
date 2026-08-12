@@ -1,0 +1,291 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+)
+
+// Builder is the panel editor: a slide-over with the query on the left and a
+// live preview of what it draws on the right.
+//
+// It is a plain overlay toggled by a class, not shadcn's dialog, for the same
+// reason the filter bar uses native selects — the interactive shadcn components
+// need an upstream JavaScript bundle the direct-import workflow does not serve,
+// and views.js drives every control here through .value.
+//
+// Controls carry data-needs. A panel declares what it needs (model.PanelSpec)
+// and views.js shows exactly those, so choosing "Pie chart" hides the bucket
+// size and choosing "Histogram" reveals the bucket count. The alternative — one
+// form with every control always visible — is a form where most of the fields
+// do nothing, and no label can tell you which.
+templ Builder() {
+	<div data-builder-shell class="fixed inset-0 z-50">
+		<button type="button" data-builder-close aria-label="Close the builder" class="absolute inset-0 bg-black/60 transition-opacity"></button>
+		<aside data-builder-panel class="pointer-events-auto absolute inset-y-0 right-0 flex w-full max-w-5xl flex-col border-l border-border bg-card text-card-foreground shadow-2xl transition-transform duration-200">
+			<div class="flex items-center justify-between gap-4 border-b border-border p-5">
+				<div class="min-w-0">
+					<p class="text-xs font-semibold uppercase tracking-[.18em] text-primary">Panel</p>
+					<h2 data-builder-title class="mt-1 truncate text-xl font-semibold">New panel</h2>
+				</div>
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Size:       button.SizeIconSm,
+					Attributes: templ.Attributes{"data-builder-close": true, "aria-label": "Close the builder"},
+				}) {
+					✕
+				}
+			</div>
+			<form data-builder-form class="flex min-h-0 flex-1 flex-col lg:flex-row">
+				<div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 lg:max-w-md lg:border-r lg:border-border">
+					@builderSection("Panel") {
+						@BuilderField("", "builder-name", "Name") {
+							@input.Input(input.Props{
+								ID:          "builder-name",
+								Placeholder: "Checkout latency p95",
+								Attributes:  templ.Attributes{"data-builder": "name", "required": true, "maxlength": "120"},
+							})
+						}
+						<div class="grid gap-3 sm:grid-cols-2">
+							@BuilderSelect("panel", "Visualisation", "")
+							@BuilderSelect("width", "Width", "") {
+								<option value="4">A third</option>
+								<option value="6" selected>Half</option>
+								<option value="8">Two thirds</option>
+								<option value="12">Full width</option>
+							}
+						</div>
+						<p data-builder-hint class="text-xs leading-5 text-muted-foreground"></p>
+					}
+					@builderSection("Data") {
+						<div class="grid gap-3 sm:grid-cols-2">
+							@BuilderSelect("signal", "Signal", "") {
+								<option value="">Everything</option>
+								<option value="logs">Logs</option>
+								<option value="traces">Traces</option>
+								<option value="metrics">Metrics</option>
+							}
+							@BuilderSelect("range", "Time range", "") {
+								<option value="15m">Last 15 minutes</option>
+								<option value="1h" selected>Last hour</option>
+								<option value="6h">Last 6 hours</option>
+								<option value="24h">Last 24 hours</option>
+								<option value="7d">Last 7 days</option>
+								<option value="all">All retained</option>
+							}
+						</div>
+						<div data-filters class="space-y-2"></div>
+						@button.Button(button.Props{
+							Type:       button.TypeButton,
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Attributes: templ.Attributes{"data-filter-add": true},
+						}) {
+							+ Add filter
+						}
+					}
+					@builderSection("Measurement") {
+						<div class="grid gap-3 sm:grid-cols-2">
+							<div data-needs="agg">
+								@BuilderSelect("agg", "Aggregation", "")
+							</div>
+							<div data-needs="value">
+								@BuilderSelect("value", "Of field", "")
+							</div>
+							<div data-needs="group">
+								@BuilderSelect("group_by", "Split by", "")
+							</div>
+							<div data-needs="x">
+								@BuilderSelect("x", "X axis", "")
+							</div>
+							<div data-needs="bucket">
+								@BuilderSelect("bucket", "Bucket size", "") {
+									<option value="auto" selected>Automatic</option>
+									<option value="10s">10 seconds</option>
+									<option value="1m">1 minute</option>
+									<option value="5m">5 minutes</option>
+									<option value="15m">15 minutes</option>
+									<option value="1h">1 hour</option>
+									<option value="6h">6 hours</option>
+									<option value="1d">1 day</option>
+								}
+							</div>
+							<div data-needs="buckets">
+								@BuilderField("", "builder-buckets", "Bucket count") {
+									@input.Input(input.Props{
+										ID: "builder-buckets", Type: "number", Value: "24",
+										Attributes: templ.Attributes{"data-builder": "buckets", "min": "2", "max": "200"},
+									})
+								}
+							</div>
+							<div data-needs="limit">
+								@BuilderField("", "builder-limit", "Maximum rows") {
+									@input.Input(input.Props{
+										ID: "builder-limit", Type: "number", Value: "12",
+										Attributes: templ.Attributes{"data-builder": "limit", "min": "1", "max": "5000"},
+									})
+								}
+							</div>
+							<div data-needs="limit">
+								@BuilderSelect("order", "Order", "") {
+									<option value="value_desc" selected>Largest first</option>
+									<option value="value_asc">Smallest first</option>
+									<option value="key_asc">By name</option>
+								}
+							</div>
+							<div data-needs="thresholds" class="grid gap-3 sm:col-span-2 sm:grid-cols-3">
+								@BuilderField("", "builder-max", "Full scale") {
+									@input.Input(input.Props{
+										ID: "builder-max", Type: "number", Placeholder: "auto",
+										Attributes: templ.Attributes{"data-builder": "max", "step": "any"},
+									})
+								}
+								@BuilderField("", "builder-warn", "Warning above") {
+									@input.Input(input.Props{
+										ID: "builder-warn", Type: "number", Placeholder: "none",
+										Attributes: templ.Attributes{"data-builder": "warn", "step": "any"},
+									})
+								}
+								@BuilderField("", "builder-critical", "Critical above") {
+									@input.Input(input.Props{
+										ID: "builder-critical", Type: "number", Placeholder: "none",
+										Attributes: templ.Attributes{"data-builder": "critical", "step": "any"},
+									})
+								}
+								<p class="text-xs text-muted-foreground sm:col-span-3">
+									Leave the scale empty and the gauge sizes itself to what has arrived — useful until the number has a real ceiling, misleading once it does.
+								</p>
+							</div>
+							<div data-needs="trace" class="sm:col-span-2">
+								@BuilderField("", "builder-trace", "Trace") {
+									@input.Input(input.Props{
+										ID: "builder-trace", Placeholder: "A trace ID, or leave empty",
+										Attributes: templ.Attributes{"data-builder": "trace_id", "spellcheck": "false"},
+									})
+								}
+								<p class="mt-1.5 text-xs text-muted-foreground">
+									Empty follows the matching traces: the panel always shows a current one, not the one that happened to be interesting when you saved it.
+								</p>
+							</div>
+							<div data-needs="trace">
+								@BuilderSelect("trace_pick", "Which trace", "") {
+									<option value="latest" selected>Most recent</option>
+									<option value="slowest">Slowest</option>
+								}
+							</div>
+						</div>
+					}
+				</div>
+				<div class="flex min-h-0 flex-1 flex-col border-t border-border p-5 lg:border-t-0">
+					<div class="mb-3 flex items-center justify-between gap-3">
+						<p class="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">Preview</p>
+						<span data-preview-status class="text-xs text-muted-foreground"></span>
+					</div>
+					<div class="min-h-0 flex-1 rounded-xl border border-border bg-background p-4">
+						<div data-preview-body class="h-full min-h-56"></div>
+					</div>
+					<div data-preview-legend class="mt-3 flex flex-wrap gap-x-4 gap-y-1"></div>
+					<p data-preview-notes class="mt-2 text-xs text-muted-foreground empty:hidden"></p>
+					<p data-preview-error class="mt-2 text-xs text-destructive empty:hidden"></p>
+					<div class="mt-4 flex items-center justify-end gap-2 border-t border-border pt-4">
+						<span data-builder-status class="mr-auto text-xs text-muted-foreground"></span>
+						@button.Button(button.Props{
+							Type:       button.TypeButton,
+							Variant:    button.VariantGhost,
+							Size:       button.SizeSm,
+							Attributes: templ.Attributes{"data-builder-close": true},
+						}) {
+							Cancel
+						}
+						@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm}) {
+							Save panel
+						}
+					</div>
+				</div>
+			</form>
+		</aside>
+	</div>
+}
+
+// FilterRow is one condition. Cloned per row so the list can grow, and removed
+// whole so it can shrink.
+templ FilterRow() {
+	<template data-filter-row-template>
+		<div data-filter-row class="grid grid-cols-[1fr_auto] items-end gap-2">
+			<div class="grid gap-2 sm:grid-cols-[1.4fr_1fr_1.4fr]">
+				@BuilderSelect("filter_field", "Field", "")
+				@BuilderSelect("filter_op", "Is", "") {
+					<option value="eq">equal to</option>
+					<option value="ne">not equal to</option>
+					<option value="contains">containing</option>
+					<option value="prefix">starting with</option>
+					<option value="gt">greater than</option>
+					<option value="gte">at least</option>
+					<option value="lt">less than</option>
+					<option value="lte">at most</option>
+					<option value="exists">present</option>
+					<option value="missing">absent</option>
+				}
+				@BuilderField("", "", "Value") {
+					<input
+						type="text"
+						data-builder="filter_value"
+						class="cn-input h-9 w-full text-sm"
+						placeholder="value"
+						spellcheck="false"
+					/>
+				}
+			</div>
+			@button.Button(button.Props{
+				Type:       button.TypeButton,
+				Variant:    button.VariantGhost,
+				Size:       button.SizeIconSm,
+				Class:      "mb-0.5 text-muted-foreground hover:text-destructive",
+				Attributes: templ.Attributes{"data-filter-remove": true, "aria-label": "Remove this filter"},
+			}) {
+				✕
+			}
+		</div>
+	</template>
+}
+
+// BuilderSelect is a native select wearing style-nova's surface, keyed by
+// data-builder rather than data-filter — guard.js listens for the latter on the
+// document and would re-query every signal table on each keystroke in here.
+templ BuilderSelect(name, label, class string) {
+	<label class={ "flex flex-col gap-1.5", class }>
+		<span class="text-xs font-medium text-muted-foreground">{ label }</span>
+		<span class="relative flex items-center">
+			<select
+				data-builder={ name }
+				class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"
+			>
+				{ children... }
+			</select>
+			@builderChevron()
+		</span>
+	</label>
+}
+
+templ BuilderField(class, id, label string) {
+	<div class={ "flex flex-col gap-1.5", class }>
+		if id != "" {
+			<label for={ id } class="text-xs font-medium text-muted-foreground">{ label }</label>
+		} else {
+			<span class="text-xs font-medium text-muted-foreground">{ label }</span>
+		}
+		{ children... }
+	</div>
+}
+
+templ builderSection(title string) {
+	<section class="space-y-3">
+		<h3 class="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">{ title }</h3>
+		{ children... }
+	</section>
+}
+
+templ builderChevron() {
+	<svg class="cn-native-select-icon pointer-events-none absolute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="m6 9 6 6 6-6"></path>
+	</svg>
+}

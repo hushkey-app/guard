@@ -155,3 +155,30 @@
 [data-detail-shell].open [data-detail-panel] {
   transform: none;
 }
+
+/* The view builder, same mechanism as the detail panel above: views.js toggles
+ * `.open` on the shell. It is a second copy rather than a shared selector list
+ * because the two panels are different widths and will grow apart. */
+[data-builder-shell] {
+  pointer-events: none;
+}
+
+[data-builder-shell] [data-builder-close]:first-child {
+  opacity: 0;
+}
+
+[data-builder-shell] [data-builder-panel] {
+  transform: translateX(100%);
+}
+
+[data-builder-shell].open {
+  pointer-events: auto;
+}
+
+[data-builder-shell].open [data-builder-close]:first-child {
+  opacity: 1;
+}
+
+[data-builder-shell].open [data-builder-panel] {
+  transform: none;
+}

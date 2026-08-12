@@ -5,6 +5,7 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/table"
 	"github.com/mirairoad/guard/client/lifecycle"
 	"github.com/mirairoad/guard/client/ui"
+	"github.com/mirairoad/guard/client/ui/components"
 )
 
 templ Head() {
@@ -16,6 +17,12 @@ templ Page() {
 	<section class="space-y-6">
 		@ui.PageHeading("Request paths", "Traces", "Inspect spans by time, service, status, duration, parent, and trace context.")
 		@ui.FilterBar("traces")
+		// Opening any span opens its whole trace here: one request as a Gantt
+		// chart, parents above children, each bar placed by its offset from the
+		// start. A span list tells you what happened; only the timeline tells
+		// you what was waiting on what.
+		@components.TraceCard()
+		@components.SpanRow()
 		@card.Card(card.Props{Class: "gap-0 py-0"}) {
 			@table.Table() {
 				@ui.TableHead([]string{"Start", "Status", "Service", "Span", "Kind", "Duration", "Trace"})

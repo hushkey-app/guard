@@ -13,6 +13,7 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/table"
 	"github.com/mirairoad/guard/client/lifecycle"
 	"github.com/mirairoad/guard/client/ui"
+	"github.com/mirairoad/guard/client/ui/components"
 )
 
 func Head() templ.Component {
@@ -74,6 +75,14 @@ func Page() templ.Component {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = ui.FilterBar("traces").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.TraceCard().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.SpanRow().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
