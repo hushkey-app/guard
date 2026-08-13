@@ -24,6 +24,7 @@ var Remove = api.Define(api.Spec[api.None, api.None, api.None]{
 		} else if err != nil {
 			return api.None{}, err
 		}
+		wake()
 		return api.None{}, nil
 	},
 })

@@ -9,9 +9,19 @@ package cluster
 
 import (
 	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/mirairoad/guard/server/apis/prober"
 	"github.com/mirairoad/guard/server/apis/store"
 	"github.com/mirairoad/howl-go/core/api"
 )
+
+// wake nudges the scheduler after the node list changes, so an edit takes
+// effect while its author is still looking at the page. Nil-safe: a guard
+// running without a prober — a test server — simply has nothing to nudge.
+func wake() {
+	if p := prober.Get(); p != nil {
+		p.Wake()
+	}
+}
 
 // List returns every node with its latest check, a day of uptime and enough
 // recent history to draw a strip. One request for the whole cluster: the list

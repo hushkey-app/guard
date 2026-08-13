@@ -36,7 +36,7 @@ func main() {
 	dbPath := flag.String("db", env("GUARD_DB_PATH", "guard.db"), "SQLite database file")
 	retentionHours := flag.Int("retention-hours", envInt("GUARD_RETENTION_HOURS", 24), "hours of telemetry to retain")
 	maxEvents := flag.Int("max-events", envInt("GUARD_MAX_EVENTS", 1_000_000), "maximum telemetry events retained")
-	clusterInterval := flag.Duration("cluster-interval", envDuration("GUARD_CLUSTER_INTERVAL", 30*time.Second), "how often to poll cluster nodes")
+	clusterInterval := flag.Duration("cluster-interval", envDuration("GUARD_CLUSTER_INTERVAL", 30*time.Second), "how long the prober waits when no node is due; each node carries its own interval")
 	clusterTimeout := flag.Duration("cluster-timeout", envDuration("GUARD_CLUSTER_TIMEOUT", 5*time.Second), "how long a cluster health check may take")
 	flag.Parse()
 

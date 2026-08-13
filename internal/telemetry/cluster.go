@@ -20,10 +20,14 @@ import (
 type Node = model.Node
 type Check = model.Check
 
-// checkRetention is how far back the uptime figure can see. Longer would make
-// the checks table the largest thing in the database on an instance watching
-// twenty nodes every fifteen seconds, in exchange for a number nobody reads.
-const checkRetention = 7 * 24 * time.Hour
+// checkRetention is exactly the window the uptime figure reads, so nothing is
+// stored that nothing can look at.
+//
+// It is a day rather than a week because the cadence is per node and defaults
+// to three seconds: one node at that rate is 28,800 rows a day. A week of them,
+// across twenty machines, would make this table the largest thing in the
+// database — in exchange for a number no panel shows.
+const checkRetention = 24 * time.Hour
 
 func migrateCluster(db *sql.DB) error {
 	const schema = `
@@ -70,9 +74,10 @@ CREATE INDEX IF NOT EXISTS idx_cluster_checks_node ON cluster_checks(node_id, ch
 		return err
 	}
 	for column, definition := range map[string]string{
-		"icon":            "BLOB",
-		"icon_type":       "TEXT NOT NULL DEFAULT ''",
-		"icon_fetched_ns": "INTEGER NOT NULL DEFAULT 0",
+		"icon":             "BLOB",
+		"icon_type":        "TEXT NOT NULL DEFAULT ''",
+		"icon_fetched_ns":  "INTEGER NOT NULL DEFAULT 0",
+		"interval_seconds": fmt.Sprintf("INTEGER NOT NULL DEFAULT %d", model.DefaultIntervalSeconds),
 	} {
 		if existing[column] {
 			continue
@@ -91,7 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_cluster_checks_node ON cluster_checks(node_id, ch
 // a correlated subquery that has to be re-derived every time someone adds a
 // column.
 func (s *Store) Nodes() ([]Node, error) {
-	rows, err := s.db.Query(`SELECT id,name,url,enabled,created_at_ns,updated_at_ns,LENGTH(COALESCE(icon,'')) > 0
+	rows, err := s.db.Query(`SELECT id,name,url,enabled,interval_seconds,created_at_ns,updated_at_ns,LENGTH(COALESCE(icon,'')) > 0
 FROM cluster_nodes ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -101,7 +106,7 @@ FROM cluster_nodes ORDER BY name`)
 	for rows.Next() {
 		var node Node
 		var created, updated int64
-		if err := rows.Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &created, &updated, &node.HasIcon); err != nil {
+		if err := rows.Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &node.IntervalSeconds, &created, &updated, &node.HasIcon); err != nil {
 			return nil, err
 		}
 		node.CreatedAt = time.Unix(0, created).UTC()
@@ -120,12 +125,42 @@ FROM cluster_nodes ORDER BY name`)
 	return nodes, nil
 }
 
+// NodesForProbe is what the scheduler reads: enough to decide whether a node is
+// due, and nothing else.
+//
+// Nodes() runs three statements per node to assemble uptime and history, which
+// is right for a dashboard drawing them and wrong for a loop that wakes several
+// times a second to ask "anything to do". This is one statement for the whole
+// cluster.
+func (s *Store) NodesForProbe() ([]Node, error) {
+	rows, err := s.db.Query(`SELECT n.id, n.name, n.url, n.enabled, n.interval_seconds,
+COALESCE((SELECT MAX(checked_at_ns) FROM cluster_checks WHERE node_id = n.id), 0)
+FROM cluster_nodes n WHERE n.enabled = 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	nodes := make([]Node, 0)
+	for rows.Next() {
+		var node Node
+		var checked int64
+		if err := rows.Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &node.IntervalSeconds, &checked); err != nil {
+			return nil, err
+		}
+		if checked > 0 {
+			node.CheckedAt = time.Unix(0, checked).UTC()
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes, rows.Err()
+}
+
 func (s *Store) Node(id int64) (Node, error) {
 	var node Node
 	var created, updated int64
-	err := s.db.QueryRow(`SELECT id,name,url,enabled,created_at_ns,updated_at_ns,LENGTH(COALESCE(icon,'')) > 0
+	err := s.db.QueryRow(`SELECT id,name,url,enabled,interval_seconds,created_at_ns,updated_at_ns,LENGTH(COALESCE(icon,'')) > 0
 FROM cluster_nodes WHERE id = ?`, id).
-		Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &created, &updated, &node.HasIcon)
+		Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &node.IntervalSeconds, &created, &updated, &node.HasIcon)
 	if err != nil {
 		return node, err
 	}
@@ -197,10 +232,13 @@ func (s *Store) SaveNode(node Node) (Node, error) {
 	if err := node.Validate(); err != nil {
 		return Node{}, err
 	}
+	if node.IntervalSeconds < model.MinIntervalSeconds {
+		node.IntervalSeconds = model.DefaultIntervalSeconds
+	}
 	now := time.Now().UTC().UnixNano()
 	if node.ID == 0 {
-		result, err := s.db.Exec(`INSERT INTO cluster_nodes(name,url,enabled,created_at_ns,updated_at_ns) VALUES(?,?,?,?,?)`,
-			node.Name, node.URL, node.Enabled, now, now)
+		result, err := s.db.Exec(`INSERT INTO cluster_nodes(name,url,enabled,interval_seconds,created_at_ns,updated_at_ns)
+VALUES(?,?,?,?,?,?)`, node.Name, node.URL, node.Enabled, node.IntervalSeconds, now, now)
 		if err != nil {
 			return Node{}, err
 		}
@@ -210,8 +248,8 @@ func (s *Store) SaveNode(node Node) (Node, error) {
 		}
 		return s.Node(id)
 	}
-	result, err := s.db.Exec(`UPDATE cluster_nodes SET name=?,url=?,enabled=?,updated_at_ns=? WHERE id=?`,
-		node.Name, node.URL, node.Enabled, now, node.ID)
+	result, err := s.db.Exec(`UPDATE cluster_nodes SET name=?,url=?,enabled=?,interval_seconds=?,updated_at_ns=? WHERE id=?`,
+		node.Name, node.URL, node.Enabled, node.IntervalSeconds, now, node.ID)
 	if err != nil {
 		return Node{}, err
 	}

@@ -22,6 +22,8 @@ type fake struct {
 
 func (f *fake) Nodes() ([]model.Node, error) { return f.nodes, nil }
 
+func (f *fake) NodesForProbe() ([]model.Node, error) { return f.nodes, nil }
+
 func (f *fake) Node(id int64) (model.Node, error) {
 	for _, node := range f.nodes {
 		if node.ID == id {
@@ -229,6 +231,100 @@ func TestIconIsOptional(t *testing.T) {
 	(&Prober{Store: store, Timeout: time.Second}).Round(context.Background())
 	if len(store.recorded(1)) != 1 {
 		t.Error("the check itself should still have happened")
+	}
+}
+
+// Each node keeps its own clock: a pass checks what is due and leaves the rest
+// alone, so a three-second node and a five-minute one can share a cluster.
+func TestRoundChecksOnlyWhatIsDue(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	now := time.Now()
+	store := &fake{nodes: []model.Node{
+		{ID: 1, Name: "never checked", URL: server.URL, Enabled: true, IntervalSeconds: 3},
+		{ID: 2, Name: "due", URL: server.URL, Enabled: true, IntervalSeconds: 3, CheckedAt: now.Add(-10 * time.Second)},
+		{ID: 3, Name: "not due", URL: server.URL, Enabled: true, IntervalSeconds: 300, CheckedAt: now.Add(-10 * time.Second)},
+	}}
+
+	next := (&Prober{Store: store, Timeout: time.Second}).Round(context.Background())
+
+	if len(store.recorded(1)) != 1 {
+		t.Error("a node that has never been checked is due immediately")
+	}
+	if len(store.recorded(2)) != 1 {
+		t.Error("a node past its interval was not checked")
+	}
+	if len(store.recorded(3)) != 0 {
+		t.Error("a node inside its interval was checked anyway")
+	}
+	// The sleep is until the *soonest* node needs attention. Both fast nodes
+	// were just checked, so that is three seconds — not the five minutes the
+	// slow one has left, and not a fixed tick.
+	if next != 3*time.Second {
+		t.Errorf("next pass in %s, want 3s", next)
+	}
+}
+
+// A cluster where nothing has been checked yet still has to schedule itself:
+// checking everything once and then sleeping out the idle timer would leave a
+// freshly added node unwatched for half a minute.
+func TestRoundSchedulesNodesThatHaveNeverBeenChecked(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	store := &fake{nodes: []model.Node{{ID: 1, URL: server.URL, Enabled: true, IntervalSeconds: 5}}}
+	next := (&Prober{Store: store, Timeout: time.Second, Interval: 30 * time.Second}).Round(context.Background())
+	if next != 5*time.Second {
+		t.Errorf("next pass in %s, want the node's own 5s rather than the idle sleep", next)
+	}
+}
+
+// The sleep must never be zero, or a node whose interval is shorter than its
+// own check takes would spin the loop with no gap at all.
+func TestRoundAlwaysSleeps(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	store := &fake{nodes: []model.Node{{ID: 1, URL: server.URL, Enabled: true, IntervalSeconds: 1}}}
+	prober := &Prober{Store: store, Timeout: time.Second}
+	if next := prober.Round(context.Background()); next <= 0 {
+		t.Fatalf("next pass in %s", next)
+	}
+
+	// And with nothing at all to watch, it does not busy-loop over an empty
+	// table either.
+	empty := &Prober{Store: &fake{}, Timeout: time.Second, Interval: 30 * time.Second}
+	if next := empty.Round(context.Background()); next != 30*time.Second {
+		t.Errorf("idle sleep = %s, want the configured 30s", next)
+	}
+}
+
+// The button asks a different question from the scheduler: not "what is due"
+// but "is it back yet".
+func TestRoundAllIgnoresTheSchedule(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	store := &fake{nodes: []model.Node{
+		{ID: 1, URL: server.URL, Enabled: true, IntervalSeconds: 3600, CheckedAt: time.Now()},
+		{ID: 2, URL: server.URL, Enabled: false, IntervalSeconds: 1},
+	}}
+	(&Prober{Store: store, Timeout: time.Second}).RoundAll(context.Background())
+
+	if len(store.recorded(1)) != 1 {
+		t.Error("a node checked a second ago was skipped by the button")
+	}
+	if len(store.recorded(2)) != 0 {
+		t.Error("a paused node was checked")
 	}
 }
 

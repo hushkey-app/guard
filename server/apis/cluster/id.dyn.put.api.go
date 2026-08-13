@@ -29,6 +29,9 @@ var Update = api.Define(api.Spec[api.None, model.Node, model.Node]{
 		if err != nil {
 			return model.Node{}, api.BadRequest(err.Error())
 		}
+		// A cadence edited from every hour to every three seconds should not
+		// wait out the hour to take effect.
+		wake()
 		return saved, nil
 	},
 })

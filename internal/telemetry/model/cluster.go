@@ -25,9 +25,14 @@ type Node struct {
 	URL  string `json:"url"`
 	// Enabled stops the polling without losing the node. A machine taken down
 	// for maintenance should not have to be deleted and retyped.
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Enabled bool `json:"enabled"`
+	// IntervalSeconds is how often to check this machine. Per node, because a
+	// load balancer worth watching every three seconds and a nightly batch box
+	// worth watching every five minutes are both in the same cluster, and one
+	// global cadence has to be wrong for one of them.
+	IntervalSeconds int       `json:"interval_seconds"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 	// HasIcon says the node's favicon was found and stored. The bytes are not
 	// carried here: at fifteen kilobytes each they would be most of a cluster
 	// response the dashboard refetches every three seconds, for a picture that
@@ -66,6 +71,27 @@ const (
 	StatusUnknown = "unknown"
 )
 
+const (
+	// DefaultIntervalSeconds is what a node gets when nobody chose. Three
+	// seconds is the same cadence the dashboard refreshes at, so a node's state
+	// on screen is never much older than the screen itself.
+	DefaultIntervalSeconds = 3
+	// MinIntervalSeconds exists because the interval is a number a person types
+	// into a form, and zero would mean an unbounded loop against someone's
+	// production health endpoint.
+	MinIntervalSeconds = 1
+	MaxIntervalSeconds = 3600
+)
+
+// Interval is the checking cadence as a duration, with the default applied.
+func (n Node) Interval() time.Duration {
+	seconds := n.IntervalSeconds
+	if seconds < MinIntervalSeconds {
+		seconds = DefaultIntervalSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 // ClusterSummary is the one-line answer: how many are up, and are any of them
 // down right now.
 type ClusterSummary struct {
@@ -85,6 +111,11 @@ func (n Node) Validate() error {
 	}
 	if len(n.Name) > 80 {
 		return errors.New("name must be 80 characters or fewer")
+	}
+	// Zero means "not chosen", which the store fills in. A negative or absurd
+	// number is a mistake worth naming rather than clamping silently.
+	if n.IntervalSeconds != 0 && (n.IntervalSeconds < MinIntervalSeconds || n.IntervalSeconds > MaxIntervalSeconds) {
+		return fmt.Errorf("check interval must be between %d and %d seconds", MinIntervalSeconds, MaxIntervalSeconds)
 	}
 	return ValidateNodeURL(n.URL)
 }

@@ -25,6 +25,10 @@ var Add = api.Define(api.Spec[api.None, model.Node, model.Node]{
 		if err != nil {
 			return model.Node{}, api.BadRequest(err.Error())
 		}
+		// Check it now rather than at the end of whatever sleep the scheduler
+		// happens to be in. A new machine sitting at "unknown" for half a
+		// minute is the first thing anyone reads as broken.
+		wake()
 		return saved, nil
 	},
 })

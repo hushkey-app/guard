@@ -22,7 +22,7 @@ templ ClusterForm() {
 			}
 		}
 		@card.Content() {
-			<form data-cluster-form class="grid gap-4 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] sm:items-start">
+			<form data-cluster-form class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_7rem_auto] sm:items-start">
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "node-name"}) {
 						Name
@@ -47,12 +47,27 @@ templ ClusterForm() {
 						Attributes:  templ.Attributes{"data-node": "url", "spellcheck": "false", "autocomplete": "off"},
 					})
 				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "node-interval"}) {
+						Every
+					}
+					<div class="flex items-stretch">
+						@input.Input(input.Props{
+							ID:         "node-interval",
+							Type:       "number",
+							Value:      "3",
+							Class:      "rounded-r-none",
+							Attributes: templ.Attributes{"data-node": "interval", "min": "1", "max": "3600"},
+						})
+						<span class="grid shrink-0 place-items-center rounded-r-lg border border-l-0 border-input px-2 text-sm text-muted-foreground">s</span>
+					</div>
+				}
 				<div class="flex items-end gap-2 sm:pb-[2px]">
 					@button.Button(button.Props{Type: button.TypeSubmit}) {
 						Add
 					}
 				</div>
-				<p data-cluster-status class="text-sm text-muted-foreground sm:col-span-3"></p>
+				<p data-cluster-status class="text-sm text-muted-foreground sm:col-span-4"></p>
 			</form>
 		}
 	}
@@ -109,8 +124,22 @@ templ ClusterRow() {
 				</div>
 				<div class="text-right">
 					<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
-					<p class="text-[.65rem] text-muted-foreground">24h uptime</p>
+					<p data-node-checks class="text-[.65rem] text-muted-foreground">24h uptime</p>
 				</div>
+				<!-- Editable in place. A machine's cadence is the one thing
+				     about it that gets tuned, and a dialog to change one number
+				     is a dialog nobody opens. -->
+				<label class="flex shrink-0 items-center gap-1 text-[.65rem] text-muted-foreground" title="How often to check this machine">
+					every
+					<input
+						type="number"
+						data-node-interval
+						min="1"
+						max="3600"
+						class="cn-input h-7 w-14 px-1.5 text-center font-mono text-xs tabular-nums"
+					/>
+					s
+				</label>
 				<div data-node-strip class="flex h-6 w-24 items-end gap-px" title="the last sixty checks"></div>
 				@button.Button(button.Props{
 					Variant:    button.VariantGhost,

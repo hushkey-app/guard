@@ -135,6 +135,71 @@ func TestDeletingANodeForgetsItsChecks(t *testing.T) {
 	}
 }
 
+// The cadence is per node: a load balancer worth watching every three seconds
+// and a nightly batch box worth watching every five minutes live in the same
+// cluster, and one global interval has to be wrong for one of them.
+func TestNodeIntervals(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	fast, err := store.SaveNode(Node{Name: "lb", URL: "https://example.com/health", Enabled: true, IntervalSeconds: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slow, err := store.SaveNode(Node{Name: "batch", URL: "https://example.com/batch", Enabled: true, IntervalSeconds: 300})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Unset means the default, not zero — an unbounded loop against someone's
+	// production endpoint is not a reasonable reading of a blank field.
+	plain, err := store.SaveNode(Node{Name: "default", URL: "https://example.com/x", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fast.IntervalSeconds != 3 || slow.IntervalSeconds != 300 || plain.IntervalSeconds != model.DefaultIntervalSeconds {
+		t.Fatalf("intervals = %d, %d, %d", fast.IntervalSeconds, slow.IntervalSeconds, plain.IntervalSeconds)
+	}
+	if plain.Interval() != 3*time.Second {
+		t.Errorf("default interval = %s", plain.Interval())
+	}
+
+	slow.IntervalSeconds = 60
+	updated, err := store.SaveNode(slow)
+	if err != nil || updated.IntervalSeconds != 60 {
+		t.Fatalf("edit = %d, %v", updated.IntervalSeconds, err)
+	}
+
+	for _, bad := range []int{-5, 0x7fffffff, 3601} {
+		if err := (Node{Name: "x", URL: "https://example.com", IntervalSeconds: bad}).Validate(); err == nil {
+			t.Errorf("interval %d was accepted", bad)
+		}
+	}
+}
+
+// The scheduler reads only what it needs to decide what is due.
+func TestNodesForProbeCarriesCadenceAndLastCheck(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+	watched, _ := store.SaveNode(Node{Name: "watched", URL: "https://example.com/a", Enabled: true, IntervalSeconds: 15})
+	store.SaveNode(Node{Name: "paused", URL: "https://example.com/b", Enabled: false}) //nolint:errcheck
+	checkedAt := time.Now().UTC().Add(-time.Minute)
+	store.RecordCheck(watched.ID, Check{OK: true, StatusCode: 200, CheckedAt: checkedAt}) //nolint:errcheck
+
+	due, err := store.NodesForProbe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 1 {
+		t.Fatalf("%d nodes to probe, want only the enabled one", len(due))
+	}
+	if due[0].IntervalSeconds != 15 {
+		t.Errorf("interval = %d", due[0].IntervalSeconds)
+	}
+	if due[0].CheckedAt.Unix() != checkedAt.Unix() {
+		t.Errorf("last check = %s, want %s", due[0].CheckedAt, checkedAt)
+	}
+}
+
 func TestClusterSummary(t *testing.T) {
 	store := NewStore(100)
 	t.Cleanup(func() { store.Close() })

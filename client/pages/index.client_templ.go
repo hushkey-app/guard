@@ -68,7 +68,7 @@ func Page() templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-8\"><div class=\"flex flex-col justify-between gap-4 md:flex-row md:items-end\"><div><p class=\"text-xs font-semibold uppercase tracking-[.22em] text-primary\">Pack status</p><h1 class=\"mt-2 text-3xl font-semibold tracking-tight md:text-4xl\">Everything in sight.</h1><p class=\"mt-2 max-w-2xl text-muted-foreground\">Logs, traces, and metrics from every service—one small receiver, no sprawling stack.</p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-8\"><div class=\"flex flex-col justify-between gap-4 md:flex-row md:items-end\"><div><p class=\"text-xs font-semibold uppercase tracking-[.22em] text-primary\">Status</p><h1 class=\"mt-2 text-3xl font-semibold tracking-tight md:text-4xl\">Everything in sight.</h1><p class=\"mt-2 max-w-2xl text-muted-foreground\">Logs, traces, and metrics from every service—one small receiver, no sprawling stack.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

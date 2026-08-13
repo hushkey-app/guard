@@ -26,6 +26,10 @@ import (
 )
 
 type Store interface {
+	// NodesForProbe returns the enabled nodes with their cadence and the time
+	// they were last checked — enough to decide what is due, without the
+	// uptime and history a dashboard needs.
+	NodesForProbe() ([]model.Node, error)
 	Nodes() ([]model.Node, error)
 	Node(id int64) (model.Node, error)
 	RecordCheck(nodeID int64, check model.Check) error
@@ -48,9 +52,12 @@ type Prober struct {
 
 	client *http.Client
 	once   sync.Once
+	wake   chan struct{}
 }
 
 const (
+	// defaultInterval is only the idle sleep now that the cadence lives on each
+	// node — how long to wait when there is nothing to watch at all.
 	defaultInterval = 30 * time.Second
 	defaultTimeout  = 5 * time.Second
 	// A health endpoint answers in a few bytes. Reading more would let one
@@ -73,6 +80,7 @@ func (p *Prober) prepare() {
 		if p.Log == nil {
 			p.Log = slog.Default()
 		}
+		p.wake = make(chan struct{}, 1)
 		p.client = &http.Client{
 			Timeout: p.Timeout,
 			CheckRedirect: func(r *http.Request, via []*http.Request) error {
@@ -94,38 +102,105 @@ func (p *Prober) prepare() {
 	})
 }
 
-// Run polls every enabled node on a ticker until the context is cancelled.
+// Run checks nodes as they come due, until the context is cancelled.
 //
-// The first round happens immediately. A dashboard that says "unknown" for
-// thirty seconds after start looks broken in exactly the way this feature
-// exists to rule out.
+// Not one ticker: the cadence is per node, so a loop at any single rate is
+// either too slow for the fastest node or a busy-wait for the slowest. Each
+// pass checks whatever is due and then sleeps exactly until the next one is,
+// which also means an interval edited in the UI takes effect on the following
+// pass rather than at the end of some longer cycle.
+//
+// The first pass happens immediately. A dashboard that says "unknown" for the
+// first half-minute looks broken in exactly the way this feature exists to
+// rule out.
 func (p *Prober) Run(ctx context.Context) {
 	p.prepare()
-	p.Log.Info("cluster prober started", slog.Duration("interval", p.Interval), slog.Duration("timeout", p.Timeout))
-	ticker := time.NewTicker(p.Interval)
-	defer ticker.Stop()
+	p.Log.Info("cluster prober started", slog.Duration("timeout", p.Timeout))
 	for {
-		p.Round(ctx)
+		wait := p.Round(ctx)
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
+		case <-p.wake:
+			// Something changed the node list. Sleeping out the remaining
+			// interval would leave a machine somebody just added unwatched for
+			// as long as the slowest node in the cluster.
+			timer.Stop()
 		}
 	}
 }
 
-// Round checks every enabled node once, concurrently.
+// Wake asks for a pass now. Called when a node is added, edited or removed, so
+// the change takes effect while its author is still looking at the page.
 //
-// Concurrent because the round must not take as long as the sum of its
-// timeouts: ten nodes, one of them a black hole, and a serial round would be
-// fifty seconds behind a thirty-second ticker within a minute.
-func (p *Prober) Round(ctx context.Context) {
+// Non-blocking, and a single pending wake is as good as ten: the pass it
+// triggers reads the whole node list anyway.
+func (p *Prober) Wake() {
 	p.prepare()
-	nodes, err := p.Store.Nodes()
+	select {
+	case p.wake <- struct{}{}:
+	default:
+	}
+}
+
+// Round checks every node that is due and returns how long until the next one
+// is. Exported for tests and for the scheduler above; the "check everything
+// now" button calls RoundAll instead.
+func (p *Prober) Round(ctx context.Context) time.Duration {
+	p.prepare()
+	nodes, err := p.Store.NodesForProbe()
+	if err != nil {
+		p.Log.Error("cluster prober could not read its nodes", slog.Any("err", err))
+		return p.idle()
+	}
+
+	now := time.Now()
+	var due []model.Node
+	next := p.idle()
+	for _, node := range nodes {
+		if node.CheckedAt.IsZero() {
+			due = append(due, node)
+			// It counts towards the next wake-up too: a cluster of nodes that
+			// have all just been added would otherwise be checked once and
+			// then left alone for the idle sleep.
+			next = min(next, node.Interval())
+			continue
+		}
+		remaining := node.Interval() - now.Sub(node.CheckedAt)
+		if remaining <= 0 {
+			due = append(due, node)
+			// A node just checked is next due one full interval from now.
+			remaining = node.Interval()
+		}
+		next = min(next, remaining)
+	}
+	p.check(ctx, due)
+	// Never a zero sleep: a node whose interval is shorter than its own check
+	// takes would otherwise spin this loop with no gap at all.
+	return max(next, 100*time.Millisecond)
+}
+
+// RoundAll checks every enabled node regardless of when it was last seen — the
+// "is it back yet" button, which is a different question from "what is due".
+func (p *Prober) RoundAll(ctx context.Context) {
+	p.prepare()
+	nodes, err := p.Store.NodesForProbe()
 	if err != nil {
 		p.Log.Error("cluster prober could not read its nodes", slog.Any("err", err))
 		return
 	}
+	p.check(ctx, nodes)
+}
+
+// check probes a set of nodes concurrently.
+//
+// Concurrent because a pass must not take as long as the sum of its timeouts:
+// ten nodes, one of them a black hole, and a serial pass would fall a minute
+// behind its own schedule within a minute.
+func (p *Prober) check(ctx context.Context, nodes []model.Node) {
 	var wait sync.WaitGroup
 	for _, node := range nodes {
 		if !node.Enabled {
@@ -138,6 +213,16 @@ func (p *Prober) Round(ctx context.Context) {
 		}(node)
 	}
 	wait.Wait()
+}
+
+// idle is how long to sleep with nothing to watch. Long enough not to poll an
+// empty table in a loop, short enough that a node added in the UI starts being
+// checked while its author is still looking at the page.
+func (p *Prober) idle() time.Duration {
+	if p.Interval > 0 {
+		return p.Interval
+	}
+	return defaultInterval
 }
 
 // CheckNow probes one node immediately, for the button that asks "is it back

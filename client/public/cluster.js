@@ -28,6 +28,10 @@ export async function refreshCluster() {
 }
 
 function render() {
+  // The dashboard refreshes every three seconds. Rebuilding a row while its
+  // interval box is being typed into would replace the box mid-edit and throw
+  // away what was typed.
+  if (document.activeElement?.matches?.("[data-node-interval]")) return;
   for (const host of qsa("[data-cluster-rows]")) {
     host.replaceChildren(...nodes.map(row).filter(Boolean));
   }
@@ -86,6 +90,14 @@ function row(node) {
   qs("[data-node-uptime]", item).textContent = node.checks
     ? `${node.uptime.toFixed(Number.isInteger(node.uptime) ? 0 : 1)}%`
     : "—";
+  // How many checks that percentage is made of. 100% of two checks and 100% of
+  // twenty thousand are the same number and not the same claim.
+  qs("[data-node-checks]", item).textContent = node.checks
+    ? `over ${number.format(node.checks)} check${node.checks === 1 ? "" : "s"}`
+    : "24h uptime";
+
+  const interval = qs("[data-node-interval]", item);
+  if (interval) interval.value = node.interval_seconds || 3;
 
   strip(qs("[data-node-strip]", item), node.history || []);
 
@@ -113,6 +125,7 @@ function readForm(form) {
   return {
     name: qs('[data-node="name"]', form).value.trim(),
     url: qs('[data-node="url"]', form).value.trim(),
+    interval_seconds: Number(qs('[data-node="interval"]', form).value) || 3,
   };
 }
 
@@ -153,7 +166,13 @@ async function updateNode(id, changes) {
   await request(`/api/cluster/${id}`, {
     method: "PUT",
     headers: adminHeaders(),
-    body: JSON.stringify({ name: node.name, url: node.url, enabled: node.enabled, ...changes }),
+    body: JSON.stringify({
+      name: node.name,
+      url: node.url,
+      enabled: node.enabled,
+      interval_seconds: node.interval_seconds,
+      ...changes,
+    }),
   });
   await refreshCluster();
 }
@@ -169,6 +188,18 @@ document.addEventListener("submit", (event) => {
   if (!event.target.matches("[data-cluster-form]")) return;
   event.preventDefault();
   addNode(event.target);
+});
+
+// change, not input: a number box fires input on every keystroke, and saving
+// "1" on the way to typing "120" would briefly hammer the machine at one
+// second.
+document.addEventListener("change", (event) => {
+  const box = event.target.closest?.("[data-node-interval]");
+  if (!box) return;
+  const row = box.closest("[data-node-id]");
+  const seconds = Math.min(3600, Math.max(1, Number(box.value) || 3));
+  box.value = seconds;
+  updateNode(row.dataset.nodeId, { interval_seconds: seconds }).catch(reportOn(box));
 });
 
 document.addEventListener("click", (event) => {

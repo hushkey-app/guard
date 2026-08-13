@@ -24,7 +24,10 @@ var CheckNow = api.Define(api.Spec[api.None, api.None, []model.Node]{
 		if p == nil {
 			return nil, api.Unavailable("this instance is running without a cluster prober")
 		}
-		p.Round(r.Context())
+		// Everything, not just what is due: the question this button asks is
+		// "is it back yet", and a node checked two seconds ago is exactly the
+		// one being asked about.
+		p.RoundAll(r.Context())
 		return store.Get().Nodes()
 	},
 })
