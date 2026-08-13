@@ -111,6 +111,20 @@ func (q ViewDataQuery) Apply(stored model.ViewQuery) model.ViewQuery {
 	return stored
 }
 
+// ViewOrder is the dashboard's layout: the panel ids, in the order they should
+// appear. Views the caller does not mention keep their relative order and
+// follow, so a panel added in another tab mid-drag is not quietly dropped.
+type ViewOrder struct {
+	IDs []int64 `json:"ids"`
+}
+
+func (o ViewOrder) Validate() error {
+	if len(o.IDs) == 0 {
+		return api.Invalid("ids", "is required")
+	}
+	return nil
+}
+
 // DrillRequest asks for the events behind one mark on a panel: the query that
 // drew it, and which mark was clicked.
 //

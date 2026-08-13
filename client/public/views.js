@@ -31,16 +31,28 @@ async function loadCatalogue(force = false) {
 // The dashboard
 // ---------------------------------------------------------------------------
 
+const signatureOf = (list) => list.map((view) => `${view.id}:${view.updated_at}:${view.width}`).join(",");
+
 export async function refreshViews() {
   const grid = qs("[data-view-grid]");
   if (!grid) return;
-  views = await request("/api/views");
+  // The live tick keeps running while the layout is being changed, and
+  // rebuilding the grid under a card someone is holding would drop it.
+  if (dragging) return;
+  // A refresh that was already in flight when the layout changed is answering
+  // a question about the old order. Applying it would put the card back where
+  // it was, a moment after it was moved — so the revision it started under is
+  // checked against the one in force when it lands.
+  const revision = layoutRevision;
+  const fetched = await request("/api/views");
+  if (revision !== layoutRevision) return;
+  views = fetched;
   qs("[data-view-empty]")?.toggleAttribute("hidden", views.length > 0);
 
   // The panels are rebuilt only when the set of them changes. A live tick
   // redraws bodies, and rebuilding the cards underneath would throw away the
   // scroll position of every waterfall on the page every three seconds.
-  const signature = views.map((view) => `${view.id}:${view.updated_at}:${view.width}`).join(",");
+  const signature = signatureOf(views);
   if (signature !== renderedSignature) {
     renderedSignature = signature;
     const template = qs("[data-panel-template]");
@@ -462,6 +474,106 @@ document.addEventListener("submit", (event) => {
   event.preventDefault();
   saveView(event.target);
 });
+
+// ---------------------------------------------------------------------------
+// Reordering
+// ---------------------------------------------------------------------------
+//
+// Native drag and drop, driven from the handle. The alternative — pointer
+// events and a floating clone — is a few hundred lines to reimplement what the
+// platform already does, including the drag image, the cursor, and the escape
+// key cancelling the whole thing.
+//
+// The order is applied to the DOM as you drag and sent once on drop. Sending
+// per-move would be a request per pixel; waiting for the response to move the
+// card would be a card that lags the pointer.
+
+let dragging = null;
+// Bumped whenever the layout changes locally, so a refresh that crosses a
+// reorder can tell that its answer is out of date.
+let layoutRevision = 0;
+
+function panelOf(node) {
+  return node?.closest("[data-panel-id]");
+}
+
+document.addEventListener("dragstart", (event) => {
+  const handle = event.target.closest("[data-panel-drag]");
+  if (!handle) return;
+  dragging = panelOf(handle);
+  if (!dragging) return;
+  dragging.classList.add("opacity-40");
+  event.dataTransfer.effectAllowed = "move";
+  // Firefox will not start a drag without data on the transfer.
+  event.dataTransfer.setData("text/plain", dragging.dataset.panelId);
+});
+
+document.addEventListener("dragover", (event) => {
+  if (!dragging) return;
+  const over = panelOf(event.target);
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  if (!over || over === dragging) return;
+  // Compare against the midpoint of the card the pointer is over, so a card
+  // swaps once you are past half of it rather than the moment you touch it.
+  const box = over.getBoundingClientRect();
+  const after = event.clientX > box.left + box.width / 2;
+  over.parentNode.insertBefore(dragging, after ? over.nextSibling : over);
+});
+
+document.addEventListener("drop", (event) => {
+  if (dragging) event.preventDefault();
+});
+
+document.addEventListener("dragend", () => {
+  if (!dragging) return;
+  dragging.classList.remove("opacity-40");
+  dragging = null;
+  saveOrder();
+});
+
+// Arrow keys on a focused handle. Same operation, no pointer.
+document.addEventListener("keydown", (event) => {
+  const handle = event.target.closest?.("[data-panel-drag]");
+  if (!handle) return;
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+  if (!step) return;
+  event.preventDefault();
+  const panel = panelOf(handle);
+  const sibling = step > 0 ? panel.nextElementSibling : panel.previousElementSibling;
+  if (!sibling) return;
+  panel.parentNode.insertBefore(step > 0 ? sibling : panel, step > 0 ? panel : sibling);
+  // Moving a node detaches it, and a detached node loses focus — which would
+  // end the keyboard interaction after one press.
+  handle.focus();
+  saveOrder();
+});
+
+async function saveOrder() {
+  const ids = qsa("[data-panel-id]").map((node) => Number(node.dataset.panelId));
+  if (!ids.length) return;
+  // The grid already shows the new order, so nothing here re-renders on
+  // success — only a failure has anything to say.
+  layoutRevision++;
+  views = ids.map((id) => views.find((view) => view.id === id)).filter(Boolean);
+  renderedSignature = signatureOf(views);
+  try {
+    views = await request("/api/views/order", {
+      method: "PUT",
+      headers: adminHeaders(),
+      body: JSON.stringify({ ids }),
+    });
+    renderedSignature = signatureOf(views);
+  } catch (failure) {
+    // Put the dashboard back the way the server still has it, rather than
+    // leaving a layout on screen that will not survive a reload.
+    layoutRevision++;
+    renderedSignature = "";
+    await refreshViews();
+    const empty = qs("[data-view-empty]");
+    if (empty) empty.textContent = failure.message;
+  }
+}
 
 export function mountViews() {
   renderedSignature = "";

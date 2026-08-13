@@ -71,6 +71,26 @@ templ PanelTemplate() {
 					}
 					@card.Action() {
 						<div class="flex items-center gap-1">
+							<!-- draggable sits on the handle, not on the card:
+							     a whole panel that drags from anywhere cannot
+							     also be a panel you select text in. The button
+							     is real so it can be tabbed to and moved with
+							     the arrow keys — a handle that only answers to
+							     a mouse is a layout keyboard users cannot
+							     change. -->
+							@button.Button(button.Props{
+								Variant: button.VariantGhost,
+								Size:    button.SizeIconSm,
+								Class:   "cursor-grab text-muted-foreground active:cursor-grabbing",
+								Attributes: templ.Attributes{
+									"data-panel-drag": true,
+									"draggable":       "true",
+									"aria-label":      "Reorder panel — drag, or use the arrow keys",
+									"title":           "Drag to reorder · ← → with the keyboard",
+								},
+							}) {
+								@iconGrip()
+							}
 							@button.Button(button.Props{
 								Variant:    button.VariantGhost,
 								Size:       button.SizeIconSm,
@@ -258,6 +278,17 @@ templ TraceCard() {
 			}
 		}
 	</div>
+}
+
+templ iconGrip() {
+	<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+		<circle cx="9" cy="6" r="1.6"></circle>
+		<circle cx="15" cy="6" r="1.6"></circle>
+		<circle cx="9" cy="12" r="1.6"></circle>
+		<circle cx="15" cy="12" r="1.6"></circle>
+		<circle cx="9" cy="18" r="1.6"></circle>
+		<circle cx="15" cy="18" r="1.6"></circle>
+	</svg>
 }
 
 templ iconPencil() {

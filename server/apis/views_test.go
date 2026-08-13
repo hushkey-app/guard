@@ -263,6 +263,54 @@ func TestSamplePanelsAllRender(t *testing.T) {
 	}
 }
 
+// Dragging a card rewrites the whole layout in one request, and the answer is
+// what was stored — so the browser can settle on that rather than trusting its
+// own optimistic shuffle.
+func TestReorderEndpoint(t *testing.T) {
+	store, srv := server(t, "secret")
+	spans(t, store)
+
+	var ids []int64
+	for _, name := range []string{"one", "two", "three"} {
+		var created model.View
+		call(t, http.MethodPost, srv.URL+"/api/views", model.View{
+			Name: name, Panel: "bar", Query: model.ViewQuery{GroupBy: "service", Agg: "count"},
+		}, &created)
+		ids = append(ids, created.ID)
+	}
+	// Creating needed the token; the helper does not send one, so this
+	// dashboard is empty and the reorder below has nothing to do — which is the
+	// point of the next assertion.
+	if code := call(t, http.MethodPut, srv.URL+"/api/views/order", contractOrder{IDs: []int64{1}}, nil); code != http.StatusUnauthorized {
+		t.Fatalf("reorder without a token = %d, want 401", code)
+	}
+
+	_, open := server(t, "")
+	ids = ids[:0]
+	for _, name := range []string{"one", "two", "three"} {
+		var created model.View
+		call(t, http.MethodPost, open.URL+"/api/views", model.View{
+			Name: name, Panel: "bar", Query: model.ViewQuery{GroupBy: "service", Agg: "count"},
+		}, &created)
+		ids = append(ids, created.ID)
+	}
+	var reordered []model.View
+	if code := call(t, http.MethodPut, open.URL+"/api/views/order", contractOrder{IDs: []int64{ids[2], ids[1], ids[0]}}, &reordered); code != http.StatusOK {
+		t.Fatalf("reorder = %d", code)
+	}
+	if len(reordered) != 3 || reordered[0].Name != "three" || reordered[2].Name != "one" {
+		t.Fatalf("order = %v", []string{reordered[0].Name, reordered[1].Name, reordered[2].Name})
+	}
+	// An empty list is a client bug, not an instruction to flatten the layout.
+	if code := call(t, http.MethodPut, open.URL+"/api/views/order", contractOrder{}, nil); code != http.StatusBadRequest {
+		t.Errorf("empty order = %d, want 400", code)
+	}
+}
+
+type contractOrder struct {
+	IDs []int64 `json:"ids"`
+}
+
 // Clicking a bar asks for the events behind it, and gets exactly those.
 func TestDrillEndpoint(t *testing.T) {
 	store, srv := server(t, "")

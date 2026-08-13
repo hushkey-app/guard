@@ -221,6 +221,59 @@ VALUES(?,?,?,?,?,?,?,?)`, view.Name, view.Description, view.Panel, string(query)
 	return s.View(view.ID)
 }
 
+// ReorderViews writes a new dashboard order.
+//
+// The caller sends the ids it knows about, in the order it wants them. Views it
+// did not mention keep their relative order and follow — a second browser that
+// added a panel while this one was dragging should not have it silently
+// deleted from the layout, and renumbering only what was sent is what makes
+// that safe.
+//
+// One transaction, because a half-applied order is a dashboard that shuffles
+// itself on the next load.
+func (s *Store) ReorderViews(ids []int64) error {
+	current, err := s.Views()
+	if err != nil {
+		return err
+	}
+	known := make(map[int64]bool, len(current))
+	for _, view := range current {
+		known[view.ID] = true
+	}
+
+	order := make([]int64, 0, len(current))
+	seen := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		if known[id] && !seen[id] {
+			seen[id] = true
+			order = append(order, id)
+		}
+	}
+	for _, view := range current {
+		if !seen[view.ID] {
+			order = append(order, view.ID)
+		}
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	statement, err := tx.Prepare(`UPDATE views SET position = ?, updated_at_ns = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer statement.Close()
+	now := time.Now().UTC().UnixNano()
+	for position, id := range order {
+		if _, err := statement.Exec(position, now, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) DeleteView(id int64) error {
 	result, err := s.db.Exec(`DELETE FROM views WHERE id = ?`, id)
 	if err != nil {

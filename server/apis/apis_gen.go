@@ -33,6 +33,7 @@ func FsApiRoutes() []api.Route {
 		api.At("GET", "/api/views/catalogue", e5.Catalogue),
 		api.At("GET", "/api/views/data", e5.Data),
 		api.At("POST", "/api/views/drill", e5.Drill),
+		api.At("PUT", "/api/views/order", e5.Order),
 		api.At("POST", "/api/views/preview", e5.Preview),
 		api.At("POST", "/api/views/samples", e5.Samples),
 		api.At("DELETE", "/api/views/{id}", e5.Remove),

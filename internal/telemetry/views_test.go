@@ -568,6 +568,57 @@ func TestSaveAndDeleteView(t *testing.T) {
 	}
 }
 
+func TestReorderViews(t *testing.T) {
+	store, _ := seed(t)
+	names := []string{"first", "second", "third"}
+	ids := make([]int64, 0, len(names))
+	for _, name := range names {
+		saved, err := store.SaveView(View{Name: name, Panel: "bar", Query: ViewQuery{GroupBy: "service", Agg: "count"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, saved.ID)
+	}
+
+	if err := store.ReorderViews([]int64{ids[2], ids[0], ids[1]}); err != nil {
+		t.Fatal(err)
+	}
+	order, err := store.Views()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{order[0].Name, order[1].Name, order[2].Name}; got[0] != "third" || got[1] != "first" || got[2] != "second" {
+		t.Fatalf("order = %v, want [third first second]", got)
+	}
+}
+
+// A panel added in another tab mid-drag is not in the order the browser sends.
+// Dropping it from the layout — or worse, from the dashboard — would be a
+// panel someone loses by not having refreshed.
+func TestReorderKeepsViewsItWasNotToldAbout(t *testing.T) {
+	store, _ := seed(t)
+	var ids []int64
+	for _, name := range []string{"a", "b", "c"} {
+		saved, _ := store.SaveView(View{Name: name, Panel: "bar", Query: ViewQuery{GroupBy: "service", Agg: "count"}})
+		ids = append(ids, saved.ID)
+	}
+
+	// Only two of the three, plus an id that no longer exists.
+	if err := store.ReorderViews([]int64{ids[2], 9999, ids[0]}); err != nil {
+		t.Fatal(err)
+	}
+	order, err := store.Views()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 3 {
+		t.Fatalf("%d views survived a partial reorder, want 3", len(order))
+	}
+	if order[0].Name != "c" || order[1].Name != "a" || order[2].Name != "b" {
+		t.Fatalf("order = %v, want [c a b] — the unmentioned view follows", []string{order[0].Name, order[1].Name, order[2].Name})
+	}
+}
+
 func TestSaveViewRejectsInvalidQuery(t *testing.T) {
 	store, _ := seed(t)
 	if _, err := store.SaveView(View{Name: "", Panel: "bar", Query: ViewQuery{GroupBy: "service"}}); err == nil {

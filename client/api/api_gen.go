@@ -79,6 +79,11 @@ func (c *Client) Purge(ctx context.Context) (contract.Purged, error) {
 	return api.Call[contract.Purged](ctx, c.Transport, "POST", "/api/settings/purge", nil, nil)
 }
 
+// ReorderViews calls PUT /api/views/order.
+func (c *Client) ReorderViews(ctx context.Context, body contract.ViewOrder) ([]model.View, error) {
+	return api.Call[[]model.View](ctx, c.Transport, "PUT", "/api/views/order", nil, body)
+}
+
 // Settings calls GET /api/settings.
 func (c *Client) Settings(ctx context.Context) (model.Settings, error) {
 	return api.Call[model.Settings](ctx, c.Transport, "GET", "/api/settings", nil, nil)
