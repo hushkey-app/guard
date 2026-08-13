@@ -48,7 +48,13 @@ CREATE TABLE IF NOT EXISTS cluster_checks (
   latency_ms REAL NOT NULL DEFAULT 0,
   error TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS idx_cluster_checks_node ON cluster_checks(node_id, checked_at_ns DESC);`
+CREATE INDEX IF NOT EXISTS idx_cluster_checks_node ON cluster_checks(node_id, checked_at_ns DESC);
+CREATE TABLE IF NOT EXISTS cluster_assignments (
+  service TEXT NOT NULL,
+  instance TEXT NOT NULL,
+  node_id INTEGER NOT NULL REFERENCES cluster_nodes(id) ON DELETE CASCADE,
+  PRIMARY KEY(service, instance)
+);`
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate cluster: %w", err)
 	}
@@ -293,6 +299,51 @@ VALUES(?,?,?,?,?,?)`, nodeID, check.CheckedAt.UnixNano(), check.OK, check.Status
 	_, err := s.db.Exec(`DELETE FROM cluster_checks WHERE node_id = ? AND checked_at_ns < ?`,
 		nodeID, time.Now().UTC().Add(-checkRetention).UnixNano())
 	return err
+}
+
+// AssignInstance pins one instance to one machine by hand, or with a zero node
+// releases it back to whatever the telemetry implies.
+//
+// Guessing from hosts covers the ordinary case and cannot cover all of them. A
+// browser runs on nobody's machine; a service reached through a load balancer
+// reports the balancer's host, and adding that balancer as a "machine to watch"
+// to make the grouping come out right would put a thing on the dashboard that
+// is not a thing anyone wants to watch. So the answer can also just be typed.
+func (s *Store) AssignInstance(service, instance string, nodeID int64) error {
+	service, instance = strings.TrimSpace(service), strings.TrimSpace(instance)
+	if service == "" {
+		return errors.New("service is required")
+	}
+	s.topology.invalidate()
+	if nodeID == 0 {
+		_, err := s.db.Exec(`DELETE FROM cluster_assignments WHERE service = ? AND instance = ?`, service, instance)
+		return err
+	}
+	if _, err := s.Node(nodeID); err != nil {
+		return fmt.Errorf("node %d: %w", nodeID, err)
+	}
+	_, err := s.db.Exec(`INSERT INTO cluster_assignments(service,instance,node_id) VALUES(?,?,?)
+ON CONFLICT(service,instance) DO UPDATE SET node_id = excluded.node_id`, service, instance, nodeID)
+	return err
+}
+
+// assignments is every hand-made placement, keyed the way instances are.
+func (s *Store) assignments() (map[string]int64, error) {
+	rows, err := s.db.Query(`SELECT service, instance, node_id FROM cluster_assignments`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var service, instance string
+		var nodeID int64
+		if err := rows.Scan(&service, &instance, &nodeID); err != nil {
+			return nil, err
+		}
+		out[service+"\x00"+instance] = nodeID
+	}
+	return out, rows.Err()
 }
 
 // iconRetry is how long to wait before asking a node for its favicon again.

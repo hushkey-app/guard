@@ -111,6 +111,21 @@ func (q ViewDataQuery) Apply(stored model.ViewQuery) model.ViewQuery {
 	return stored
 }
 
+// Assignment states which machine an instance runs on, when its telemetry
+// cannot. NodeID zero releases it back to the automatic match.
+type Assignment struct {
+	Service  string `json:"service"`
+	Instance string `json:"instance"`
+	NodeID   int64  `json:"node_id"`
+}
+
+func (a Assignment) Validate() error {
+	if a.Service == "" {
+		return api.Invalid("service", "is required")
+	}
+	return nil
+}
+
 // ViewOrder is the dashboard's layout: the panel ids, in the order they should
 // appear. Views the caller does not mention keep their relative order and
 // follow, so a panel added in another tab mid-drag is not quietly dropped.

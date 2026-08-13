@@ -218,8 +218,23 @@ templ TopologyInstance() {
 			</div>
 			<span data-instance-counts class="shrink-0 text-[.65rem] text-muted-foreground"></span>
 			<span data-instance-seen class="shrink-0 text-xs text-muted-foreground"></span>
+			<!-- Where it runs, when the telemetry cannot say. A browser runs on
+			     nobody's machine, and a service behind a balancer reports the
+			     balancer's host — neither is a reason to add a box to the
+			     cluster that nobody wants to watch. -->
+			<span class="relative flex shrink-0 items-center">
+				<select data-instance-node class="cn-native-select h-7 min-w-36 py-0 text-xs text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground" aria-label="Which machine this runs on"></select>
+				@chevronSmall()
+			</span>
+			<span data-instance-placement class="w-16 shrink-0 text-[.6rem] uppercase tracking-wider text-muted-foreground"></span>
 		</div>
 	</template>
+}
+
+templ chevronSmall() {
+	<svg class="cn-native-select-icon pointer-events-none absolute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="m6 9 6 6 6-6"></path>
+	</svg>
 }
 
 // ClusterCard is the overview's version: the same data, no controls.

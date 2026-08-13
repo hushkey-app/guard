@@ -63,6 +63,12 @@ type Instance struct {
 	Errors   int       `json:"errors"`
 	Spans    int       `json:"spans"`
 	Metrics  int       `json:"metrics"`
+	// NodeID and Placement are filled in only by ClusterTopology: which machine
+	// this instance was filed under, and whether that was worked out from its
+	// telemetry ("host") or stated by a person ("assigned"). Empty everywhere
+	// else, because everywhere else the question has not been asked.
+	NodeID    int64  `json:"node_id,omitempty"`
+	Placement string `json:"placement,omitempty"`
 }
 
 type Summary struct {

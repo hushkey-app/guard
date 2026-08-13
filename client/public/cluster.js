@@ -94,6 +94,8 @@ function fillInstances(host, instances, emptyMessage) {
   }
   host.replaceChildren(...instances.map((instance) => {
     const row = template.content.firstElementChild.cloneNode(true);
+    row.dataset.service = instance.service;
+    row.dataset.instance = instance.instance || "";
     qs("[data-instance-service]", row).textContent = instance.service;
     qs("[data-instance-id]", row).textContent = instance.instance || "default";
     qs("[data-instance-counts]", row).textContent = [
@@ -102,6 +104,30 @@ function fillInstances(host, instances, emptyMessage) {
       instance.errors ? `${number.format(instance.errors)} errors` : "",
     ].filter(Boolean).join(" · ");
     qs("[data-instance-seen]", row).textContent = relativeTime(instance.last_seen);
+
+    const select = qs("[data-instance-node]", row);
+    if (select) {
+      select.replaceChildren(...[
+        ["0", "Work it out"],
+        ...nodes.map((node) => [String(node.id), node.name]),
+      ].map(([value, label]) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        return option;
+      }));
+      // Only a hand-made placement preselects a machine. A guessed one leaves
+      // the box on "Work it out", so the control shows what was *decided*
+      // rather than what was merely inferred.
+      select.value = instance.placement === "assigned" ? String(instance.node_id) : "0";
+    }
+    const placement = qs("[data-instance-placement]", row);
+    if (placement) {
+      placement.textContent = { assigned: "pinned", host: "by host" }[instance.placement] || "";
+      placement.title = instance.placement === "host"
+        ? "Worked out from the hosts in its telemetry"
+        : instance.placement === "assigned" ? "Set by hand" : "";
+    }
     return row;
   }));
 }
@@ -272,6 +298,20 @@ async function updateNode(id, changes) {
   await refreshCluster();
 }
 
+// Pin an instance to a machine, or hand it back to the automatic match.
+// The server answers with the whole new arrangement, so the page settles on
+// what was stored rather than on its own guess at the consequence.
+async function assign(service, instance, nodeID) {
+  const topology = await request("/api/cluster/assign", {
+    method: "PUT",
+    headers: adminHeaders(),
+    body: JSON.stringify({ service, instance, node_id: nodeID }),
+  });
+  nodes = topology.groups.map((group) => group.node);
+  renderTopology(topology);
+  renderStat();
+}
+
 async function deleteNode(id) {
   const node = nodes.find((item) => String(item.id) === String(id));
   if (!node || !confirm(`Stop watching ${node.name}?`)) return;
@@ -289,6 +329,12 @@ document.addEventListener("submit", (event) => {
 // "1" on the way to typing "120" would briefly hammer the machine at one
 // second.
 document.addEventListener("change", (event) => {
+  const select = event.target.closest?.("[data-instance-node]");
+  if (select) {
+    const row = select.closest("[data-service]");
+    assign(row.dataset.service, row.dataset.instance, Number(select.value)).catch(reportOn(select));
+    return;
+  }
   const box = event.target.closest?.("[data-node-interval]");
   if (!box) return;
   const row = box.closest("[data-node-id]");

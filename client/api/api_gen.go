@@ -23,6 +23,11 @@ func (c *Client) AddClusterNode(ctx context.Context, body model.Node) (model.Nod
 	return api.Call[model.Node](ctx, c.Transport, "POST", "/api/cluster", nil, body)
 }
 
+// AssignInstance calls PUT /api/cluster/assign.
+func (c *Client) AssignInstance(ctx context.Context, body contract.Assignment) (model.ClusterTopology, error) {
+	return api.Call[model.ClusterTopology](ctx, c.Transport, "PUT", "/api/cluster/assign", nil, body)
+}
+
 // CheckClusterNow calls POST /api/cluster/check.
 func (c *Client) CheckClusterNow(ctx context.Context) ([]model.Node, error) {
 	return api.Call[[]model.Node](ctx, c.Transport, "POST", "/api/cluster/check", nil, nil)

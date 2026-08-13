@@ -49,6 +49,15 @@ type topologyCache struct {
 	topology model.ClusterTopology
 }
 
+// invalidate drops the cache. Called when a placement is made by hand: waiting
+// half a minute to see the result of your own edit reads as the edit not
+// having worked.
+func (c *topologyCache) invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = time.Time{}
+}
+
 // ClusterTopology groups the known instances under the nodes their telemetry
 // points at, and reports the rest as unassigned.
 func (s *Store) ClusterTopology() (model.ClusterTopology, error) {
@@ -91,6 +100,15 @@ func (s *Store) ClusterTopology() (model.ClusterTopology, error) {
 		matched[i] = map[string]bool{}
 	}
 
+	assigned, err := s.assignments()
+	if err != nil {
+		return model.ClusterTopology{}, err
+	}
+	index := make(map[int64]int, len(nodes))
+	for i, node := range nodes {
+		index[node.ID] = i
+	}
+
 	seen := make([]map[string]bool, 0, len(summary.Instances))
 	for _, instance := range summary.Instances {
 		hosts, err := s.hostsFor(instance.Service, instance.Instance)
@@ -100,11 +118,14 @@ func (s *Store) ClusterTopology() (model.ClusterTopology, error) {
 		seen = append(seen, hosts)
 	}
 
-	place := func(index int, candidates []map[string]bool) bool {
+	place := func(at int, candidates []map[string]bool) bool {
 		for i := range nodes {
-			for host := range seen[index] {
+			for host := range seen[at] {
 				if candidates[i][host] {
-					grouped[i] = append(grouped[i], summary.Instances[index])
+					instance := summary.Instances[at]
+					instance.Placement = "host"
+					instance.NodeID = nodes[i].ID
+					grouped[i] = append(grouped[i], instance)
 					matched[i][host] = true
 					return true
 				}
@@ -113,18 +134,39 @@ func (s *Store) ClusterTopology() (model.ClusterTopology, error) {
 		return false
 	}
 
+	// A hand-made placement outranks every guess. It is the only way to state
+	// something the telemetry cannot imply — that a browser's traffic belongs
+	// to the machine behind it, or that a service reached through a balancer
+	// runs on a box whose host it never reports.
 	placed := make([]bool, len(summary.Instances))
-	for index := range summary.Instances {
-		placed[index] = place(index, exact)
+	for i, instance := range summary.Instances {
+		node, ok := assigned[instance.Service+"\x00"+instance.Instance]
+		if !ok {
+			continue
+		}
+		at, known := index[node]
+		if !known {
+			continue // the node was deleted; fall through to the guesses
+		}
+		copied := instance
+		copied.Placement = "assigned"
+		copied.NodeID = node
+		grouped[at] = append(grouped[at], copied)
+		placed[i] = true
 	}
-	for index := range summary.Instances {
-		if !placed[index] {
-			placed[index] = place(index, loose)
+	for i := range summary.Instances {
+		if !placed[i] {
+			placed[i] = place(i, exact)
 		}
 	}
-	for index, done := range placed {
+	for i := range summary.Instances {
+		if !placed[i] {
+			placed[i] = place(i, loose)
+		}
+	}
+	for i, done := range placed {
 		if !done {
-			topology.Unassigned = append(topology.Unassigned, summary.Instances[index])
+			topology.Unassigned = append(topology.Unassigned, summary.Instances[i])
 		}
 	}
 

@@ -116,6 +116,102 @@ func TestTopologyWithoutNodes(t *testing.T) {
 	}
 }
 
+// The case host matching cannot reach: a browser runs on nobody's machine, and
+// a service behind a balancer reports the balancer's host. Adding that balancer
+// as a machine to watch, so the grouping comes out right, would put something
+// on the dashboard nobody wants to watch — so the answer can be typed instead.
+func TestAssignmentOutranksTheGuess(t *testing.T) {
+	store := NewStore(1000)
+	t.Cleanup(func() { store.Close() })
+	one, _ := store.SaveNode(Node{Name: "VPS-1", URL: "http://vps-1:8000/health", Enabled: true})
+	two, _ := store.SaveNode(Node{Name: "VPS-2", URL: "http://vps-2:8000/health", Enabled: true})
+
+	// Its telemetry says vps-1; a person says vps-2.
+	telemetryFrom(t, store, "web", "web-1", map[string]any{"url.full": "http://vps-1:8000/x"})
+	// And this one has nothing to match on at all.
+	telemetryFrom(t, store, "browser", "v1", map[string]any{"url.full": "https://app.example.com/checkout"})
+
+	if err := store.AssignInstance("web", "web-1", two.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AssignInstance("browser", "v1", one.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	topology, err := store.ClusterTopology()
+	if err != nil {
+		t.Fatal(err)
+	}
+	where := map[string]string{}
+	how := map[string]string{}
+	for _, group := range topology.Groups {
+		for _, instance := range group.Instances {
+			where[instance.Service] = group.Node.Name
+			how[instance.Service] = instance.Placement
+		}
+	}
+	if where["web"] != "VPS-2" {
+		t.Errorf("web is on %q — the assignment lost to the host match", where["web"])
+	}
+	if where["browser"] != "VPS-1" {
+		t.Errorf("browser is on %q", where["browser"])
+	}
+	if how["web"] != "assigned" || how["browser"] != "assigned" {
+		t.Errorf("placements = %v, want both marked as stated rather than inferred", how)
+	}
+	if len(topology.Unassigned) != 0 {
+		t.Errorf("unassigned = %#v", topology.Unassigned)
+	}
+
+	// Released, it falls back to what its telemetry implies.
+	if err := store.AssignInstance("web", "web-1", 0); err != nil {
+		t.Fatal(err)
+	}
+	topology, _ = store.ClusterTopology()
+	for _, group := range topology.Groups {
+		for _, instance := range group.Instances {
+			if instance.Service == "web" && (group.Node.Name != "VPS-1" || instance.Placement != "host") {
+				t.Errorf("released web is on %s by %q, want VPS-1 by host", group.Node.Name, instance.Placement)
+			}
+		}
+	}
+}
+
+// A placement is visible immediately. Waiting out the cache to see the result
+// of your own edit reads as the edit not having worked.
+func TestAssignmentIsNotHiddenByTheCache(t *testing.T) {
+	store := NewStore(1000)
+	t.Cleanup(func() { store.Close() })
+	node, _ := store.SaveNode(Node{Name: "VPS-1", URL: "http://vps-1:8000/health", Enabled: true})
+	telemetryFrom(t, store, "worker", "w1", map[string]any{"queue.name": "emails"})
+
+	if topology, _ := store.ClusterTopology(); len(topology.Unassigned) != 1 {
+		t.Fatal("the worker should start unplaced")
+	}
+	if err := store.AssignInstance("worker", "w1", node.ID); err != nil {
+		t.Fatal(err)
+	}
+	topology, err := store.ClusterTopology()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(topology.Unassigned) != 0 || len(topology.Groups[0].Instances) != 1 {
+		t.Fatalf("the cache outlived the edit: %#v", topology)
+	}
+}
+
+// Pointing at a machine that is not there is a mistake worth naming.
+func TestAssignmentRejectsAMissingNode(t *testing.T) {
+	store := NewStore(1000)
+	t.Cleanup(func() { store.Close() })
+	if err := store.AssignInstance("web", "web-1", 9999); err == nil {
+		t.Error("an assignment to a nonexistent node was accepted")
+	}
+	if err := store.AssignInstance("", "web-1", 0); err == nil {
+		t.Error("an assignment with no service was accepted")
+	}
+}
+
 func TestHostForms(t *testing.T) {
 	for _, tc := range []struct {
 		raw          string
