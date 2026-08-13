@@ -4,12 +4,13 @@
 package apis
 
 import (
-	e0 "github.com/mirairoad/guard/server/apis/events"
-	e1 "github.com/mirairoad/guard/server/apis/logs"
-	e2 "github.com/mirairoad/guard/server/apis/metrics"
-	e3 "github.com/mirairoad/guard/server/apis/settings"
-	e4 "github.com/mirairoad/guard/server/apis/traces"
-	e5 "github.com/mirairoad/guard/server/apis/views"
+	e0 "github.com/mirairoad/guard/server/apis/cluster"
+	e1 "github.com/mirairoad/guard/server/apis/events"
+	e2 "github.com/mirairoad/guard/server/apis/logs"
+	e3 "github.com/mirairoad/guard/server/apis/metrics"
+	e4 "github.com/mirairoad/guard/server/apis/settings"
+	e5 "github.com/mirairoad/guard/server/apis/traces"
+	e6 "github.com/mirairoad/guard/server/apis/views"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -17,27 +18,32 @@ import (
 // Pass it to api.Register together with the application's api.Config.
 func FsApiRoutes() []api.Route {
 	return []api.Route{
-		api.At("GET", "/api/events", e0.List),
-		api.At("GET", "/api/events/{id}", e0.ByID),
+		api.At("GET", "/api/cluster", e0.List),
+		api.At("POST", "/api/cluster", e0.Add),
+		api.At("POST", "/api/cluster/check", e0.CheckNow),
+		api.At("DELETE", "/api/cluster/{id}", e0.Remove),
+		api.At("PUT", "/api/cluster/{id}", e0.Update),
+		api.At("GET", "/api/events", e1.List),
+		api.At("GET", "/api/events/{id}", e1.ByID),
 		api.At("GET", "/api/facets", Facets),
-		api.At("GET", "/api/logs", e1.List),
-		api.At("POST", "/api/logs", e1.Write),
-		api.At("GET", "/api/metrics/series", e2.Series),
-		api.At("GET", "/api/settings", e3.Read),
-		api.At("PUT", "/api/settings", e3.Update),
-		api.At("POST", "/api/settings/purge", e3.Purge),
+		api.At("GET", "/api/logs", e2.List),
+		api.At("POST", "/api/logs", e2.Write),
+		api.At("GET", "/api/metrics/series", e3.Series),
+		api.At("GET", "/api/settings", e4.Read),
+		api.At("PUT", "/api/settings", e4.Update),
+		api.At("POST", "/api/settings/purge", e4.Purge),
 		api.At("GET", "/api/summary", Summary),
-		api.At("GET", "/api/traces/{id}", e4.ByID),
-		api.At("GET", "/api/views", e5.List),
-		api.At("POST", "/api/views", e5.Create),
-		api.At("GET", "/api/views/catalogue", e5.Catalogue),
-		api.At("GET", "/api/views/data", e5.Data),
-		api.At("POST", "/api/views/drill", e5.Drill),
-		api.At("PUT", "/api/views/order", e5.Order),
-		api.At("POST", "/api/views/preview", e5.Preview),
-		api.At("POST", "/api/views/samples", e5.Samples),
-		api.At("DELETE", "/api/views/{id}", e5.Remove),
-		api.At("PUT", "/api/views/{id}", e5.Update),
+		api.At("GET", "/api/traces/{id}", e5.ByID),
+		api.At("GET", "/api/views", e6.List),
+		api.At("POST", "/api/views", e6.Create),
+		api.At("GET", "/api/views/catalogue", e6.Catalogue),
+		api.At("GET", "/api/views/data", e6.Data),
+		api.At("POST", "/api/views/drill", e6.Drill),
+		api.At("PUT", "/api/views/order", e6.Order),
+		api.At("POST", "/api/views/preview", e6.Preview),
+		api.At("POST", "/api/views/samples", e6.Samples),
+		api.At("DELETE", "/api/views/{id}", e6.Remove),
+		api.At("PUT", "/api/views/{id}", e6.Update),
 		api.At("GET", "/healthz", Health),
 	}
 }

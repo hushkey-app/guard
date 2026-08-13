@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"io/fs"
@@ -9,11 +10,14 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/mirairoad/guard/client/pages"
+	"github.com/mirairoad/guard/internal/cluster"
 	"github.com/mirairoad/guard/internal/ingest"
 	"github.com/mirairoad/guard/internal/telemetry"
 	"github.com/mirairoad/guard/server/apis"
+	apiprober "github.com/mirairoad/guard/server/apis/prober"
 	apistore "github.com/mirairoad/guard/server/apis/store"
 	"github.com/mirairoad/howl-go/core/api"
 	"github.com/mirairoad/howl-go/core/app"
@@ -32,6 +36,8 @@ func main() {
 	dbPath := flag.String("db", env("GUARD_DB_PATH", "guard.db"), "SQLite database file")
 	retentionHours := flag.Int("retention-hours", envInt("GUARD_RETENTION_HOURS", 24), "hours of telemetry to retain")
 	maxEvents := flag.Int("max-events", envInt("GUARD_MAX_EVENTS", 1_000_000), "maximum telemetry events retained")
+	clusterInterval := flag.Duration("cluster-interval", envDuration("GUARD_CLUSTER_INTERVAL", 30*time.Second), "how often to poll cluster nodes")
+	clusterTimeout := flag.Duration("cluster-timeout", envDuration("GUARD_CLUSTER_TIMEOUT", 5*time.Second), "how long a cluster health check may take")
 	flag.Parse()
 
 	// Tinted columns in a terminal, JSON into a pipe or a log file — which is
@@ -79,9 +85,19 @@ func main() {
 	token := os.Getenv("GUARD_TOKEN")
 	ingest.Handler{Store: store, Token: token}.Register(mux)
 
+	// The cluster prober: the one part of guard that makes outbound requests.
+	// It watches machines that were declared rather than ones that talk to
+	// us — the difference between "this service stopped sending telemetry" and
+	// "this box is down", which is the whole reason to have it.
+	probe := &cluster.Prober{Store: store, Interval: *clusterInterval, Timeout: *clusterTimeout}
+	proberCtx, stopProber := context.WithCancel(context.Background())
+	defer stopProber()
+	go probe.Run(proberCtx)
+
 	// The JSON API. The table is generated from server/apis/, so an endpoint's
 	// file is its URL and nothing is registered by hand.
 	apistore.Use(store)
+	apiprober.Use(probe)
 	routes := apis.FsApiRoutes()
 	api.Register(mux, api.Config{Authorize: bearer(token)}, routes...)
 
@@ -124,6 +140,14 @@ func bearer(token string) func(*http.Request, []string) error {
 
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func envDuration(name string, fallback time.Duration) time.Duration {
+	value, err := time.ParseDuration(os.Getenv(name))
+	if err == nil && value > 0 {
 		return value
 	}
 	return fallback

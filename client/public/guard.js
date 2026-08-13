@@ -7,6 +7,7 @@
 import { adminHeaders, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
+import { refreshCluster } from "./cluster.js";
 
 const pageSize = 50;
 const signalPages = new Map([["logs", 0], ["traces", 0], ["metrics", 0]]);
@@ -467,6 +468,7 @@ async function refreshPage({ facets = false } = {}) {
   const work = [refreshSignal("logs"), refreshSignal("traces"), refreshSignal("metrics"), refreshMetrics(), loadSettings()];
   if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
   if (qs("[data-view-grid]")) work.push(refreshViews());
+  if (qs("[data-cluster-rows]")) work.push(refreshCluster());
   if (facets) work.push(refreshFacets());
   await Promise.allSettled(work);
 }

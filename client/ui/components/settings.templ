@@ -1,0 +1,68 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/item"
+	"github.com/mirairoad/guard/client/ui"
+)
+
+// SettingsNav is the second navigation level, shared by every settings page so
+// the primary sidebar stays focused as this section grows.
+//
+// It takes the current path rather than reading it from ctx: these pages are
+// also rendered in the browser, where the wasm build has a router but the
+// component is simpler for not needing one.
+templ SettingsNav(current string) {
+	<aside class="lg:sticky lg:top-24">
+		<p class="mb-3 px-3 text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Settings</p>
+		@item.Group(item.GroupProps{Class: "gap-1", Attributes: templ.Attributes{"aria-label": "Settings sections"}}) {
+			@settingsLink("/settings", "▤", "Data storage", "Retention and cleanup", current)
+			@settingsLink("/settings/cluster", "◈", "Cluster", "Machines to watch", current)
+			@item.Item(item.Props{Size: item.SizeSm, Class: "opacity-50", Attributes: templ.Attributes{"aria-disabled": "true"}}) {
+				@item.Media(item.MediaProps{Variant: item.MediaVariantIcon}) {
+					⌘
+				}
+				@item.Content() {
+					@item.Title() {
+						Config files
+					}
+					@item.Description() {
+						Coming soon
+					}
+				}
+			}
+		}
+		<p class="mt-4 px-3 text-xs leading-relaxed text-muted-foreground">New settings pages can be added here without crowding the main navigation.</p>
+	</aside>
+}
+
+templ settingsLink(path, icon, title, description, current string) {
+	@item.Item(item.Props{
+		Href:    path,
+		Size:    item.SizeSm,
+		Variant: item.VariantOutline,
+		Class:   settingsClass(path == current),
+		Attributes: templ.Attributes{
+			"aria-current":  ui.Current(path == current),
+			"data-nav-link": "true",
+		},
+	}) {
+		@item.Media(item.MediaProps{Variant: item.MediaVariantIcon}) {
+			{ icon }
+		}
+		@item.Content() {
+			@item.Title() {
+				{ title }
+			}
+			@item.Description() {
+				{ description }
+			}
+		}
+	}
+}
+
+func settingsClass(active bool) string {
+	if active {
+		return "border-primary/35 bg-primary/10"
+	}
+	return ""
+}

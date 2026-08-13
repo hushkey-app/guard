@@ -191,6 +191,11 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	if err := migrateViews(s.db); err != nil {
 		return err
 	}
+	// The cluster: machines guard watches from the outside, rather than ones
+	// that talk to it.
+	if err := migrateCluster(s.db); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO settings(id, retention_hours, max_events) VALUES(1, ?, ?)`, defaults.RetentionHours, defaults.MaxEvents); err != nil {
 		return fmt.Errorf("initialize settings: %w", err)
 	}
@@ -313,6 +318,7 @@ signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,
 			if e.Service == "" {
 				e.Service = "unknown-service"
 			}
+			e.Message = stripANSI(e.Message)
 			// A nil map marshals to the JSON scalar `null`, not to an object,
 			// and every query that walks the attributes has to special-case it
 			// from then on. An event with no attributes has an empty set of

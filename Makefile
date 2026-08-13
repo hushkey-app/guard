@@ -61,6 +61,7 @@ css:
 		'@source "../public/core.js";' \
 		'@source "../public/charts.js";' \
 		'@source "../public/views.js";' \
+		'@source "../public/cluster.js";' \
 		"@source \"$$SHADCN_TEMPL_PATH/components/**/*.templ\";" \
 		> client/styles/app.sources.css
 	.howl/tailwind/node_modules/.bin/tailwindcss -i client/styles/app.css -o client/public/app.css --minify

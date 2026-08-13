@@ -18,6 +18,21 @@ type Client struct{ *api.Transport }
 
 func New(baseURL string) *Client { return &Client{Transport: api.NewTransport(baseURL)} }
 
+// AddClusterNode calls POST /api/cluster.
+func (c *Client) AddClusterNode(ctx context.Context, body model.Node) (model.Node, error) {
+	return api.Call[model.Node](ctx, c.Transport, "POST", "/api/cluster", nil, body)
+}
+
+// CheckClusterNow calls POST /api/cluster/check.
+func (c *Client) CheckClusterNow(ctx context.Context) ([]model.Node, error) {
+	return api.Call[[]model.Node](ctx, c.Transport, "POST", "/api/cluster/check", nil, nil)
+}
+
+// Cluster calls GET /api/cluster.
+func (c *Client) Cluster(ctx context.Context) ([]model.Node, error) {
+	return api.Call[[]model.Node](ctx, c.Transport, "GET", "/api/cluster", nil, nil)
+}
+
 // CreateSamplePanels calls POST /api/views/samples.
 func (c *Client) CreateSamplePanels(ctx context.Context) ([]model.View, error) {
 	return api.Call[[]model.View](ctx, c.Transport, "POST", "/api/views/samples", nil, nil)
@@ -79,6 +94,12 @@ func (c *Client) Purge(ctx context.Context) (contract.Purged, error) {
 	return api.Call[contract.Purged](ctx, c.Transport, "POST", "/api/settings/purge", nil, nil)
 }
 
+// RemoveClusterNode calls DELETE /api/cluster/{id}.
+func (c *Client) RemoveClusterNode(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/cluster/{id}", id), nil, nil)
+	return err
+}
+
 // ReorderViews calls PUT /api/views/order.
 func (c *Client) ReorderViews(ctx context.Context, body contract.ViewOrder) ([]model.View, error) {
 	return api.Call[[]model.View](ctx, c.Transport, "PUT", "/api/views/order", nil, body)
@@ -97,6 +118,11 @@ func (c *Client) Summary(ctx context.Context) (model.Summary, error) {
 // Trace calls GET /api/traces/{id}.
 func (c *Client) Trace(ctx context.Context, id string) (model.Trace, error) {
 	return api.Call[model.Trace](ctx, c.Transport, "GET", api.Path("/api/traces/{id}", id), nil, nil)
+}
+
+// UpdateClusterNode calls PUT /api/cluster/{id}.
+func (c *Client) UpdateClusterNode(ctx context.Context, id string, body model.Node) (model.Node, error) {
+	return api.Call[model.Node](ctx, c.Transport, "PUT", api.Path("/api/cluster/{id}", id), nil, body)
 }
 
 // UpdateSettings calls PUT /api/settings.

@@ -7,6 +7,7 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/table"
 	"github.com/mirairoad/guard/client/lifecycle"
 	"github.com/mirairoad/guard/client/ui"
+	"github.com/mirairoad/guard/client/ui/components"
 )
 
 templ Head() {
@@ -26,13 +27,19 @@ templ Page() {
 				Inspect live logs →
 			}
 		</div>
-		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+			@ui.Stat("Cluster", "cluster", "—", "machines reachable")
 			@ui.Stat("Instances", "instances", "—", "active identities")
 			@ui.Stat("Logs", "logs", "—", "retained records")
 			@ui.Stat("Errors", "errors", "—", "need attention")
 			@ui.Stat("Spans", "spans", "—", "trace activity")
 			@ui.Stat("Metrics", "metrics", "—", "data points")
 		</div>
+		// Watched from the outside, above the instances that are discovered
+		// from the inside: a machine that has stopped reporting disappears from
+		// one and goes red in the other.
+		@components.ClusterCard()
+		@components.ClusterRow()
 		<div class="grid gap-6 xl:grid-cols-[1fr_1.6fr]">
 			@card.Card() {
 				@card.Header() {

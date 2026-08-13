@@ -338,6 +338,60 @@ func TestDrillEndpoint(t *testing.T) {
 	}
 }
 
+// Adding a node decides which URLs guard will fetch, on a timer, from inside
+// whatever network it runs in — so it is admin even though it looks like a
+// bookmark.
+func TestClusterEndpoints(t *testing.T) {
+	_, secured := server(t, "secret")
+	if code := call(t, http.MethodPost, secured.URL+"/api/cluster", model.Node{Name: "VPS-1", URL: "https://example.com/health"}, nil); code != http.StatusUnauthorized {
+		t.Fatalf("adding a node without a token = %d, want 401", code)
+	}
+
+	_, srv := server(t, "")
+	var node model.Node
+	if code := call(t, http.MethodPost, srv.URL+"/api/cluster", model.Node{Name: "VPS-1", URL: "https://example.com/health"}, &node); code != http.StatusOK {
+		t.Fatalf("add = %d", code)
+	}
+	if !node.Enabled || node.Status != model.StatusUnknown {
+		t.Fatalf("new node = %#v; it should be watched and not yet checked", node)
+	}
+
+	for _, bad := range []string{"", "not-a-url", "file:///etc/passwd"} {
+		if code := call(t, http.MethodPost, srv.URL+"/api/cluster", model.Node{Name: "x", URL: bad}, nil); code != http.StatusBadRequest {
+			t.Errorf("url %q = %d, want 400", bad, code)
+		}
+	}
+
+	node.Enabled = false
+	var paused model.Node
+	if code := call(t, http.MethodPut, srv.URL+"/api/cluster/"+itoa(node.ID), node, &paused); code != http.StatusOK || paused.Enabled {
+		t.Fatalf("pause = %d, enabled %v", code, paused.Enabled)
+	}
+
+	var listed []model.Node
+	call(t, http.MethodGet, srv.URL+"/api/cluster", nil, &listed)
+	if len(listed) != 1 {
+		t.Fatalf("listed %d nodes", len(listed))
+	}
+
+	if code := call(t, http.MethodDelete, srv.URL+"/api/cluster/"+itoa(node.ID), nil, nil); code != http.StatusNoContent {
+		t.Fatalf("delete = %d, want 204", code)
+	}
+	if code := call(t, http.MethodDelete, srv.URL+"/api/cluster/"+itoa(node.ID), nil, nil); code != http.StatusNotFound {
+		t.Fatalf("second delete = %d, want 404", code)
+	}
+}
+
+// The test server wires no prober, which is the case a running binary should
+// never be in — but an endpoint that panicked over it would take the whole API
+// down rather than the one request.
+func TestCheckNowWithoutAProber(t *testing.T) {
+	_, srv := server(t, "")
+	if code := call(t, http.MethodPost, srv.URL+"/api/cluster/check", nil, nil); code != http.StatusServiceUnavailable {
+		t.Fatalf("check with no prober = %d, want 503", code)
+	}
+}
+
 func TestTraceEndpoint(t *testing.T) {
 	store, srv := server(t, "")
 	spans(t, store)

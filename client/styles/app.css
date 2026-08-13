@@ -156,6 +156,14 @@
   transform: none;
 }
 
+/* The overview shows the same cluster rows as the settings page, without the
+ * controls for changing them. One rule, rather than a second template that
+ * drifts the first time a column is added. */
+[data-cluster-compact] [data-node-pause],
+[data-cluster-compact] [data-node-delete] {
+  display: none;
+}
+
 /* The view builder, same mechanism as the detail panel above: views.js toggles
  * `.open` on the shell. It is a second copy rather than a shared selector list
  * because the two panels are different widths and will grow apart. */

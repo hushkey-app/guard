@@ -1,0 +1,160 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/field"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/mirairoad/guard/client/ui"
+)
+
+// ClusterForm adds a machine to watch: a name and a health URL, which is the
+// whole of it. Auth headers, expected bodies and TCP checks are each a way for
+// a probe to fail that nobody can read off a dashboard.
+templ ClusterForm() {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Add a machine
+			}
+			@card.Description() {
+				Guard fetches this URL on a timer and records whether it answered.
+			}
+		}
+		@card.Content() {
+			<form data-cluster-form class="grid gap-4 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] sm:items-start">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "node-name"}) {
+						Name
+					}
+					@input.Input(input.Props{
+						ID:          "node-name",
+						Placeholder: "VPS-1",
+						Required:    true,
+						Attributes:  templ.Attributes{"data-node": "name", "maxlength": "80", "autocomplete": "off"},
+					})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "node-url"}) {
+						Health URL
+					}
+					@input.Input(input.Props{
+						ID:          "node-url",
+						Type:        "url",
+						Placeholder: "https://vps-1.example.com/api/health",
+						Required:    true,
+						Class:       "font-mono",
+						Attributes:  templ.Attributes{"data-node": "url", "spellcheck": "false", "autocomplete": "off"},
+					})
+				}
+				<div class="flex items-end gap-2 sm:pb-[2px]">
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						Add
+					}
+				</div>
+				<p data-cluster-status class="text-sm text-muted-foreground sm:col-span-3"></p>
+			</form>
+		}
+	}
+}
+
+// ClusterList is the table of watched machines. Its rows are cloned from the
+// template below — the same reason the panels are: the browser fetches the
+// nodes, so nothing here can be rendered ahead of knowing what they are.
+templ ClusterList() {
+	@card.Card(card.Props{Class: "gap-0 py-0"}) {
+		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border p-5">
+			<div>
+				<h2 class="font-medium">Watched machines</h2>
+				<p data-cluster-summary class="mt-0.5 text-xs text-muted-foreground">Loading…</p>
+			</div>
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-cluster-check": true},
+			}) {
+				Check now
+			}
+		</div>
+		<div data-cluster-rows class="divide-y divide-border"></div>
+		<div data-cluster-empty class="p-8">
+			@ui.Empty("No machines yet. Add one above and guard starts watching it within the interval.")
+		</div>
+	}
+}
+
+// ClusterRow is one machine. The strip on the right is the last sixty checks,
+// oldest first — a shape that shows a flapping node, which a single "up" badge
+// never can.
+templ ClusterRow() {
+	<template data-cluster-row-template>
+		<div data-node-row class="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
+			<span data-node-dot class="size-2.5 shrink-0 rounded-full" title="status"></span>
+			<div class="min-w-0 flex-1">
+				<div class="flex items-center gap-2">
+					<p data-node-name class="truncate font-medium"></p>
+					<span data-node-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+				</div>
+				<a data-node-url target="_blank" rel="noreferrer noopener" class="block truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"></a>
+				<p data-node-error class="mt-0.5 truncate text-xs text-destructive empty:hidden"></p>
+			</div>
+			<div class="flex shrink-0 items-center gap-4">
+				<div class="text-right">
+					<p data-node-latency class="font-mono text-sm tabular-nums"></p>
+					<p data-node-checked class="text-[.65rem] text-muted-foreground"></p>
+				</div>
+				<div class="text-right">
+					<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
+					<p class="text-[.65rem] text-muted-foreground">24h uptime</p>
+				</div>
+				<div data-node-strip class="flex h-6 w-24 items-end gap-px" title="the last sixty checks"></div>
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Size:       button.SizeIconSm,
+					Class:      "text-muted-foreground",
+					Attributes: templ.Attributes{"data-node-pause": true, "aria-label": "Pause or resume watching"},
+				}) {
+					<span data-node-pause-icon>⏸</span>
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Size:       button.SizeIconSm,
+					Class:      "text-muted-foreground hover:text-destructive",
+					Attributes: templ.Attributes{"data-node-delete": true, "aria-label": "Stop watching this machine"},
+				}) {
+					@iconTrash()
+				}
+			</div>
+		</div>
+	</template>
+}
+
+// ClusterCard is the overview's version: the same data, no controls.
+templ ClusterCard() {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Cluster
+			}
+			@card.Description() {
+				Machines watched from the outside
+			}
+			@card.Action() {
+				@button.Button(button.Props{Href: "/settings/cluster", Variant: button.VariantGhost, Size: button.SizeSm}) {
+					Manage →
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "space-y-2"}) {
+			<!-- The same rows as the settings page, with the controls hidden
+			     by one CSS rule rather than a second near-identical template
+			     that would drift the first time a column is added. -->
+			<div data-cluster-compact>
+				<div data-cluster-rows class="divide-y divide-border"></div>
+			</div>
+			<div data-cluster-empty>
+				@ui.Empty("No machines watched yet — add one in settings.")
+			</div>
+		}
+	}
+}
