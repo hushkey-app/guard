@@ -48,6 +48,39 @@ CREATE INDEX IF NOT EXISTS idx_cluster_checks_node ON cluster_checks(node_id, ch
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate cluster: %w", err)
 	}
+
+	// The favicon, added after the table existed. Stored rather than linked:
+	// guard's network can reach an internal box that the browser looking at
+	// this dashboard often cannot, and an <img> pointing at http://vps-1/ from
+	// an https page is blocked as mixed content before it is ever attempted.
+	existing := map[string]bool{}
+	rows, err := db.Query(`SELECT name FROM pragma_table_xinfo('cluster_nodes')`)
+	if err != nil {
+		return fmt.Errorf("read cluster columns: %w", err)
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for column, definition := range map[string]string{
+		"icon":            "BLOB",
+		"icon_type":       "TEXT NOT NULL DEFAULT ''",
+		"icon_fetched_ns": "INTEGER NOT NULL DEFAULT 0",
+	} {
+		if existing[column] {
+			continue
+		}
+		if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE cluster_nodes ADD COLUMN %s %s`, column, definition)); err != nil {
+			return fmt.Errorf("add %s: %w", column, err)
+		}
+	}
 	return nil
 }
 
@@ -58,7 +91,8 @@ CREATE INDEX IF NOT EXISTS idx_cluster_checks_node ON cluster_checks(node_id, ch
 // a correlated subquery that has to be re-derived every time someone adds a
 // column.
 func (s *Store) Nodes() ([]Node, error) {
-	rows, err := s.db.Query(`SELECT id,name,url,enabled,created_at_ns,updated_at_ns FROM cluster_nodes ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id,name,url,enabled,created_at_ns,updated_at_ns,LENGTH(COALESCE(icon,'')) > 0
+FROM cluster_nodes ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +101,7 @@ func (s *Store) Nodes() ([]Node, error) {
 	for rows.Next() {
 		var node Node
 		var created, updated int64
-		if err := rows.Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &created, &updated); err != nil {
+		if err := rows.Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &created, &updated, &node.HasIcon); err != nil {
 			return nil, err
 		}
 		node.CreatedAt = time.Unix(0, created).UTC()
@@ -89,8 +123,9 @@ func (s *Store) Nodes() ([]Node, error) {
 func (s *Store) Node(id int64) (Node, error) {
 	var node Node
 	var created, updated int64
-	err := s.db.QueryRow(`SELECT id,name,url,enabled,created_at_ns,updated_at_ns FROM cluster_nodes WHERE id = ?`, id).
-		Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &created, &updated)
+	err := s.db.QueryRow(`SELECT id,name,url,enabled,created_at_ns,updated_at_ns,LENGTH(COALESCE(icon,'')) > 0
+FROM cluster_nodes WHERE id = ?`, id).
+		Scan(&node.ID, &node.Name, &node.URL, &node.Enabled, &created, &updated, &node.HasIcon)
 	if err != nil {
 		return node, err
 	}
@@ -220,6 +255,44 @@ VALUES(?,?,?,?,?,?)`, nodeID, check.CheckedAt.UnixNano(), check.OK, check.Status
 	_, err := s.db.Exec(`DELETE FROM cluster_checks WHERE node_id = ? AND checked_at_ns < ?`,
 		nodeID, time.Now().UTC().Add(-checkRetention).UnixNano())
 	return err
+}
+
+// iconRetry is how long to wait before asking a node for its favicon again.
+// Most machines never have one, and the point of remembering the attempt is
+// that "no icon" costs one request a day rather than one per check.
+const iconRetry = 24 * time.Hour
+
+// IconStale reports whether it is worth asking this node for its icon.
+func (s *Store) IconStale(nodeID int64) (bool, error) {
+	var fetched int64
+	err := s.db.QueryRow(`SELECT icon_fetched_ns FROM cluster_nodes WHERE id = ?`, nodeID).Scan(&fetched)
+	if err != nil {
+		return false, err
+	}
+	return time.Since(time.Unix(0, fetched)) > iconRetry, nil
+}
+
+// SaveIcon stores what the prober found, including nothing. An empty body with
+// the attempt recorded is the difference between "we looked and there is none"
+// and "we have not looked", and only the second is worth retrying soon.
+func (s *Store) SaveIcon(nodeID int64, icon []byte, contentType string) error {
+	_, err := s.db.Exec(`UPDATE cluster_nodes SET icon = ?, icon_type = ?, icon_fetched_ns = ? WHERE id = ?`,
+		icon, contentType, time.Now().UTC().UnixNano(), nodeID)
+	return err
+}
+
+// Icon returns the stored bytes and their content type.
+func (s *Store) Icon(nodeID int64) ([]byte, string, error) {
+	var icon []byte
+	var contentType string
+	err := s.db.QueryRow(`SELECT icon, icon_type FROM cluster_nodes WHERE id = ?`, nodeID).Scan(&icon, &contentType)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(icon) == 0 {
+		return nil, "", sql.ErrNoRows
+	}
+	return icon, contentType, nil
 }
 
 // ClusterSummary is what the overview reads: the shape of the cluster in one

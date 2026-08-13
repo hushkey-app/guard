@@ -67,6 +67,15 @@ function row(node) {
   link.textContent = node.url;
   link.href = node.url;
 
+  const icon = qs("[data-node-icon]", item);
+  if (icon && node.has_icon) {
+    icon.src = `/api/cluster/${node.id}/icon`;
+    icon.hidden = false;
+    // The bytes were an image when guard stored them; a broken one now means
+    // the node changed under us, and an alt box is worse than the dot alone.
+    icon.onerror = () => { icon.hidden = true; };
+  }
+
   // A node that has never answered has no error to show and no latency to
   // report; saying "0 ms" would be a measurement it never took.
   qs("[data-node-error]", item).textContent = node.error || "";

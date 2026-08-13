@@ -90,6 +90,10 @@ templ ClusterRow() {
 	<template data-cluster-row-template>
 		<div data-node-row class="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
 			<span data-node-dot class="size-2.5 shrink-0 rounded-full" title="status"></span>
+			<!-- The machine's own favicon when it has one. Hidden by default:
+			     most do not, and an alt-text box where an icon should be is
+			     worse than no icon at all. -->
+			<img data-node-icon hidden alt="" width="16" height="16" class="size-4 shrink-0 rounded-sm"/>
 			<div class="min-w-0 flex-1">
 				<div class="flex items-center gap-2">
 					<p data-node-name class="truncate font-medium"></p>

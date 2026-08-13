@@ -110,6 +110,26 @@ func main() {
 	}, routes...))
 	mux.HandleFunc("GET /api/docs", api.Docs("/api/openapi.json"))
 
+	// A node's favicon: bytes, not JSON, so it stays an ordinary handler rather
+	// than being squeezed through the typed layer as base64. Immutable for an
+	// hour — a machine's icon changes about once a year, and the dashboard asks
+	// for every node's every three seconds.
+	mux.HandleFunc("GET /api/cluster/{id}/icon", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		icon, contentType, err := store.Icon(id)
+		if err != nil {
+			http.Error(w, "no icon", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+		w.Write(icon) //nolint:errcheck
+	})
+
 	log.Fatal(a.Listen(mux))
 }
 

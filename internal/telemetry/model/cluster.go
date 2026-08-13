@@ -28,6 +28,11 @@ type Node struct {
 	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// HasIcon says the node's favicon was found and stored. The bytes are not
+	// carried here: at fifteen kilobytes each they would be most of a cluster
+	// response the dashboard refetches every three seconds, for a picture that
+	// changes about once a year. They come from their own endpoint, cached.
+	HasIcon bool `json:"has_icon,omitempty"`
 
 	// The rest is the latest check, carried alongside so the dashboard reads
 	// the whole cluster in one request.

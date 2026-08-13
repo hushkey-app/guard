@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,15 @@ type Store interface {
 	Nodes() ([]model.Node, error)
 	Node(id int64) (model.Node, error)
 	RecordCheck(nodeID int64, check model.Check) error
+}
+
+// Icons is the optional half of the store: a prober whose store does not
+// implement it simply never looks for a favicon. Optional because fetching a
+// picture is not what a health prober is for, and a test store should not have
+// to grow two methods to say so.
+type Icons interface {
+	IconStale(nodeID int64) (bool, error)
+	SaveIcon(nodeID int64, icon []byte, contentType string) error
 }
 
 type Prober struct {
@@ -146,6 +156,13 @@ func (p *Prober) checkAndRecord(ctx context.Context, node model.Node) model.Chec
 	if err := p.Store.RecordCheck(node.ID, check); err != nil {
 		p.Log.Error("cluster check not recorded", slog.String("node", node.Name), slog.Any("err", err))
 	}
+	// Only from a machine that just answered, and at most once a day: a box
+	// that is down has better things to be asked for, and most machines have no
+	// favicon at all — which is an answer worth remembering rather than
+	// rediscovering on every check.
+	if check.OK {
+		p.fetchIcon(ctx, node)
+	}
 	if !check.OK {
 		p.Log.Warn("cluster node is down",
 			slog.String("node", node.Name), slog.String("url", node.URL),
@@ -192,6 +209,68 @@ func (p *Prober) Check(ctx context.Context, target string) model.Check {
 		check.Error = response.Status
 	}
 	return check
+}
+
+// maxIcon is the largest favicon worth storing. Real ones are a few kilobytes;
+// anything past this is a machine serving something else at that path.
+const maxIcon = 64 << 10
+
+// fetchIcon asks a healthy node for /favicon.ico and stores whatever came back.
+//
+// Guard fetches it rather than the browser pointing an <img> at the node: this
+// process can reach an internal box that the browser looking at the dashboard
+// often cannot, and an <img> at http://vps-1/ from an https page is blocked as
+// mixed content before it is attempted.
+//
+// Only /favicon.ico. Parsing the HTML for <link rel="icon"> would find a few
+// more, at the cost of downloading and parsing a page on every node — and a
+// health endpoint usually answers JSON, so there would be no HTML to read.
+func (p *Prober) fetchIcon(ctx context.Context, node model.Node) {
+	icons, ok := p.Store.(Icons)
+	if !ok {
+		return
+	}
+	stale, err := icons.IconStale(node.ID)
+	if err != nil || !stale {
+		return
+	}
+
+	target, err := url.Parse(node.URL)
+	if err != nil {
+		return
+	}
+	target.Path, target.RawQuery, target.Fragment = "/favicon.ico", "", ""
+
+	ctx, cancel := context.WithTimeout(ctx, p.Timeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return
+	}
+	request.Header.Set("User-Agent", "guard-cluster-probe/1")
+	request.Header.Set("Accept", "image/*")
+
+	// Every path below records the attempt, including the failures. "We looked
+	// and there is nothing" is the common answer, and remembering it is what
+	// keeps this to one request a day instead of one per check.
+	response, err := p.client.Do(request)
+	if err != nil {
+		_ = icons.SaveIcon(node.ID, nil, "")
+		return
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxIcon+1))
+	contentType := response.Header.Get("Content-Type")
+	switch {
+	case err != nil, response.StatusCode != http.StatusOK,
+		len(body) == 0, len(body) > maxIcon,
+		!strings.HasPrefix(contentType, "image/"):
+		_ = icons.SaveIcon(node.ID, nil, "")
+		return
+	}
+	if err := icons.SaveIcon(node.ID, body, contentType); err != nil {
+		p.Log.Error("cluster icon not stored", slog.String("node", node.Name), slog.Any("err", err))
+	}
 }
 
 // reason turns Go's transport errors into something a person reading a

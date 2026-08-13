@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -127,6 +128,107 @@ func TestRoundSkipsPausedNodesAndRecordsTheRest(t *testing.T) {
 	}
 	if got := len(store.recorded(2)); got != 0 {
 		t.Errorf("paused node recorded %d checks, want none", got)
+	}
+}
+
+// iconStore is a fake that also remembers icons — the optional half of the
+// store interface.
+type iconStore struct {
+	fake
+	stale bool
+	icon  []byte
+	kind  string
+	saves int
+}
+
+func (i *iconStore) IconStale(int64) (bool, error) { return i.stale, nil }
+
+func (i *iconStore) SaveIcon(_ int64, icon []byte, contentType string) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.icon, i.kind, i.saves = icon, contentType, i.saves+1
+	return nil
+}
+
+func TestIconIsFetchedFromHealthyNodes(t *testing.T) {
+	const iconBody = "\x00\x00\x01\x00fake-icon-bytes"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/favicon.ico" {
+			w.Header().Set("Content-Type", "image/x-icon")
+			w.Write([]byte(iconBody)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// The health URL has a path; the icon is looked for at the origin's root.
+	store := &iconStore{fake: fake{nodes: []model.Node{{ID: 1, Name: "n", URL: server.URL + "/api/health", Enabled: true}}}, stale: true}
+	(&Prober{Store: store, Timeout: time.Second}).Round(context.Background())
+	if string(store.icon) != iconBody || store.kind != "image/x-icon" {
+		t.Fatalf("icon = %q (%s)", store.icon, store.kind)
+	}
+
+	// A fresh icon is not refetched: most machines have none, and remembering
+	// that is what keeps this to one request a day.
+	store.stale = false
+	store.saves = 0
+	(&Prober{Store: store, Timeout: time.Second}).Round(context.Background())
+	if store.saves != 0 {
+		t.Errorf("a fresh icon was fetched again %d times", store.saves)
+	}
+}
+
+// Everything that is not an image is recorded as "no icon" rather than stored:
+// a health endpoint answering JSON at /favicon.ico is the common case, and an
+// unrecorded miss would be retried on every check forever.
+func TestIconRejectsWhatIsNotAnImage(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		status      int
+		contentType string
+		body        string
+	}{
+		{"a 404", http.StatusNotFound, "text/html", "not found"},
+		{"an html page", http.StatusOK, "text/html", "<html></html>"},
+		{"json", http.StatusOK, "application/json", `{"status":"ok"}`},
+		{"an empty body", http.StatusOK, "image/x-icon", ""},
+		{"something enormous", http.StatusOK, "image/png", strings.Repeat("x", maxIcon+1)},
+	} {
+		// The health endpoint answers normally — the icon is only ever asked
+		// for from a machine that just passed its check.
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/favicon.ico" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.Header().Set("Content-Type", tc.contentType)
+			w.WriteHeader(tc.status)
+			w.Write([]byte(tc.body)) //nolint:errcheck
+		}))
+		store := &iconStore{fake: fake{nodes: []model.Node{{ID: 1, URL: server.URL + "/health", Enabled: true}}}, stale: true}
+		(&Prober{Store: store, Timeout: time.Second}).Round(context.Background())
+		server.Close()
+
+		if len(store.icon) != 0 {
+			t.Errorf("%s was stored as an icon", tc.name)
+		}
+		if store.saves != 1 {
+			t.Errorf("%s: recorded %d attempts, want 1 — an unrecorded miss retries forever", tc.name, store.saves)
+		}
+	}
+}
+
+// A store that does not do icons simply never gets asked for one.
+func TestIconIsOptional(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	store := &fake{nodes: []model.Node{{ID: 1, URL: server.URL, Enabled: true}}}
+	(&Prober{Store: store, Timeout: time.Second}).Round(context.Background())
+	if len(store.recorded(1)) != 1 {
+		t.Error("the check itself should still have happened")
 	}
 }
 
