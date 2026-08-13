@@ -20,6 +20,26 @@ const colours = {
 };
 
 let nodes = [];
+let nodesAt = 0;
+let nodesRequest = null;
+
+// The node list, for callers that only need the names and states — the cluster
+// filter on the signal pages. Cached briefly and shared, so three filter bars
+// on three pages do not each ask.
+export async function clusterNodes() {
+  if (nodes.length && Date.now() - nodesAt < 15_000) return nodes;
+  if (!nodesRequest) {
+    nodesRequest = request("/api/cluster")
+      .then((list) => {
+        nodes = list;
+        nodesAt = Date.now();
+        return list;
+      })
+      .catch(() => nodes)
+      .finally(() => { nodesRequest = null; });
+  }
+  return nodesRequest;
+}
 
 export async function refreshCluster() {
   if (qs("[data-topology]")) {

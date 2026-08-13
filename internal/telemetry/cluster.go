@@ -241,6 +241,9 @@ func (s *Store) SaveNode(node Node) (Node, error) {
 	if node.IntervalSeconds < model.MinIntervalSeconds {
 		node.IntervalSeconds = model.DefaultIntervalSeconds
 	}
+	// A machine added or repointed changes which hosts are being watched, and
+	// therefore what is grouped under what.
+	s.topology.invalidate()
 	now := time.Now().UTC().UnixNano()
 	if node.ID == 0 {
 		result, err := s.db.Exec(`INSERT INTO cluster_nodes(name,url,enabled,interval_seconds,created_at_ns,updated_at_ns)
@@ -269,6 +272,7 @@ VALUES(?,?,?,?,?,?)`, node.Name, node.URL, node.Enabled, node.IntervalSeconds, n
 // without the node they were of, and keeping them would leave the database
 // growing rows nothing can ever read.
 func (s *Store) DeleteNode(id int64) error {
+	s.topology.invalidate()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err

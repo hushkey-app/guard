@@ -639,7 +639,7 @@ func FilterBar(signal string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div></div><div data-custom-range class=\"hidden\"><div class=\"mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div></div><!-- Which machines to look at. Chips rather than a select,\n\t\t\t\t     because more than one is the useful case — \"everything on\n\t\t\t\t     the two web boxes\" is a question, and a multi-select that\n\t\t\t\t     needs a modifier key held down to express it is a control\n\t\t\t\t     people get wrong. Filled by guard.js from the cluster;\n\t\t\t\t     absent entirely when no machines are watched. --> <div data-cluster-filter class=\"mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4\"></div><div data-custom-range class=\"hidden\"><div class=\"mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -768,7 +768,7 @@ func Select(name, label, class string) templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 147, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 154, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -781,7 +781,7 @@ func Select(name, label, class string) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 150, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 157, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 		if templ_7745c5c3_Err != nil {
@@ -858,7 +858,7 @@ func Field(class, id, label string) templ.Component {
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 163, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 170, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 		if templ_7745c5c3_Err != nil {
@@ -871,7 +871,7 @@ func Field(class, id, label string) templ.Component {
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 163, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 170, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -921,7 +921,7 @@ func Pagination(signal string) templ.Component {
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(signal)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 169, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 176, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 		if templ_7745c5c3_Err != nil {
@@ -1066,7 +1066,7 @@ func TableHead(columns []string) templ.Component {
 						var templ_7745c5c3_Var53 string
 						templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(column)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 206, Col: 13}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 213, Col: 13}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 						if templ_7745c5c3_Err != nil {

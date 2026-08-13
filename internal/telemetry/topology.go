@@ -15,6 +15,7 @@ package telemetry
 // cluster under the wrong machine.
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/url"
 	"sort"
@@ -46,7 +47,22 @@ const topologyTTL = 30 * time.Second
 type topologyCache struct {
 	mu       sync.Mutex
 	at       time.Time
+	shape    topologyShape
 	topology model.ClusterTopology
+}
+
+// topologyShape is the cheap question "could the answer have changed": how many
+// machines, how many instances, and when the newest of them last reported.
+//
+// The cache needs it because time alone is the wrong test. A stale map is not
+// merely old — a filter for "everything on VPS-1" resolves through it, so a map
+// computed before an instance existed answers "that machine has no logs", which
+// is a wrong answer rather than a slow one. Two indexed counts per call are a
+// small price for never saying that.
+type topologyShape struct {
+	nodes     int
+	instances int
+	newest    int64
 }
 
 // invalidate drops the cache. Called when a placement is made by hand: waiting
@@ -61,9 +77,18 @@ func (c *topologyCache) invalidate() {
 // ClusterTopology groups the known instances under the nodes their telemetry
 // points at, and reports the rest as unassigned.
 func (s *Store) ClusterTopology() (model.ClusterTopology, error) {
+	shape, err := s.topologyShape()
+	if err != nil {
+		return model.ClusterTopology{}, err
+	}
+
 	s.topology.mu.Lock()
 	defer s.topology.mu.Unlock()
-	if time.Since(s.topology.at) < topologyTTL {
+	// Reuse only while the answer is both recent and still about the same
+	// cluster. Either test alone is wrong: time alone serves a map that
+	// predates an instance, and shape alone never notices a service that moved
+	// between machines without either count changing.
+	if time.Since(s.topology.at) < topologyTTL && shape == s.topology.shape {
 		return s.topology.topology, nil
 	}
 
@@ -186,8 +211,22 @@ func (s *Store) ClusterTopology() (model.ClusterTopology, error) {
 	}
 
 	s.topology.at = time.Now()
+	s.topology.shape = shape
 	s.topology.topology = topology
 	return topology, nil
+}
+
+func (s *Store) topologyShape() (topologyShape, error) {
+	var shape topologyShape
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM cluster_nodes`).Scan(&shape.nodes); err != nil {
+		return shape, err
+	}
+	var newest sql.NullInt64
+	if err := s.db.QueryRow(`SELECT COUNT(*), MAX(last_seen_ns) FROM event_instances`).Scan(&shape.instances, &newest); err != nil {
+		return shape, err
+	}
+	shape.newest = newest.Int64
+	return shape, nil
 }
 
 // hostsFor is every host mentioned by one instance's recent telemetry.

@@ -393,7 +393,10 @@ func (s *Store) Query(f Filter) ([]Event, error) {
 	if f.Offset < 0 {
 		f.Offset = 0
 	}
-	where, args := filterSQL(f)
+	where, args, err := s.filterSQL(f)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json
 FROM events `+where+` ORDER BY timestamp_ns DESC, id DESC LIMIT ? OFFSET ?`, append(args, f.Limit, f.Offset)...)
 	if err != nil {
@@ -403,7 +406,74 @@ FROM events `+where+` ORDER BY timestamp_ns DESC, id DESC LIMIT ? OFFSET ?`, app
 	return scanEvents(rows)
 }
 
-func filterSQL(f Filter) (string, []any) {
+// filterSQL builds the WHERE clause for a Filter.
+//
+// A method rather than a function because of one field: Nodes names cluster
+// machines, and which services run on a machine is a question only the store
+// can answer — see clusterClause.
+func (s *Store) filterSQL(f Filter) (string, []any, error) {
+	where, args := columnFilterSQL(f)
+	clause, clusterArgs, err := s.clusterClause(f.Nodes)
+	if err != nil {
+		return "", nil, err
+	}
+	if clause == "" {
+		return where, args, nil
+	}
+	args = append(args, clusterArgs...)
+	if where == "" {
+		return "WHERE " + clause, args, nil
+	}
+	return where + " AND " + clause, args, nil
+}
+
+// clusterClause turns "nodes=1,3" into a predicate over the service and
+// instance pairs those machines are known to run.
+//
+// Resolved at query time, not stored: the point of filtering by machine rather
+// than by service is that the answer follows the cluster. Pin a new service to
+// node 3 and every "node 3" filter includes it, without anyone editing a list.
+func (s *Store) clusterClause(nodes string) (string, []any, error) {
+	wanted := map[int64]bool{}
+	for _, field := range strings.Split(nodes, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(field, 10, 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("nodes: %q is not a node id", field)
+		}
+		wanted[id] = true
+	}
+	if len(wanted) == 0 {
+		return "", nil, nil
+	}
+
+	topology, err := s.ClusterTopology()
+	if err != nil {
+		return "", nil, err
+	}
+	var clauses []string
+	var args []any
+	for _, group := range topology.Groups {
+		if group.Node == nil || !wanted[group.Node.ID] {
+			continue
+		}
+		for _, instance := range group.Instances {
+			clauses = append(clauses, "(service = ? AND instance = ?)")
+			args = append(args, instance.Service, instance.Instance)
+		}
+	}
+	if len(clauses) == 0 {
+		// The machines are real but nothing has reported from them. Matching
+		// everything would be the opposite of what was asked for.
+		return "1 = 0", nil, nil
+	}
+	return "(" + strings.Join(clauses, " OR ") + ")", args, nil
+}
+
+func columnFilterSQL(f Filter) (string, []any) {
 	var clauses []string
 	var args []any
 	add := func(clause string, value any) { clauses = append(clauses, clause); args = append(args, value) }
@@ -547,7 +617,10 @@ func (s *Store) Metrics(f Filter, groupBy string) ([]MetricSeries, error) {
 	if f.Limit <= 0 || f.Limit > 5000 {
 		f.Limit = 2000
 	}
-	where, args := filterSQL(f)
+	where, args, err := s.filterSQL(f)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(`SELECT timestamp_ns,service,instance,name,metric_value,unit,metric_type FROM events `+where+` AND metric_value IS NOT NULL ORDER BY timestamp_ns ASC LIMIT ?`, append(args, f.Limit)...)
 	if err != nil {
 		return nil, err

@@ -116,6 +116,13 @@ templ FilterBar(signal string) {
 						}
 					</div>
 				</div>
+				<!-- Which machines to look at. Chips rather than a select,
+				     because more than one is the useful case — "everything on
+				     the two web boxes" is a question, and a multi-select that
+				     needs a modifier key held down to express it is a control
+				     people get wrong. Filled by guard.js from the cluster;
+				     absent entirely when no machines are watched. -->
+				<div data-cluster-filter class="mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4"></div>
 				<div data-custom-range class="hidden">
 					<div class="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
 						@Field("", signal+"-from", "From") {

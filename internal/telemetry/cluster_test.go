@@ -1,6 +1,8 @@
 package telemetry
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -199,6 +201,91 @@ func TestNodesForProbeCarriesCadenceAndLastCheck(t *testing.T) {
 		t.Errorf("last check = %s, want %s", due[0].CheckedAt, checkedAt)
 	}
 }
+
+// Filtering by machine rather than by service is what makes the filter follow
+// the cluster: pin a new service to a node and every "node 3" query includes
+// it, without anyone editing a list of names.
+func TestFilterByClusterNodes(t *testing.T) {
+	store := NewStore(1000)
+	t.Cleanup(func() { store.Close() })
+	one, _ := store.SaveNode(Node{Name: "VPS-1", URL: "http://vps-1:8000/health", Enabled: true})
+	two, _ := store.SaveNode(Node{Name: "VPS-2", URL: "http://vps-2:8000/health", Enabled: true})
+
+	now := time.Now().UTC()
+	add := func(service, instance string, attributes map[string]any) {
+		if err := store.Add(Event{Signal: "logs", Service: service, Instance: instance, Message: service,
+			Timestamp: now, Attributes: attributes}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("web", "web-1", map[string]any{"url.full": "http://vps-1:8000/x"})
+	add("api", "api-1", map[string]any{"url.full": "http://vps-2:8000/x"})
+	add("worker", "worker-1", map[string]any{"queue.name": "emails"})
+
+	services := func(f Filter) []string {
+		events, err := store.Query(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, event := range events {
+			out = append(out, event.Service)
+		}
+		sort.Strings(out)
+		return out
+	}
+
+	if got := services(Filter{Nodes: itoa(one.ID)}); len(got) != 1 || got[0] != "web" {
+		t.Errorf("one machine = %v, want [web]", got)
+	}
+	// More than one is the useful case.
+	if got := services(Filter{Nodes: itoa(one.ID) + "," + itoa(two.ID)}); len(got) != 2 {
+		t.Errorf("two machines = %v, want web and api", got)
+	}
+	// No filter is everything, including what no machine covers.
+	if got := services(Filter{}); len(got) != 3 {
+		t.Errorf("no filter = %v, want all three", got)
+	}
+	// Pinning brings the worker along without the query changing.
+	if err := store.AssignInstance("worker", "worker-1", one.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := services(Filter{Nodes: itoa(one.ID)}); len(got) != 2 {
+		t.Errorf("after pinning = %v, want web and worker", got)
+	}
+}
+
+// A machine that exists but has reported nothing matches nothing. Matching
+// everything would be the opposite of what was asked for.
+func TestFilterByAnEmptyClusterNode(t *testing.T) {
+	store := NewStore(1000)
+	t.Cleanup(func() { store.Close() })
+	node, _ := store.SaveNode(Node{Name: "VPS-1", URL: "http://vps-1:8000/health", Enabled: true})
+	if err := store.Add(Event{Signal: "logs", Service: "web", Message: "hello", Timestamp: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.Query(Filter{Nodes: itoa(node.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("%d events for a machine nothing reports from", len(events))
+	}
+}
+
+func TestFilterRejectsNonsenseNodes(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+	if _, err := store.Query(Filter{Nodes: "1,two"}); err == nil {
+		t.Error("a non-numeric node id was accepted")
+	}
+	// Blanks and trailing commas are the shape a URL actually arrives in.
+	if _, err := store.Query(Filter{Nodes: " , "}); err != nil {
+		t.Errorf("an empty list was rejected: %v", err)
+	}
+}
+
+func itoa(id int64) string { return strconv.FormatInt(id, 10) }
 
 func TestClusterSummary(t *testing.T) {
 	store := NewStore(100)

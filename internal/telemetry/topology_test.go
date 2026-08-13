@@ -212,6 +212,51 @@ func TestAssignmentRejectsAMissingNode(t *testing.T) {
 	}
 }
 
+// A stale map is not merely old. A filter for "everything on VPS-1" resolves
+// through it, so a map computed before an instance existed answers "that
+// machine has no logs" — a wrong answer rather than a slow one.
+func TestTopologyNoticesNewTelemetry(t *testing.T) {
+	store := NewStore(1000)
+	t.Cleanup(func() { store.Close() })
+	store.SaveNode(Node{Name: "VPS-1", URL: "http://vps-1:8000/health", Enabled: true}) //nolint:errcheck
+
+	// Computed and cached while there is nothing to see.
+	if topology, _ := store.ClusterTopology(); len(topology.Groups[0].Instances) != 0 {
+		t.Fatal("expected an empty machine to start with")
+	}
+
+	telemetryFrom(t, store, "web", "web-1", map[string]any{"url.full": "http://vps-1:8000/x"})
+
+	topology, err := store.ClusterTopology()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(topology.Groups[0].Instances) != 1 {
+		t.Fatal("the cache outlived the telemetry it was computed without")
+	}
+}
+
+// And a machine added after the map was built is a machine the map has to know
+// about, or a filter naming it silently matches nothing.
+func TestTopologyNoticesNewNodes(t *testing.T) {
+	store := NewStore(1000)
+	t.Cleanup(func() { store.Close() })
+	telemetryFrom(t, store, "web", "web-1", map[string]any{"url.full": "http://vps-1:8000/x"})
+
+	if topology, _ := store.ClusterTopology(); len(topology.Unassigned) != 1 {
+		t.Fatal("expected the instance to start unplaced")
+	}
+	store.SaveNode(Node{Name: "VPS-1", URL: "http://vps-1:8000/health", Enabled: true}) //nolint:errcheck
+
+	topology, err := store.ClusterTopology()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(topology.Groups) != 1 || len(topology.Groups[0].Instances) != 1 {
+		t.Fatalf("a node added after the map was built is missing from it: %#v", topology)
+	}
+}
+
 func TestHostForms(t *testing.T) {
 	for _, tc := range []struct {
 		raw          string

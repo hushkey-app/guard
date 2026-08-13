@@ -4,10 +4,46 @@
 // The shared vocabulary lives in core.js, the panel renderers in charts.js, and
 // everything under /views in views.js. This file imports all three; none of
 // them imports this one, so the dependency runs one way.
-import { adminHeaders, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
+import { adminHeaders, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
-import { refreshCluster } from "./cluster.js";
+import { clusterNodes, refreshCluster } from "./cluster.js";
+
+// Which machines the signal pages are scoped to. Shared across logs, traces and
+// metrics, and remembered: "I am looking at the two web boxes" is a stance you
+// hold while moving between pages, not a per-page setting you re-enter.
+const clusterFilter = new Set(JSON.parse(localStorage.getItem("guard.cluster") || "[]"));
+
+async function renderClusterFilter() {
+  const hosts = qsa("[data-cluster-filter]");
+  if (!hosts.length) return;
+  const nodes = await clusterNodes();
+  for (const host of hosts) {
+    // No machines watched, no filter: a control that can only say "all" is a
+    // control that says nothing.
+    host.classList.toggle("hidden", nodes.length === 0);
+    host.classList.toggle("flex", nodes.length > 0);
+    if (!nodes.length) continue;
+
+    const label = el("span", `text-xs font-medium ${muted}`, "Machines");
+    const chips = nodes.map((node) => {
+      const on = clusterFilter.has(node.id);
+      const chip = el("button", `cn-badge inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap ${
+        on ? "border-primary/40 bg-primary/15 text-primary" : "cn-badge-variant-secondary"}`);
+      chip.type = "button";
+      chip.dataset.clusterChip = node.id;
+      chip.setAttribute("aria-pressed", String(on));
+      const dot = el("span", "size-1.5 shrink-0 rounded-full");
+      dot.style.background = node.status === "up" ? "var(--primary)" : node.status === "down" ? "var(--destructive)" : "var(--muted-foreground)";
+      chip.append(dot, text(node.name));
+      return chip;
+    });
+    const all = el("button", `text-xs underline-offset-2 hover:underline ${muted}`, "All machines");
+    all.type = "button";
+    all.dataset.clusterChip = "all";
+    host.replaceChildren(label, ...chips, ...(clusterFilter.size ? [all] : []));
+  }
+}
 
 const pageSize = 50;
 const signalPages = new Map([["logs", 0], ["traces", 0], ["metrics", 0]]);
@@ -174,6 +210,7 @@ function filterParams(signal, paginate = false) {
   const value = (name) => qs(`[data-filter="${name}"]`, root)?.value || "";
   for (const name of ["service", "severity", "name"]) if (value(name)) params.set(name, value(name));
   if (value("query")) params.set("q", value("query"));
+  if (clusterFilter.size) params.set("nodes", [...clusterFilter].join(","));
   const range = value("range");
   const durations = { "15m": 15 * 60e3, "1h": 3600e3, "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 86400e3 };
   if (durations[range]) params.set("from", new Date(Date.now() - durations[range]).toISOString());
@@ -469,7 +506,7 @@ async function refreshPage({ facets = false } = {}) {
   if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
   if (qs("[data-view-grid]")) work.push(refreshViews());
   if (qs("[data-cluster-rows]") || qs("[data-topology]")) work.push(refreshCluster());
-  if (facets) work.push(refreshFacets());
+  if (facets) work.push(refreshFacets(), renderClusterFilter());
   await Promise.allSettled(work);
 }
 
@@ -518,6 +555,19 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-nav-link]")) { const drawer = qs("#nav-drawer"); if (drawer) drawer.checked = false; }
   const toggle = event.target.closest("[data-live-toggle]");
   if (toggle) { live = !live; localStorage.setItem("guard.live", live ? "on" : "off"); updateLiveControl(); if (live) refreshPage(); return; }
+  const chip = event.target.closest("[data-cluster-chip]");
+  if (chip) {
+    const id = chip.dataset.clusterChip;
+    if (id === "all") clusterFilter.clear();
+    else if (!clusterFilter.delete(Number(id))) clusterFilter.add(Number(id));
+    localStorage.setItem("guard.cluster", JSON.stringify([...clusterFilter]));
+    // Back to the first page: the rows under a different set of machines are
+    // different rows, and page four of the old set means nothing in the new.
+    for (const signal of signalPages.keys()) signalPages.set(signal, 0);
+    renderClusterFilter();
+    refreshPage();
+    return;
+  }
   if (event.target.closest("[data-detail-back]")) { renderDrill(); return; }
   if (event.target.closest("[data-detail-close]")) { closeDetail(); return; }
   if (event.target.closest("[data-trace-close]")) { qs("[data-trace-card]").hidden = true; return; }
