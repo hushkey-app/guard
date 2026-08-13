@@ -92,6 +92,34 @@ func (n Node) Interval() time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
+// ClusterGroup is the instances guard believes run on one machine.
+//
+// The belief comes from the telemetry itself: a span carrying
+// url.full=http://vps-1:8000/api/health was served by whatever answers at that
+// host, and the node watching that host is the machine it ran on. Nothing is
+// inferred from names — two services called "api" on different boxes are two
+// different things, and guessing they are the same would be worse than leaving
+// them apart.
+type ClusterGroup struct {
+	Node      *Node      `json:"node,omitempty"`
+	Instances []Instance `json:"instances"`
+	// Hosts is what the match was made on, so a grouping that looks wrong can
+	// be argued with rather than only disbelieved.
+	Hosts []string `json:"hosts,omitempty"`
+}
+
+// ClusterTopology is the whole picture: what runs where, and what could not be
+// placed.
+//
+// Unassigned is not a failure state. Plenty of telemetry carries no host at
+// all — a background worker with no HTTP surface has nothing to match on — and
+// a service quietly filed under the wrong machine would be worse than one
+// openly filed under none.
+type ClusterTopology struct {
+	Groups     []ClusterGroup `json:"groups"`
+	Unassigned []Instance     `json:"unassigned"`
+}
+
 // ClusterSummary is the one-line answer: how many are up, and are any of them
 // down right now.
 type ClusterSummary struct {

@@ -468,7 +468,7 @@ async function refreshPage({ facets = false } = {}) {
   const work = [refreshSignal("logs"), refreshSignal("traces"), refreshSignal("metrics"), refreshMetrics(), loadSettings()];
   if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
   if (qs("[data-view-grid]")) work.push(refreshViews());
-  if (qs("[data-cluster-rows]")) work.push(refreshCluster());
+  if (qs("[data-cluster-rows]") || qs("[data-topology]")) work.push(refreshCluster());
   if (facets) work.push(refreshFacets());
   await Promise.allSettled(work);
 }

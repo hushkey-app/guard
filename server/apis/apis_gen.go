@@ -21,6 +21,7 @@ func FsApiRoutes() []api.Route {
 		api.At("GET", "/api/cluster", e0.List),
 		api.At("POST", "/api/cluster", e0.Add),
 		api.At("POST", "/api/cluster/check", e0.CheckNow),
+		api.At("GET", "/api/cluster/topology", e0.Topology),
 		api.At("DELETE", "/api/cluster/{id}", e0.Remove),
 		api.At("PUT", "/api/cluster/{id}", e0.Update),
 		api.At("GET", "/api/events", e1.List),

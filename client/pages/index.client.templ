@@ -35,16 +35,21 @@ templ Page() {
 			@ui.Stat("Spans", "spans", "—", "trace activity")
 			@ui.Stat("Metrics", "metrics", "—", "data points")
 		</div>
-		// Watched from the outside, above the instances that are discovered
-		// from the inside: a machine that has stopped reporting disappears from
-		// one and goes red in the other.
-		@components.ClusterCard()
-		@components.ClusterRow()
+		// What runs where. An instance is discovered from telemetry and a node
+		// is declared, and the two are joined on the hosts the telemetry names —
+		// so a machine that stops reporting keeps its place here and goes red,
+		// instead of quietly vanishing from a flat list.
+		@components.Topology()
+		@components.TopologyGroup()
+		@components.TopologyInstance()
 		<div class="grid gap-6 xl:grid-cols-[1fr_1.6fr]">
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
 						Instances
+					}
+					@card.Description() {
+						Every identity that has reported, placed or not
 					}
 					@card.Action() {
 						@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {

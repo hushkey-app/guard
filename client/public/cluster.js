@@ -22,9 +22,104 @@ const colours = {
 let nodes = [];
 
 export async function refreshCluster() {
+  if (qs("[data-topology]")) {
+    const topology = await request("/api/cluster/topology");
+    nodes = topology.groups.map((group) => group.node);
+    renderTopology(topology);
+    renderStat();
+    return;
+  }
   if (!qs("[data-cluster-rows]")) return;
   nodes = await request("/api/cluster");
   render();
+}
+
+// What runs where. Each machine heads a group of the services whose telemetry
+// says it served them; anything guard could not place is listed apart, under
+// its own heading, because a service filed under the wrong machine would be
+// worse than one filed under none.
+function renderTopology(topology) {
+  const host = qs("[data-topology]");
+  const groupTemplate = qs("[data-topology-group-template]");
+  if (!host || !groupTemplate) return;
+
+  const sections = topology.groups.map((group) => {
+    const section = groupTemplate.content.firstElementChild.cloneNode(true);
+    const node = group.node;
+    const status = node.enabled ? node.status : "paused";
+    qs("[data-node-dot]", section).style.background = node.enabled ? colours[node.status] : "var(--warning)";
+    qs("[data-node-name]", section).textContent = node.name;
+
+    const badge = qs("[data-node-badge]", section);
+    badge.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${tones[status]}`;
+    badge.textContent = node.checked_at ? `${status} · ${Math.round(node.latency_ms)}ms` : status;
+
+    const icon = qs("[data-node-icon]", section);
+    if (node.has_icon) {
+      icon.src = `/api/cluster/${node.id}/icon`;
+      icon.hidden = false;
+      icon.onerror = () => { icon.hidden = true; };
+    }
+    // The evidence, not just the verdict: a grouping that looks wrong should be
+    // arguable rather than only disbelievable.
+    qs("[data-node-hosts]", section).textContent = group.hosts?.length ? group.hosts.join(" · ") : hostOf(node.url);
+    qs("[data-node-count]", section).textContent = count(group.instances.length);
+    fillInstances(qs("[data-group-instances]", section), group.instances,
+      "Nothing has reported from this machine yet.");
+    return section;
+  });
+
+  if (topology.unassigned?.length) {
+    const section = groupTemplate.content.firstElementChild.cloneNode(true);
+    qs("[data-node-dot]", section).style.background = "var(--muted-foreground)";
+    qs("[data-node-name]", section).textContent = "Not placed";
+    qs("[data-node-badge]", section).remove();
+    qs("[data-node-hosts]", section).textContent = "their telemetry names no host guard is watching";
+    qs("[data-node-count]", section).textContent = count(topology.unassigned.length);
+    fillInstances(qs("[data-group-instances]", section), topology.unassigned, "");
+    sections.push(section);
+  }
+
+  host.replaceChildren(...sections);
+  const empty = qs("[data-cluster-empty]");
+  if (empty) empty.hidden = sections.length > 0;
+}
+
+function fillInstances(host, instances, emptyMessage) {
+  const template = qs("[data-topology-instance-template]");
+  if (!host || !template) return;
+  if (!instances.length) {
+    host.replaceChildren(el("p", "px-4 py-3 text-xs text-muted-foreground", emptyMessage));
+    return;
+  }
+  host.replaceChildren(...instances.map((instance) => {
+    const row = template.content.firstElementChild.cloneNode(true);
+    qs("[data-instance-service]", row).textContent = instance.service;
+    qs("[data-instance-id]", row).textContent = instance.instance || "default";
+    qs("[data-instance-counts]", row).textContent = [
+      instance.spans ? `${number.format(instance.spans)} spans` : "",
+      instance.logs ? `${number.format(instance.logs)} logs` : "",
+      instance.errors ? `${number.format(instance.errors)} errors` : "",
+    ].filter(Boolean).join(" · ");
+    qs("[data-instance-seen]", row).textContent = relativeTime(instance.last_seen);
+    return row;
+  }));
+}
+
+const count = (n) => `${n} ${n === 1 ? "service" : "services"}`;
+
+function hostOf(raw) {
+  try {
+    return new URL(raw).host;
+  } catch {
+    return raw;
+  }
+}
+
+function renderStat() {
+  for (const stat of qsa('[data-stat="cluster"]')) {
+    stat.textContent = nodes.length ? `${nodes.filter((node) => node.status === "up").length}/${nodes.length}` : "—";
+  }
 }
 
 function render() {

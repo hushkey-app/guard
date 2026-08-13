@@ -42,6 +42,7 @@ type Store struct {
 	lifecycle  sync.RWMutex
 	closing    bool
 	lastPurge  atomic.Int64
+	topology   topologyCache
 }
 
 type writeRequest struct {

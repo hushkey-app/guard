@@ -162,6 +162,66 @@ templ ClusterRow() {
 	</template>
 }
 
+// Topology is the overview's answer to "what runs where": each machine with
+// the services whose telemetry says it served them, and — separately, never
+// silently — the ones nothing could place.
+templ Topology() {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Cluster
+			}
+			@card.Description() {
+				Machines watched from the outside, with what runs on them
+			}
+			@card.Action() {
+				@button.Button(button.Props{Href: "/settings/cluster", Variant: button.VariantGhost, Size: button.SizeSm}) {
+					Manage →
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "space-y-4"}) {
+			<div data-topology class="space-y-4"></div>
+			<div data-cluster-empty>
+				@ui.Empty("No machines watched yet — add one in settings and the services running on it appear here.")
+			</div>
+		}
+	}
+}
+
+// TopologyGroup is one machine and its services, cloned per node.
+templ TopologyGroup() {
+	<template data-topology-group-template>
+		<section data-group class="rounded-xl border border-border">
+			<div data-group-head class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5">
+				<span data-node-dot class="size-2.5 shrink-0 rounded-full"></span>
+				<img data-node-icon hidden alt="" width="16" height="16" class="size-4 shrink-0 rounded-sm"/>
+				<p data-node-name class="font-medium"></p>
+				<span data-node-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+				<span data-node-hosts class="truncate font-mono text-[.65rem] text-muted-foreground"></span>
+				<span data-node-count class="ml-auto shrink-0 text-xs text-muted-foreground"></span>
+			</div>
+			<div data-group-instances class="divide-y divide-border"></div>
+		</section>
+	</template>
+}
+
+// TopologyInstance is one service inside a machine — or inside the unplaced
+// list, which is the same row with nothing above it.
+templ TopologyInstance() {
+	<template data-topology-instance-template>
+		<div class="flex items-center gap-3 px-4 py-2.5">
+			<span class="signal-dot"></span>
+			<div class="min-w-0 flex-1">
+				<p data-instance-service class="truncate text-sm font-medium"></p>
+				<p data-instance-id class="truncate font-mono text-[.65rem] text-muted-foreground"></p>
+			</div>
+			<span data-instance-counts class="shrink-0 text-[.65rem] text-muted-foreground"></span>
+			<span data-instance-seen class="shrink-0 text-xs text-muted-foreground"></span>
+		</div>
+	</template>
+}
+
 // ClusterCard is the overview's version: the same data, no controls.
 templ ClusterCard() {
 	@card.Card() {

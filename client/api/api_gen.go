@@ -33,6 +33,11 @@ func (c *Client) Cluster(ctx context.Context) ([]model.Node, error) {
 	return api.Call[[]model.Node](ctx, c.Transport, "GET", "/api/cluster", nil, nil)
 }
 
+// ClusterTopology calls GET /api/cluster/topology.
+func (c *Client) ClusterTopology(ctx context.Context) (model.ClusterTopology, error) {
+	return api.Call[model.ClusterTopology](ctx, c.Transport, "GET", "/api/cluster/topology", nil, nil)
+}
+
 // CreateSamplePanels calls POST /api/views/samples.
 func (c *Client) CreateSamplePanels(ctx context.Context) ([]model.View, error) {
 	return api.Call[[]model.View](ctx, c.Transport, "POST", "/api/views/samples", nil, nil)
