@@ -92,6 +92,19 @@ panel that reads an existing shape is a renderer in `charts.js` and an entry in
   panel chrome stays real shadcn markup and every class stays where Tailwind looks. The
   package doc explains why.
 
+## Browser telemetry
+
+`/v1/rum/traces` and `/v1/rum/logs` are a second, narrower door for telemetry
+from a browser — read `docs/browser-telemetry.md` before touching it. The rule
+that matters: **the service identity is assigned by guard, never accepted from
+the payload.** A browser holds no secret, so anything posted there is from a
+stranger, and without that rule a visitor can write spans claiming to be your
+API. Off unless `GUARD_RUM_ORIGINS` names an origin.
+
+The recommended deployment relays through the application you already expose
+rather than publishing guard: a server-to-server post carries no `Origin`,
+which the intake allows for exactly that reason.
+
 ## Build and run
 
 ```bash

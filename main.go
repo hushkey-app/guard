@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mirairoad/guard/client/pages"
@@ -83,7 +84,18 @@ func main() {
 	// The OTLP receiver: protobuf in, protobuf out, byte-compatible with every
 	// exporter. Not part of the typed API layer, on purpose.
 	token := os.Getenv("GUARD_TOKEN")
-	ingest.Handler{Store: store, Token: token}.Register(mux)
+	receiver := ingest.Handler{Store: store, Token: token}
+	receiver.Register(mux)
+
+	// The browser intake, off unless origins are named. It cannot be enabled by
+	// accident, because an unauthenticated write endpoint that appears by
+	// default is a hole somebody finds before you do.
+	receiver.RegisterBrowser(mux, ingest.Browser{
+		Origins:   splitList(os.Getenv("GUARD_RUM_ORIGINS")),
+		Service:   env("GUARD_RUM_SERVICE", "browser"),
+		Instance:  os.Getenv("GUARD_RUM_RELEASE"),
+		PerMinute: envInt("GUARD_RUM_PER_MINUTE", 120),
+	})
 
 	// The cluster prober: the one part of guard that makes outbound requests.
 	// It watches machines that were declared rather than ones that talk to
@@ -163,6 +175,18 @@ func env(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// splitList reads a comma-separated environment variable, ignoring the empty
+// entries that trailing commas and copy-paste leave behind.
+func splitList(value string) []string {
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func envDuration(name string, fallback time.Duration) time.Duration {
