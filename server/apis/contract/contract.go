@@ -111,6 +111,21 @@ func (q ViewDataQuery) Apply(stored model.ViewQuery) model.ViewQuery {
 	return stored
 }
 
+// DrillRequest asks for the events behind one mark on a panel: the query that
+// drew it, and which mark was clicked.
+//
+// The query travels with the request rather than a view id, because the mark
+// you clicked may be on a preview that has never been saved — and because a
+// saved view whose window was overridden by the dashboard picker is no longer
+// the query stored under its id.
+type DrillRequest struct {
+	Panel     string          `json:"panel"`
+	Query     model.ViewQuery `json:"query"`
+	Selection model.Selection `json:"selection"`
+}
+
+func (d DrillRequest) Validate() error { return d.Query.ValidateFor(d.Panel) }
+
 // Catalogue is everything the builder needs to offer a choice: the panels this
 // binary can render, the aggregations the compiler implements, and the fields
 // this instance has actually seen. One request, because all three change at

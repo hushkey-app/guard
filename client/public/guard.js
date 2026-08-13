@@ -340,6 +340,9 @@ async function openDetail(id) {
   const attrs = document.createElement("section"); const heading = document.createElement("h3"); heading.className = "mb-3 font-medium"; heading.appendChild(text(`Attributes · ${Object.keys(event.attributes || {}).length}`));
   const pre = document.createElement("pre"); pre.className = "overflow-x-auto rounded-xl bg-code p-4 font-mono text-xs leading-6 text-code-foreground"; pre.appendChild(text(JSON.stringify(event.attributes || {}, null, 2))); attrs.append(heading, pre);
   qs("[data-detail-content]").replaceChildren(grid, attrs); qs("[data-detail-shell]").classList.add("open"); document.body.classList.add("overflow-hidden");
+  // Arriving from a drill-down leaves a list to go back to; arriving from a
+  // table does not, and an inert button would be worse than none.
+  qs("[data-detail-footer]").hidden = !lastDrill;
   if (event.trace_id) showTrace(event.trace_id).catch(() => {});
 }
 
@@ -360,11 +363,82 @@ async function showTrace(traceID) {
   card.hidden = false;
 }
 
-function closeDetail() { qs("[data-detail-shell]")?.classList.remove("open"); document.body.classList.remove("overflow-hidden"); }
+function closeDetail() {
+  qs("[data-detail-shell]")?.classList.remove("open");
+  document.body.classList.remove("overflow-hidden");
+  lastDrill = null;
+  qs("[data-detail-footer]").hidden = true;
+}
 
-// views.js opens the detail panel when a scatter point is clicked — one panel
-// per document, owned here, reachable from there.
+// The drawer's second mode: the events behind one mark on a chart.
+//
+// A bar is an aggregate — 217 events, not one — so clicking it cannot open
+// "the" event. It opens the list, and a row in that list opens the event. The
+// list is remembered so the detail view has somewhere to go back to.
+let lastDrill = null;
+
+async function openDrill(request, datum = {}) {
+  const drill = await request_("/api/views/drill", request);
+  lastDrill = { request, datum, drill };
+  renderDrill();
+  qs("[data-detail-shell]").classList.add("open");
+  document.body.classList.add("overflow-hidden");
+}
+
+function request_(path, body) {
+  return request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+function renderDrill() {
+  if (!lastDrill) return;
+  const { datum, drill } = lastDrill;
+  const shown = drill.events.length;
+  qs("[data-detail-eyebrow]").textContent = shown === drill.total
+    ? `${number.format(drill.total)} ${drill.total === 1 ? "event" : "events"}`
+    : `${number.format(shown)} of ${number.format(drill.total)} events`;
+  qs("[data-detail-title]").textContent = datum.title || "Selected events";
+  qs("[data-detail-footer]").hidden = true;
+
+  const template = qs("[data-drill-row-template]");
+  const list = document.createElement("div");
+  list.className = "-mt-2";
+  if (!shown) {
+    list.appendChild(Object.assign(document.createElement("p"), {
+      className: `py-8 text-center text-sm ${muted}`,
+      textContent: "No events behind this mark.",
+    }));
+  }
+  for (const event of drill.events) {
+    const row = template.content.firstElementChild.cloneNode(true);
+    row.dataset.eventId = event.id;
+    qs("[data-drill-time]", row).textContent = timeText(event.timestamp);
+    const badge = qs("[data-drill-badge]", row);
+    const label = event.signal === "logs" ? (event.severity || "log").toLowerCase() : event.signal.replace(/s$/, "");
+    badge.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${
+      event.signal === "traces" ? tones.trace : event.signal === "metrics" ? tones.metric
+        : /error|fatal/i.test(event.severity || "") ? tones.error : tones.neutral}`;
+    badge.textContent = label;
+    qs("[data-drill-text]", row).textContent = `${event.service} · ${eventText(event)}`;
+    qs("[data-drill-value]", row).textContent = event.duration_ms
+      ? `${number.format(Math.round(event.duration_ms))} ms`
+      : event.value !== undefined ? number.format(event.value) : "";
+    list.appendChild(row);
+  }
+  const content = qs("[data-detail-content]");
+  content.replaceChildren(list);
+  content.scrollTop = 0;
+}
+
+// views.js opens the drawer when a chart is clicked — one drawer per document,
+// owned here, reachable from there. Both entry points are published rather than
+// imported, because guard.js imports views.js and the reverse would be a cycle.
 globalThis.guardOpenDetail = (id) => openDetail(id).catch(() => {});
+globalThis.guardOpenDrill = (request, datum) => openDrill(request, datum).catch((failure) => {
+  qs("[data-detail-eyebrow]").textContent = "Could not read these events";
+  qs("[data-detail-title]").textContent = failure.message;
+  qs("[data-detail-content]").replaceChildren();
+  qs("[data-detail-shell]").classList.add("open");
+});
 
 async function loadSettings() {
   const form = qs("[data-settings-form]"); if (!form) return;
@@ -442,6 +516,7 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-nav-link]")) { const drawer = qs("#nav-drawer"); if (drawer) drawer.checked = false; }
   const toggle = event.target.closest("[data-live-toggle]");
   if (toggle) { live = !live; localStorage.setItem("guard.live", live ? "on" : "off"); updateLiveControl(); if (live) refreshPage(); return; }
+  if (event.target.closest("[data-detail-back]")) { renderDrill(); return; }
   if (event.target.closest("[data-detail-close]")) { closeDetail(); return; }
   if (event.target.closest("[data-trace-close]")) { qs("[data-trace-card]").hidden = true; return; }
   const pageButton = event.target.closest("[data-page-action]");

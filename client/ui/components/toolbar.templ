@@ -26,6 +26,13 @@ templ Toolbar() {
 				}
 				<div class="flex items-center gap-2">
 					@button.Button(button.Props{
+						Variant:    button.VariantGhost,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-views-samples": true, "title": "One panel per visualisation, from this instance's telemetry"},
+					}) {
+						Sample panels
+					}
+					@button.Button(button.Props{
 						Variant:    button.VariantOutline,
 						Size:       button.SizeSm,
 						Attributes: templ.Attributes{"data-views-refresh": true},

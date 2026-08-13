@@ -30,9 +30,18 @@ templ GridEmpty() {
 				}
 			}
 			@empty.Content() {
-				@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-builder-open": "new"}}) {
-					Build the first panel
-				}
+				<div class="flex flex-wrap items-center justify-center gap-2">
+					@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-builder-open": "new"}}) {
+						Build the first panel
+					}
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-views-samples": true},
+					}) {
+						Add one of each
+					}
+				</div>
 			}
 		}
 	</div>
@@ -146,6 +155,42 @@ templ PanelBodies() {
 			</div>
 			<div data-waterfall class="min-h-0 flex-1 overflow-y-auto"></div>
 		</div>
+	</template>
+}
+
+// Tooltip is the hover layer every chart shares — one element per document,
+// moved and refilled rather than created per mark.
+//
+// It replaced SVG <title> children, which cost nothing but appear a second
+// late, cannot be styled, and cannot say "217 events · click to list them".
+// The <title> is still written for readers that never move a pointer.
+//
+// pointer-events-none is load-bearing: the tooltip follows the cursor and would
+// otherwise sit under it, taking the pointerleave that dismisses it and
+// flickering forever.
+templ Tooltip() {
+	<div
+		data-chart-tooltip
+		class="pointer-events-none fixed left-0 top-0 z-[60] hidden min-w-44 max-w-72 rounded-lg border border-border bg-popover/95 p-3 text-xs text-popover-foreground shadow-xl backdrop-blur-sm"
+		role="tooltip"
+		aria-hidden="true"
+	>
+		<p data-tooltip-title class="mb-1.5 truncate font-medium"></p>
+		<div data-tooltip-rows class="space-y-1"></div>
+		<p data-tooltip-hint class="mt-2 hidden border-t border-border pt-1.5 text-[.65rem] text-muted-foreground"></p>
+	</div>
+}
+
+// DrillRow is one event in the drawer's list, when the drawer is showing what
+// is behind a mark rather than one event's detail.
+templ DrillRow() {
+	<template data-drill-row-template>
+		<button type="button" data-drill-row class="flex w-full items-center gap-3 border-b border-border px-1 py-2 text-left hover:bg-accent/60 focus:bg-accent focus:outline-none">
+			<span data-drill-time class="shrink-0 font-mono text-[.65rem] text-muted-foreground"></span>
+			<span data-drill-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+			<span data-drill-text class="min-w-0 flex-1 truncate text-xs"></span>
+			<span data-drill-value class="shrink-0 font-mono text-[.65rem] tabular-nums text-muted-foreground"></span>
+		</button>
 	</template>
 }
 

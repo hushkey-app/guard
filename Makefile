@@ -1,4 +1,4 @@
-.PHONY: all generate apis wasm run dev test clean css
+.PHONY: all generate apis wasm run dev seed test clean css
 
 MODULE := github.com/mirairoad/guard
 
@@ -22,6 +22,17 @@ apis:
 
 run: all
 	./guard
+
+# Post an hour of plausible telemetry to a running instance, over OTLP exactly
+# as an exporter would. For the state a new instance starts in: empty, with no
+# way to tell whether the panels are broken or the data is simply not there.
+# Override with ENDPOINT=, REQUESTS=, WINDOW=, TOKEN=.
+seed:
+	go run ./dev/seed \
+		-endpoint $(or $(ENDPOINT),http://localhost:4318) \
+		-requests $(or $(REQUESTS),900) \
+		-window $(or $(WINDOW),1h) \
+		-token "$(TOKEN)"
 
 # Watch, rebuild, restart, reload the browser. The port stays up across
 # restarts; a failed build keeps the last good binary serving and shows the

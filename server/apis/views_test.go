@@ -224,6 +224,72 @@ func TestCatalogueDescribesWhatThisBinaryCanDo(t *testing.T) {
 	}
 }
 
+// The sample dashboard is one panel per visualisation, and every one of them
+// has to actually run — a sample that draws an error is worse than no sample.
+func TestSamplePanelsAllRender(t *testing.T) {
+	store, srv := server(t, "")
+	spans(t, store)
+
+	var created []model.View
+	if code := call(t, http.MethodPost, srv.URL+"/api/views/samples", nil, &created); code != http.StatusOK {
+		t.Fatalf("samples = %d", code)
+	}
+	if len(created) != len(model.Panels) {
+		t.Fatalf("created %d panels, want one per visualisation (%d)", len(created), len(model.Panels))
+	}
+	drawn := map[string]bool{}
+	for _, view := range created {
+		drawn[view.Panel] = true
+		var frame model.Frame
+		if code := call(t, http.MethodGet, srv.URL+"/api/views/data?id="+itoa(view.ID), nil, &frame); code != http.StatusOK {
+			t.Errorf("%s (%s) = %d", view.Name, view.Panel, code)
+			continue
+		}
+		if frame.Shape != model.ShapeOf(view.Panel) {
+			t.Errorf("%s: shape %q, want %q", view.Panel, frame.Shape, model.ShapeOf(view.Panel))
+		}
+	}
+	for _, spec := range model.Panels {
+		if !drawn[spec.Panel] {
+			t.Errorf("no sample for %s", spec.Panel)
+		}
+	}
+
+	// Running it twice must not double the dashboard.
+	var again []model.View
+	call(t, http.MethodPost, srv.URL+"/api/views/samples", nil, &again)
+	if len(again) != 0 {
+		t.Errorf("second run created %d more panels", len(again))
+	}
+}
+
+// Clicking a bar asks for the events behind it, and gets exactly those.
+func TestDrillEndpoint(t *testing.T) {
+	store, srv := server(t, "")
+	spans(t, store)
+
+	var drill model.Drill
+	code := call(t, http.MethodPost, srv.URL+"/api/views/drill", map[string]any{
+		"panel":     "bar",
+		"query":     model.ViewQuery{Signal: "traces", Range: "1h", GroupBy: "attr:http.route", Agg: "count"},
+		"selection": model.Selection{Series: "/checkout", HasSeries: true},
+	}, &drill)
+	if code != http.StatusOK {
+		t.Fatalf("drill = %d", code)
+	}
+	if drill.Total != 1 || len(drill.Events) != 1 || drill.Events[0].Name != "GET /checkout" {
+		t.Fatalf("drill = %#v", drill)
+	}
+
+	// Reading, so it needs no token even where writing does.
+	_, secured := server(t, "secret")
+	if code := call(t, http.MethodPost, secured.URL+"/api/views/drill", map[string]any{
+		"panel": "bar", "query": model.ViewQuery{GroupBy: "service", Agg: "count"}, "selection": model.Selection{},
+	}, nil); code != http.StatusOK {
+		t.Errorf("drill without a token = %d, want 200", code)
+	}
+}
+
 func TestTraceEndpoint(t *testing.T) {
 	store, srv := server(t, "")
 	spans(t, store)

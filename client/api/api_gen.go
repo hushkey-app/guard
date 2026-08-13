@@ -18,6 +18,11 @@ type Client struct{ *api.Transport }
 
 func New(baseURL string) *Client { return &Client{Transport: api.NewTransport(baseURL)} }
 
+// CreateSamplePanels calls POST /api/views/samples.
+func (c *Client) CreateSamplePanels(ctx context.Context) ([]model.View, error) {
+	return api.Call[[]model.View](ctx, c.Transport, "POST", "/api/views/samples", nil, nil)
+}
+
 // CreateView calls POST /api/views.
 func (c *Client) CreateView(ctx context.Context, body model.View) (model.View, error) {
 	return api.Call[model.View](ctx, c.Transport, "POST", "/api/views", nil, body)
@@ -27,6 +32,11 @@ func (c *Client) CreateView(ctx context.Context, body model.View) (model.View, e
 func (c *Client) DeleteView(ctx context.Context, id string) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/views/{id}", id), nil, nil)
 	return err
+}
+
+// DrillIntoPanel calls POST /api/views/drill.
+func (c *Client) DrillIntoPanel(ctx context.Context, body contract.DrillRequest) (model.Drill, error) {
+	return api.Call[model.Drill](ctx, c.Transport, "POST", "/api/views/drill", nil, body)
 }
 
 // Event calls GET /api/events/{id}.

@@ -88,11 +88,28 @@ async function loadPanel(view) {
     error.textContent = "";
     notes.textContent = (frame.notes || []).join(" ");
     const body = qs("[data-panel-body]", node).firstElementChild || qs("[data-panel-body]", node);
-    const legend = draw(body, frame, { view, onPoint: openEvent });
+    // The drill has to be against the window that was drawn, not the one that
+    // was saved — the dashboard picker may have overridden it, and a list of
+    // events from a different hour than the bar is worse than no list.
+    const drawn = { ...view, query: range ? { ...view.query, range } : view.query };
+    const legend = draw(body, frame, { view: drawn, ...interactions(drawn) });
     renderLegend(qs("[data-panel-legend]", node), legend);
   } catch (failure) {
     error.textContent = failure.message;
   }
+}
+
+// What a mark does when it is hovered or clicked. One event opens directly;
+// anything summarising several opens the list of them. guard.js owns the
+// drawer both go to.
+function interactions(view) {
+  return {
+    onEvent: (id) => globalThis.guardOpenDetail?.(id),
+    onSelect: (selection, datum) => globalThis.guardOpenDrill?.(
+      { panel: view.panel, query: view.query, selection: selection || {} },
+      { title: datum?.title ? `${view.name || "Panel"} · ${datum.title}` : view.name },
+    ),
+  };
 }
 
 function renderLegend(host, entries) {
@@ -107,12 +124,6 @@ function renderLegend(host, entries) {
     node.append(dot, text(entry.label));
     return node;
   }));
-}
-
-// A scatter point is one event, so clicking it opens the same detail panel the
-// tables use. guard.js owns that panel and publishes the opener.
-function openEvent(id) {
-  globalThis.guardOpenDetail?.(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -321,7 +332,9 @@ async function preview() {
     error.textContent = "";
     notes.textContent = (frame.notes || []).join(" ");
     status.textContent = `${frame.rows.length} row${frame.rows.length === 1 ? "" : "s"}`;
-    renderLegend(qs("[data-preview-legend]"), draw(host.firstElementChild || host, frame, { view }));
+    // The preview is clickable too: checking that a bar contains what you
+    // meant it to is most of what building a panel is.
+    renderLegend(qs("[data-preview-legend]"), draw(host.firstElementChild || host, frame, { view, ...interactions(view) }));
   } catch (failure) {
     if (token !== previewToken) return;
     status.textContent = "";
@@ -403,7 +416,27 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (event.target.closest("[data-views-refresh]")) refreshViews().catch(() => {});
+  const samples = event.target.closest("[data-views-samples]");
+  if (samples) {
+    samples.disabled = true;
+    addSamples().finally(() => { samples.disabled = false; });
+  }
 });
+
+// One panel per visualisation, built from this instance's own telemetry. The
+// difference between a state timeline and a status history is obvious once you
+// have seen both drawn from your own data, and unclear in any number of words.
+async function addSamples() {
+  const empty = qs("[data-view-empty]");
+  try {
+    const created = await request("/api/views/samples", { method: "POST", headers: adminHeaders() });
+    renderedSignature = "";
+    await refreshViews();
+    if (!created.length && empty) empty.textContent = "Those sample panels already exist.";
+  } catch (failure) {
+    if (empty) empty.textContent = failure.message;
+  }
+}
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && qs("[data-builder-shell]")?.classList.contains("open")) closeBuilder();

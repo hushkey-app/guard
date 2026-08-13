@@ -502,7 +502,71 @@ func (s *Store) RunView(panel string, q ViewQuery) (Frame, error) {
 	if frame.Rows == nil {
 		frame.Rows = [][]any{}
 	}
+	// An empty panel is the one result that cannot explain itself. "Nothing
+	// matched" is true of a filter that matches nothing, of a window that ends
+	// before the data starts, and of an instance no exporter has ever reached —
+	// three different problems with three different fixes, and the panel knows
+	// which one it is.
+	if len(frame.Rows) == 0 {
+		if hint, err := s.emptyHint(q, now); err == nil && hint != "" {
+			frame.Notes = append(frame.Notes, hint)
+		}
+	}
 	return frame, nil
+}
+
+// emptyHint says why a panel is empty, in one sentence.
+//
+// It costs two small queries, and only on the path where the answer was empty
+// anyway — which is exactly the path where someone is about to go looking for a
+// reason.
+func (s *Store) emptyHint(q ViewQuery, now time.Time) (string, error) {
+	var stored int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&stored); err != nil {
+		return "", err
+	}
+	if stored == 0 {
+		return "No telemetry has arrived yet — this instance's store is empty. Point an exporter at its OTLP/HTTP endpoint, or run `make seed` for a sample workload.", nil
+	}
+
+	// The same filters over all of time: if they match nothing at all, the
+	// window is not the problem and widening it will not help.
+	unbounded := q
+	unbounded.Range, unbounded.From, unbounded.To = "all", time.Time{}, time.Time{}
+	where, args, err := whereClause(unbounded, now)
+	if err != nil {
+		return "", err
+	}
+	var newest sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MAX(timestamp_ns) FROM events`+where, args...).Scan(&newest); err != nil {
+		return "", err
+	}
+	if !newest.Valid {
+		if len(q.Filters) > 0 || q.Signal != "" {
+			return "Nothing matches these filters in any window — the events are there, but not these ones.", nil
+		}
+		return "Nothing matches this query in any window.", nil
+	}
+
+	from, _ := q.Window(now)
+	at := time.Unix(0, newest.Int64).UTC()
+	if from.IsZero() || !at.Before(from) {
+		return "", nil // Something matched outside the window but inside it too: not this problem.
+	}
+	age := now.Sub(at).Round(time.Minute)
+	return fmt.Sprintf("Nothing in this window. The newest match is %s old (%s) — widen the time range to see it.",
+		humaniseAge(age), at.Local().Format("15:04 on 2 Jan")), nil
+}
+
+func humaniseAge(age time.Duration) string {
+	switch {
+	case age < time.Hour:
+		return fmt.Sprintf("%d minutes", int(age.Minutes()))
+	case age < 48*time.Hour:
+		return fmt.Sprintf("%.1f hours", age.Hours())
+	default:
+		return fmt.Sprintf("%d days", int(age.Hours()/24))
+	}
 }
 
 // scopedCTE builds the CTE every aggregate shape reads: the rows in the window,
@@ -1140,6 +1204,101 @@ func (s *Store) pickTrace(q ViewQuery, now time.Time) (string, error) {
 		return "", nil
 	}
 	return traceID, err
+}
+
+// DrillView returns the events behind one mark on a panel.
+//
+// This is the reverse of the compiler: the same WHERE clause the panel was
+// drawn with, narrowed by the mark that was clicked. It has to be built from
+// the query rather than from the frame, because a frame is a summary — the row
+// "12:35, /checkout, 217" does not contain the 217 events, and asking the
+// database again is the only way to get them.
+func (s *Store) DrillView(panel string, q ViewQuery, selection model.Selection) (model.Drill, error) {
+	if err := q.ValidateFor(panel); err != nil {
+		return model.Drill{}, err
+	}
+	q = q.Normalize(panel)
+	now := time.Now().UTC()
+
+	where, args, err := whereClause(q, now)
+	if err != nil {
+		return model.Drill{}, err
+	}
+	clauses := []string{"1=1"}
+	if where != "" {
+		clauses = []string{strings.TrimPrefix(where, " WHERE ")}
+	}
+
+	if !selection.From.IsZero() {
+		clauses = append(clauses, "timestamp_ns >= ?")
+		args = append(args, selection.From.UnixNano())
+	}
+	if !selection.To.IsZero() {
+		// The end of a bucket is the start of the next one, so it is excluded:
+		// an event exactly on the boundary belongs to one bucket, not to both.
+		clauses = append(clauses, "timestamp_ns < ?")
+		args = append(args, selection.To.UnixNano())
+	}
+	if selection.HasSeries && q.GroupBy != "" {
+		group, err := resolveField(q.GroupBy)
+		if err != nil {
+			return model.Drill{}, err
+		}
+		if selection.Series == "(none)" {
+			clauses = append(clauses, "(("+group.sql+") IS NULL OR CAST(("+group.sql+") AS TEXT) = '')")
+			args = append(args, group.args...)
+			args = append(args, group.args...)
+		} else {
+			clauses = append(clauses, "CAST(("+group.sql+") AS TEXT) = ?")
+			args = append(args, group.args...)
+			args = append(args, selection.Series)
+		}
+	}
+	if selection.Min != nil || selection.Max != nil {
+		value, err := numericExpr(q.Value)
+		if err != nil {
+			return model.Drill{}, err
+		}
+		if selection.Min != nil {
+			clauses = append(clauses, "("+value.sql+") >= ?")
+			args = append(args, value.args...)
+			args = append(args, *selection.Min)
+		}
+		if selection.Max != nil {
+			clauses = append(clauses, "("+value.sql+") <= ?")
+			args = append(args, value.args...)
+			args = append(args, *selection.Max)
+		}
+	}
+	filter := " WHERE " + strings.Join(clauses, " AND ")
+
+	var drill model.Drill
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`+filter, args...).Scan(&drill.Total); err != nil {
+		return drill, err
+	}
+	limit := selection.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	// Ordered by the measured value when there is one: a bar you clicked
+	// because it was tall is a bar whose slowest examples you want first.
+	order := "timestamp_ns DESC, id DESC"
+	if q.Value != "" && q.Agg != "count" {
+		value, err := numericExpr(q.Value)
+		if err != nil {
+			return drill, err
+		}
+		order = "(" + value.sql + ") DESC, timestamp_ns DESC"
+		args = append(args, value.args...)
+	}
+	rows, err := s.db.Query(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json
+FROM events`+filter+` ORDER BY `+order+` LIMIT ?`, append(args, limit)...)
+	if err != nil {
+		return drill, err
+	}
+	defer rows.Close()
+	drill.Events, err = scanEvents(rows)
+	return drill, err
 }
 
 // Trace assembles one trace into the flattened, depth-first order a waterfall

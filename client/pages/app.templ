@@ -3,6 +3,7 @@ package pages
 import (
 	"github.com/axadrn/shadcn-templ/v2/components/button"
 	"github.com/mirairoad/guard/client/ui"
+	"github.com/mirairoad/guard/client/ui/components"
 	"github.com/mirairoad/howl-go/core/router"
 )
 
@@ -114,8 +115,24 @@ templ App(title, head string) {
 						}
 					</div>
 					<div data-detail-content class="flex-1 space-y-6 overflow-y-auto p-5"></div>
+					<!-- Shown when the drawer is listing what is behind a mark
+					     rather than one event: the way back to the chart. -->
+					<div data-detail-footer hidden class="border-t border-border p-4">
+						@button.Button(button.Props{
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Class:      "w-full",
+							Attributes: templ.Attributes{"data-detail-back": true},
+						}) {
+							← Back to the list
+						}
+					</div>
 				</aside>
 			</div>
+			<!-- Chart furniture that outlives a navigation, next to the drawer
+			     it feeds: every page draws, so every page needs these. -->
+			@components.Tooltip()
+			@components.DrillRow()
 		</body>
 	</html>
 }

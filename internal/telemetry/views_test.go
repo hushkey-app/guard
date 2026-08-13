@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -164,20 +165,35 @@ func TestOHLCPanels(t *testing.T) {
 	store, base := seed(t)
 	window := ViewQuery{Signal: "traces", From: base.Add(-time.Minute), To: base.Add(10 * time.Minute), Value: "duration_ms", Bucket: "1h"}
 
+	// Buckets are aligned to the epoch, so a run at 09:58 splits the same six
+	// events across two hourly buckets and a run at 09:02 does not. The facts
+	// that hold either way are the ones across all the buckets returned.
 	candles := run(t, store, "candlestick", window)
-	if got := len(candles.Rows); got != 1 {
-		t.Fatalf("rows = %d, want 1", got)
+	if len(candles.Rows) == 0 {
+		t.Fatal("no candles")
 	}
-	row := candles.Rows[0]
-	// Ordered by time: 120 first, 2 last; 240 high, 2 low.
-	if row[1].(float64) != 120 || row[2].(float64) != 240 || row[3].(float64) != 2 || row[4].(float64) != 2 {
-		t.Fatalf("ohlc = %v, want open 120 high 240 low 2 close 2", row[1:])
+	first, last := candles.Rows[0], candles.Rows[len(candles.Rows)-1]
+	high, low := math.Inf(-1), math.Inf(1)
+	for _, row := range candles.Rows {
+		high = math.Max(high, row[2].(float64))
+		low = math.Min(low, row[3].(float64))
+	}
+	// In time order the durations are 120, 240, 60, 15, 25, 2.
+	if first[1].(float64) != 120 || last[4].(float64) != 2 || high != 240 || low != 2 {
+		t.Fatalf("ohlc opened %v, closed %v, high %v, low %v; want 120, 2, 240, 2", first[1], last[4], high, low)
 	}
 
 	boxes := run(t, store, "box", window)
-	row = boxes.Rows[0]
-	if row[1].(float64) != 2 || row[4].(float64) != 240 {
-		t.Fatalf("box = %v, want min 2 max 240", row[1:])
+	if len(boxes.Rows) == 0 {
+		t.Fatal("no boxes")
+	}
+	high, low = math.Inf(-1), math.Inf(1)
+	for _, row := range boxes.Rows {
+		low = math.Min(low, row[1].(float64))
+		high = math.Max(high, row[4].(float64))
+	}
+	if low != 2 || high != 240 {
+		t.Fatalf("box spanned %v to %v, want 2 to 240", low, high)
 	}
 }
 
@@ -360,6 +376,173 @@ func TestTraceSurvivesCyclicParents(t *testing.T) {
 	}
 	if len(trace.Spans) != 2 {
 		t.Fatalf("spans = %d, want 2", len(trace.Spans))
+	}
+}
+
+// A mark is an aggregate, and drilling into it has to return exactly the events
+// that were counted into it — no more, or the list disagrees with the bar.
+func TestDrillNarrowsToTheMark(t *testing.T) {
+	store, base := seed(t)
+	query := ViewQuery{Signal: "traces", Range: "24h", GroupBy: "attr:http.route", Agg: "count"}
+
+	for _, tc := range []struct {
+		name      string
+		selection model.Selection
+		want      int
+	}{
+		{"a bar", model.Selection{Series: "/checkout", HasSeries: true}, 3},
+		{"another bar", model.Selection{Series: "/search", HasSeries: true}, 2},
+		{"the whole panel", model.Selection{}, 6},
+		{"a time bucket", model.Selection{From: base, To: base.Add(2 * time.Minute)}, 2},
+		{"a bar in a bucket", model.Selection{Series: "/checkout", HasSeries: true, From: base, To: base.Add(2 * time.Minute)}, 2},
+	} {
+		drill, err := store.DrillView("bar", query, tc.selection)
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+			continue
+		}
+		if drill.Total != tc.want || len(drill.Events) != tc.want {
+			t.Errorf("%s: total %d, listed %d, want %d", tc.name, drill.Total, len(drill.Events), tc.want)
+		}
+	}
+}
+
+// The bucket boundary belongs to one bucket, not to both — otherwise adjacent
+// bars each claim the same event and the drill-downs sum to more than the data.
+func TestDrillTreatsTheBucketEndAsExclusive(t *testing.T) {
+	store, base := seed(t)
+	query := ViewQuery{Signal: "traces", Range: "24h", Agg: "count"}
+	first, err := store.DrillView("timeseries", query, model.Selection{From: base, To: base.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.DrillView("timeseries", query, model.Selection{From: base.Add(time.Minute), To: base.Add(2 * time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Total != 1 || second.Total != 1 {
+		t.Fatalf("adjacent buckets returned %d and %d, want 1 each", first.Total, second.Total)
+	}
+}
+
+// A histogram bar is a value range, not a time range.
+func TestDrillNarrowsToAValueRange(t *testing.T) {
+	store, _ := seed(t)
+	low, high := 100.0, 300.0
+	drill, err := store.DrillView("histogram", ViewQuery{Signal: "traces", Range: "24h", Value: "duration_ms", Buckets: 8},
+		model.Selection{Min: &low, Max: &high})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 120 and 240 fall inside; 60, 25, 15 and 2 do not.
+	if drill.Total != 2 {
+		t.Fatalf("total = %d, want 2", drill.Total)
+	}
+	// Ordered by the measured value, so the slowest example leads.
+	if drill.Events[0].DurationMS != 240 {
+		t.Errorf("first event = %v ms, want the slowest (240)", drill.Events[0].DurationMS)
+	}
+}
+
+// "(none)" is a label on the axis for the events the group field does not
+// cover, so it has to mean the same thing when clicked.
+func TestDrillIntoTheUngroupedBar(t *testing.T) {
+	store, _ := seed(t)
+	if err := store.Add(Event{Signal: "traces", Service: "db", Name: "SELECT", Timestamp: time.Now().UTC(), DurationMS: 4}); err != nil {
+		t.Fatal(err)
+	}
+	drill, err := store.DrillView("bar", ViewQuery{Signal: "traces", Range: "24h", GroupBy: "attr:http.route", Agg: "count"},
+		model.Selection{Series: "(none)", HasSeries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if drill.Total != 1 || drill.Events[0].Name != "SELECT" {
+		t.Fatalf("drill = %d events, first %q; want the one span with no route", drill.Total, drill.Events[0].Name)
+	}
+}
+
+// The list is capped; the count is not. A bar of 5,000 must not claim to be a
+// bar of 100 once you open it.
+func TestDrillReportsTheTotalItDidNotList(t *testing.T) {
+	store := NewStore(10_000)
+	t.Cleanup(func() { store.Close() })
+	now := time.Now().UTC()
+	events := make([]Event, 0, 250)
+	for i := range 250 {
+		events = append(events, Event{Signal: "traces", Service: "api", Timestamp: now.Add(-time.Duration(i) * time.Second), DurationMS: 1})
+	}
+	if err := store.Add(events...); err != nil {
+		t.Fatal(err)
+	}
+	drill, err := store.DrillView("bar", ViewQuery{Signal: "traces", Range: "1h", GroupBy: "service", Agg: "count"},
+		model.Selection{Series: "api", HasSeries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if drill.Total != 250 {
+		t.Errorf("total = %d, want 250", drill.Total)
+	}
+	if len(drill.Events) != 100 {
+		t.Errorf("listed %d, want the 100-event cap", len(drill.Events))
+	}
+}
+
+func TestDrillRejectsAnInvalidQuery(t *testing.T) {
+	store, _ := seed(t)
+	if _, err := store.DrillView("bar", ViewQuery{GroupBy: "service); DROP TABLE events; --", Agg: "count"}, model.Selection{}); err == nil {
+		t.Error("an injected group field was accepted")
+	}
+	if _, err := store.Query(Filter{Limit: 1}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An empty panel is the one result that cannot explain itself, and the three
+// reasons it can be empty have three different fixes.
+func TestEmptyPanelsSayWhy(t *testing.T) {
+	empty := NewStore(100)
+	t.Cleanup(func() { empty.Close() })
+	frame, err := empty.RunView("bar", ViewQuery{GroupBy: "service", Agg: "count", Range: "1h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frame.Notes) == 0 || !strings.Contains(frame.Notes[0], "No telemetry has arrived") {
+		t.Errorf("an empty store said %q", frame.Notes)
+	}
+
+	store, _ := seed(t)
+	frame, err = store.RunView("bar", ViewQuery{GroupBy: "service", Agg: "count", Range: "24h",
+		Filters: []model.Condition{{Field: "service", Op: "eq", Value: "not-a-service"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frame.Notes) == 0 || !strings.Contains(frame.Notes[0], "any window") {
+		t.Errorf("a filter matching nothing said %q", frame.Notes)
+	}
+
+	// seed() writes its events half an hour ago, so a fifteen-minute window
+	// misses them — the most common way a panel looks broken when it is not.
+	frame, err = store.RunView("bar", ViewQuery{GroupBy: "service", Agg: "count", Range: "15m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frame.Notes) == 0 || !strings.Contains(frame.Notes[0], "widen the time range") {
+		t.Errorf("data older than the window said %q", frame.Notes)
+	}
+}
+
+// A panel with results says nothing extra — the hint costs two queries, and
+// they only run where the answer was empty anyway.
+func TestPanelsWithResultsCarryNoHint(t *testing.T) {
+	store, _ := seed(t)
+	frame, err := store.RunView("bar", ViewQuery{GroupBy: "service", Agg: "count", Range: "24h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, note := range frame.Notes {
+		if strings.Contains(note, "widen") || strings.Contains(note, "No telemetry") {
+			t.Errorf("a panel with %d rows still explained itself: %q", len(frame.Rows), note)
+		}
 	}
 }
 

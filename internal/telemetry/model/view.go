@@ -167,6 +167,37 @@ type TraceSpan struct {
 	Orphan bool `json:"orphan,omitempty"`
 }
 
+// Selection is one mark on a panel, expressed in the terms the query already
+// uses: a time bucket, a series key, a value range. It is what turns a chart
+// back into the events it was drawn from.
+//
+// Every field is optional and they compose. A bar on a categorical chart sends
+// only Series; a histogram bar sends only Min and Max; a heatmap cell sends a
+// bucket and a range; a point on a time series sends a bucket and a series.
+type Selection struct {
+	From time.Time `json:"from,omitempty"`
+	To   time.Time `json:"to,omitempty"`
+	// Series is compared against the same expression the panel grouped by, so
+	// "(none)" here means what it means on the axis: the events the group field
+	// does not cover.
+	Series    string `json:"series,omitempty"`
+	HasSeries bool   `json:"has_series,omitempty"`
+	// Min and Max bound the value field — pointers because a histogram bucket
+	// starting at exactly zero is a real bucket, and "unset" has to differ.
+	Min   *float64 `json:"min,omitempty"`
+	Max   *float64 `json:"max,omitempty"`
+	Limit int      `json:"limit,omitempty"`
+}
+
+// Drill is what the drawer shows: the events behind one mark, and how many
+// there were in total. The two differ whenever a bar is taller than the list is
+// long, and saying so is the difference between "these are the 100 slowest" and
+// "this is all of it".
+type Drill struct {
+	Total  int     `json:"total"`
+	Events []Event `json:"events"`
+}
+
 // Fields is what the builder offers: the columns every event has, plus the
 // attribute keys this instance has actually seen.
 type Fields struct {
