@@ -6,7 +6,7 @@
 // a shared dependency can live.
 package prober
 
-import "github.com/mirairoad/guard/internal/cluster"
+import "github.com/hushkey-app/guard/internal/cluster"
 
 var current *cluster.Prober
 

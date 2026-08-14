@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mirairoad/guard/internal/telemetry"
-	"github.com/mirairoad/guard/server/apis"
-	"github.com/mirairoad/guard/server/apis/contract"
-	apistore "github.com/mirairoad/guard/server/apis/store"
+	"github.com/hushkey-app/guard/internal/telemetry"
+	"github.com/hushkey-app/guard/server/apis"
+	"github.com/hushkey-app/guard/server/apis/contract"
+	apistore "github.com/hushkey-app/guard/server/apis/store"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -216,3 +216,29 @@ func put(t *testing.T, url string, payload []byte, token string) int {
 }
 
 func float64Ptr(v float64) *float64 { return &v }
+
+// The provider endpoints take a node id and read the instance off the link,
+// exactly as running a command takes an action id and reads its machine. A
+// caller cannot name an instance, so a caller cannot aim a power switch at a
+// box that is not the one on the row — and a machine with no link has nothing
+// to aim at, which is a refusal rather than a guess.
+func TestProviderEndpointsNeedALinkedMachine(t *testing.T) {
+	store, srv := server(t, "secret")
+	node, err := store.SaveNode(telemetry.Node{Name: "VPS-1", Domain: "http://10.0.0.4:8000", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"node_id":` + itoa(node.ID) + `,"action":"halt"}`)
+
+	if code := post(t, srv.URL+"/api/cluster/provider/power", payload, ""); code != http.StatusUnauthorized {
+		t.Fatalf("without a token = %d, want 401", code)
+	}
+	if code := post(t, srv.URL+"/api/cluster/provider/power", payload, "secret"); code != http.StatusBadRequest {
+		t.Fatalf("an unlinked machine = %d, want 400", code)
+	}
+	// And the action is a closed list, checked before anything is dialled.
+	bad := []byte(`{"node_id":` + itoa(node.ID) + `,"action":"destroy"}`)
+	if code := post(t, srv.URL+"/api/cluster/provider/power", bad, "secret"); code != http.StatusBadRequest {
+		t.Fatalf("an invented action = %d, want 400", code)
+	}
+}

@@ -1,4 +1,4 @@
-module github.com/mirairoad/guard
+module github.com/hushkey-app/guard
 
 go 1.25.0
 
@@ -7,6 +7,7 @@ require (
 	github.com/axadrn/shadcn-templ/v2 v2.0.0-beta.3
 	github.com/mirairoad/howl-go v0.1.0
 	go.opentelemetry.io/proto/otlp v1.11.0
+	golang.org/x/crypto v0.54.0
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.56.0
 )

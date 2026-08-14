@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 // hostAttributes are where a host can be found, best evidence first.

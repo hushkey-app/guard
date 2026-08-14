@@ -1,9 +1,9 @@
 package cluster
 
 import (
-	"github.com/mirairoad/guard/internal/telemetry/model"
-	"github.com/mirairoad/guard/server/apis/prober"
-	"github.com/mirairoad/guard/server/apis/store"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/server/apis/prober"
+	"github.com/hushkey-app/guard/server/apis/store"
 	"github.com/mirairoad/howl-go/core/api"
 )
 

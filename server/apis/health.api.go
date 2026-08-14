@@ -1,8 +1,8 @@
 package apis
 
 import (
-	"github.com/mirairoad/guard/server/apis/contract"
-	"github.com/mirairoad/guard/server/apis/store"
+	"github.com/hushkey-app/guard/server/apis/contract"
+	"github.com/hushkey-app/guard/server/apis/store"
 	"github.com/mirairoad/howl-go/core/api"
 )
 

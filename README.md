@@ -35,6 +35,34 @@ Open <http://localhost:4318>. Guard writes telemetry to `guard.db` by default.
 The Settings page controls time and row retention. Set `GUARD_TOKEN` to require
 a bearer token on ingestion and settings mutations.
 
+## Signing in
+
+Guard is open until it is given OAuth credentials. Set Google's, Apple's, or
+both, and the dashboard goes behind a login page with a button per configured
+provider:
+
+```bash
+GUARD_GOOGLE_CLIENT_ID=…apps.googleusercontent.com
+GUARD_GOOGLE_CLIENT_SECRET=…
+GUARD_ADMIN_EMAIL=you@example.com          # always allowed, always an admin
+GUARD_AUTH_BASE_URL=https://guard.example.com
+```
+
+The redirect URI to register is `<base URL>/auth/google/callback`, and
+`<base URL>/auth/apple/callback` for Apple — whose `GUARD_APPLE_CLIENT_ID` is a
+Services ID, and whose signing key goes in `GUARD_APPLE_PRIVATE_KEY` or
+`GUARD_APPLE_PRIVATE_KEY_FILE` beside `GUARD_APPLE_TEAM_ID` and
+`GUARD_APPLE_KEY_ID`.
+
+Proving who you are is not the same as being allowed in: the guest list is
+Settings → Members, plus whatever `GUARD_ADMIN_EMAIL` names. A member reads
+everything; an admin can also change things, including the list. Sessions last
+seven days (`GUARD_AUTH_SESSION_TTL`).
+
+The OTLP endpoints stay outside all of it — an exporter holds `GUARD_TOKEN`, not
+a browser session — so switching sign-in on never stops a collector. See
+[docs/auth.md](docs/auth.md).
+
 ## Dashboard rendering
 
 Home, Logs, Metrics, Traces, and Settings are howl-go `.client.templ` routes.

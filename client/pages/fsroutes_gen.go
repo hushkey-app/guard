@@ -4,12 +4,18 @@
 package pages
 
 import (
-	p0 "github.com/mirairoad/guard/client/pages/logs"
-	p1 "github.com/mirairoad/guard/client/pages/metrics"
-	p2 "github.com/mirairoad/guard/client/pages/settings"
-	p3 "github.com/mirairoad/guard/client/pages/settings/cluster"
-	p4 "github.com/mirairoad/guard/client/pages/traces"
-	p5 "github.com/mirairoad/guard/client/pages/views"
+	p0 "github.com/hushkey-app/guard/client/pages/cluster"
+	p1 "github.com/hushkey-app/guard/client/pages/login"
+	p2 "github.com/hushkey-app/guard/client/pages/logs"
+	p3 "github.com/hushkey-app/guard/client/pages/metrics"
+	p4 "github.com/hushkey-app/guard/client/pages/registries"
+	p5 "github.com/hushkey-app/guard/client/pages/settings"
+	p6 "github.com/hushkey-app/guard/client/pages/settings/cloud"
+	p7 "github.com/hushkey-app/guard/client/pages/settings/cluster"
+	p8 "github.com/hushkey-app/guard/client/pages/settings/members"
+	p9 "github.com/hushkey-app/guard/client/pages/storage"
+	p10 "github.com/hushkey-app/guard/client/pages/traces"
+	p11 "github.com/hushkey-app/guard/client/pages/views"
 	"github.com/mirairoad/howl-go/core/router"
 )
 
@@ -17,11 +23,17 @@ import (
 func FsClientRoutes() []router.Route {
 	return []router.Route{
 		{Pattern: "/", Label: "Home", Page: Page, Head: Head, Mount: Mount, Unmount: Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/logs", Label: "Logs", Page: p0.Page, Head: p0.Head, Mount: p0.Mount, Unmount: p0.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/metrics", Label: "Metrics", Page: p1.Page, Head: p1.Head, Mount: p1.Mount, Unmount: p1.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/settings", Label: "Settings", Page: p2.Page, Head: p2.Head, Mount: p2.Mount, Unmount: p2.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/settings/cluster", Label: "Cluster", Page: p3.Page, Head: p3.Head, Mount: p3.Mount, Unmount: p3.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/traces", Label: "Traces", Page: p4.Page, Head: p4.Head, Mount: p4.Mount, Unmount: p4.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/views", Label: "Views", Page: p5.Page, Head: p5.Head, Mount: p5.Mount, Unmount: p5.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/cluster", Label: "Cluster", Page: p0.Page, Head: p0.Head, Mount: p0.Mount, Unmount: p0.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/login", Label: "Login", Page: p1.Page, Head: nil, Mount: nil, Unmount: nil, Layouts: nil, Client: false, Raw: true},
+		{Pattern: "/logs", Label: "Logs", Page: p2.Page, Head: p2.Head, Mount: p2.Mount, Unmount: p2.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/metrics", Label: "Metrics", Page: p3.Page, Head: p3.Head, Mount: p3.Mount, Unmount: p3.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/registries", Label: "Registries", Page: p4.Page, Head: p4.Head, Mount: p4.Mount, Unmount: p4.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/settings", Label: "Settings", Page: p5.Page, Head: p5.Head, Mount: p5.Mount, Unmount: p5.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/settings/cloud", Label: "Cloud", Page: p6.Page, Head: p6.Head, Mount: p6.Mount, Unmount: p6.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/settings/cluster", Label: "Cluster", Page: p7.Page, Head: p7.Head, Mount: p7.Mount, Unmount: p7.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/settings/members", Label: "Members", Page: p8.Page, Head: p8.Head, Mount: p8.Mount, Unmount: p8.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/storage", Label: "Storage", Page: p9.Page, Head: p9.Head, Mount: p9.Mount, Unmount: p9.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/traces", Label: "Traces", Page: p10.Page, Head: p10.Head, Mount: p10.Mount, Unmount: p10.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/views", Label: "Views", Page: p11.Page, Head: p11.Head, Mount: p11.Mount, Unmount: p11.Unmount, Layouts: nil, Client: true, Raw: false},
 	}
 }

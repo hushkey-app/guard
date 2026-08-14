@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 // fake is the two methods the prober needs. Declaring the interface in the

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall/js"
 
-	"github.com/mirairoad/guard/client/pages"
+	"github.com/hushkey-app/guard/client/pages"
 	"github.com/mirairoad/howl-go/core/dom"
 	"github.com/mirairoad/howl-go/core/router"
 )

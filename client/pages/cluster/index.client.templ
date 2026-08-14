@@ -1,0 +1,37 @@
+package cluster
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/alert"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
+)
+
+templ Head() {
+	<title>Cluster — Guard</title>
+	<meta name="description" content="Every watched machine on one page: status, uptime, and the commands kept for it, ready to run."/>
+}
+
+templ Page() {
+	<section class="space-y-6">
+		@ui.PageHeading("Infrastructure", "Cluster", "Every watched machine, with the commands somebody keeps for it ready to run. Declaring, editing and locking machines stays in settings — this page is for acting on them.")
+		@components.ClusterOps()
+		@components.ClusterOpsCard()
+		@components.ConfirmDialog()
+		@alert.Alert() {
+			@alert.Title() {
+				What a run is
+			}
+			@alert.Description() {
+				A command runs over SSH as the user in the machine's address, only if it was saved
+				first, and every run is logged. Running needs a stored login; a machine watched
+				without one still shows its status here. Add or change commands under
+				Settings → Cluster — unless the machine is locked, in which case the list is
+				frozen and can only be run.
+			}
+		}
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("cluster-ops") }
+func Unmount() { lifecycle.Unmount("cluster-ops") }

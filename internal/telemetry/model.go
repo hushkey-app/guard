@@ -16,7 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/secrets"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 
 	_ "modernc.org/sqlite"
 )
@@ -43,6 +44,9 @@ type Store struct {
 	closing    bool
 	lastPurge  atomic.Int64
 	topology   topologyCache
+	// secrets seals the SSH passwords. One keeper for the store, because the
+	// key belongs to the database file rather than to any row in it.
+	secrets *secrets.Keeper
 }
 
 type writeRequest struct {
@@ -117,6 +121,13 @@ func open(dsn, displayPath string, defaults Settings, memory bool) (*Store, erro
 		writeDelay = 5 * time.Millisecond
 	}
 	store := &Store{db: db, path: displayPath, writeCh: make(chan writeRequest, 256), stopWriter: make(chan struct{}), writerDone: make(chan struct{}), writeDelay: writeDelay}
+	// A memory store's secrets end with the process either way, so it never
+	// writes a key file next to a database that does not exist on disk.
+	if memory {
+		store.secrets = secrets.Ephemeral()
+	} else {
+		store.secrets = secrets.Open(displayPath)
+	}
 	if err := store.migrate(defaults); err != nil {
 		db.Close()
 		return nil, err
@@ -195,6 +206,24 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	// The cluster: machines guard watches from the outside, rather than ones
 	// that talk to it.
 	if err := migrateCluster(s.db); err != nil {
+		return err
+	}
+	// What those machines say about themselves, sampled over SSH.
+	if err := migrateHostStats(s.db); err != nil {
+		return err
+	}
+	// The cloud accounts: stored keys that unlock registries, instances and
+	// object storage.
+	if err := migrateProviders(s.db); err != nil {
+		return err
+	}
+	// Who may look at any of it, when guard has been given OAuth credentials:
+	// the sessions it has issued and the sign-ins in flight.
+	if err := migrateAuth(s.db); err != nil {
+		return err
+	}
+	// And who those sessions may belong to: the members list is the allowlist.
+	if err := migrateMembers(s.db); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO settings(id, retention_hours, max_events) VALUES(1, ?, ?)`, defaults.RetentionHours, defaults.MaxEvents); err != nil {

@@ -8,6 +8,10 @@ import { adminHeaders, el, muted, number, palette, qs, qsa, relativeTime, reques
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
 import { clusterNodes, refreshCluster } from "./cluster.js";
+import { refreshRegistries } from "./registries.js";
+import { refreshCloud } from "./cloud.js";
+import { refreshStorage } from "./storage.js";
+import { refreshMembers } from "./members.js";
 
 // Which machines the signal pages are scoped to. Shared across logs, traces and
 // metrics, and remembered: "I am looking at the two web boxes" is a stance you
@@ -505,7 +509,18 @@ async function refreshPage({ facets = false } = {}) {
   const work = [refreshSignal("logs"), refreshSignal("traces"), refreshSignal("metrics"), refreshMetrics(), loadSettings()];
   if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
   if (qs("[data-view-grid]")) work.push(refreshViews());
-  if (qs("[data-cluster-rows]") || qs("[data-topology]")) work.push(refreshCluster());
+  if (qs("[data-cluster-rows]") || qs("[data-topology]") || qs("[data-cluster-cards]")) work.push(refreshCluster());
+  // Forced only alongside a facets refresh — a mount or an explicit click —
+  // because behind this one is a provider's API, not guard's database.
+  if (qs("[data-registry-overview]")) work.push(refreshRegistries(facets));
+  if (qs("[data-cloud-accounts]") || qs("[data-import-rows]")) work.push(refreshCloud());
+  // Guard's own SQLite, but it changes when a person presses something rather
+  // than when telemetry arrives — so it is read on a mount and after a change,
+  // not on the tick.
+  if (facets && qs("[data-member-rows]")) work.push(refreshMembers());
+  // The storage page reads the provider, so it refreshes on a mount or an
+  // explicit press — never on the three-second tick.
+  if (facets && qs("[data-storage-rows]")) work.push(refreshStorage());
   if (facets) work.push(refreshFacets(), renderClusterFilter());
   await Promise.allSettled(work);
 }

@@ -7,8 +7,16 @@ package apiclient
 
 import (
 	"context"
-	"github.com/mirairoad/guard/internal/telemetry/model"
-	"github.com/mirairoad/guard/server/apis/contract"
+	"github.com/hushkey-app/guard/internal/cloud"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/vultr"
+	"github.com/hushkey-app/guard/server/apis/cloud/accounts"
+	"github.com/hushkey-app/guard/server/apis/cloud/storage"
+	"github.com/hushkey-app/guard/server/apis/cluster"
+	"github.com/hushkey-app/guard/server/apis/cluster/provider"
+	"github.com/hushkey-app/guard/server/apis/contract"
+	"github.com/hushkey-app/guard/server/apis/members"
+	"github.com/hushkey-app/guard/server/apis/registries"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -18,9 +26,19 @@ type Client struct{ *api.Transport }
 
 func New(baseURL string) *Client { return &Client{Transport: api.NewTransport(baseURL)} }
 
+// AddCloudAccount calls POST /api/cloud/accounts.
+func (c *Client) AddCloudAccount(ctx context.Context, body model.ProviderAccount) (model.ProviderAccount, error) {
+	return api.Call[model.ProviderAccount](ctx, c.Transport, "POST", "/api/cloud/accounts", nil, body)
+}
+
 // AddClusterNode calls POST /api/cluster.
 func (c *Client) AddClusterNode(ctx context.Context, body model.Node) (model.Node, error) {
 	return api.Call[model.Node](ctx, c.Transport, "POST", "/api/cluster", nil, body)
+}
+
+// AddMember calls POST /api/members.
+func (c *Client) AddMember(ctx context.Context, body members.Invite) (model.Member, error) {
+	return api.Call[model.Member](ctx, c.Transport, "POST", "/api/members", nil, body)
 }
 
 // AssignInstance calls PUT /api/cluster/assign.
@@ -33,14 +51,49 @@ func (c *Client) CheckClusterNow(ctx context.Context) ([]model.Node, error) {
 	return api.Call[[]model.Node](ctx, c.Transport, "POST", "/api/cluster/check", nil, nil)
 }
 
+// CheckClusterSSH calls POST /api/cluster/ssh.
+func (c *Client) CheckClusterSSH(ctx context.Context, body contract.NodeRequest) (model.Run, error) {
+	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/ssh", nil, body)
+}
+
+// CloudAccounts calls GET /api/cloud/accounts.
+func (c *Client) CloudAccounts(ctx context.Context) ([]model.ProviderAccount, error) {
+	return api.Call[[]model.ProviderAccount](ctx, c.Transport, "GET", "/api/cloud/accounts", nil, nil)
+}
+
+// CloudInstances calls GET /api/cluster/provider/instances.
+func (c *Client) CloudInstances(ctx context.Context, query provider.AccountQuery) ([]provider.InstanceRow, error) {
+	return api.Call[[]provider.InstanceRow](ctx, c.Transport, "GET", "/api/cluster/provider/instances", query, nil)
+}
+
+// CloudProviders calls GET /api/cloud/providers.
+func (c *Client) CloudProviders(ctx context.Context) ([]cloud.Descriptor, error) {
+	return api.Call[[]cloud.Descriptor](ctx, c.Transport, "GET", "/api/cloud/providers", nil, nil)
+}
+
 // Cluster calls GET /api/cluster.
 func (c *Client) Cluster(ctx context.Context) ([]model.Node, error) {
 	return api.Call[[]model.Node](ctx, c.Transport, "GET", "/api/cluster", nil, nil)
 }
 
+// ClusterRuns calls GET /api/cluster/runs.
+func (c *Client) ClusterRuns(ctx context.Context, query cluster.RunQuery) ([]model.Run, error) {
+	return api.Call[[]model.Run](ctx, c.Transport, "GET", "/api/cluster/runs", query, nil)
+}
+
 // ClusterTopology calls GET /api/cluster/topology.
 func (c *Client) ClusterTopology(ctx context.Context) (model.ClusterTopology, error) {
 	return api.Call[model.ClusterTopology](ctx, c.Transport, "GET", "/api/cluster/topology", nil, nil)
+}
+
+// CreateObjectStorage calls POST /api/cloud/storage.
+func (c *Client) CreateObjectStorage(ctx context.Context, body storage.CreateRequest) (cloud.Storage, error) {
+	return api.Call[cloud.Storage](ctx, c.Transport, "POST", "/api/cloud/storage", nil, body)
+}
+
+// CreateRegistry calls POST /api/registries.
+func (c *Client) CreateRegistry(ctx context.Context, body registries.CreateRequest) (cloud.Registry, error) {
+	return api.Call[cloud.Registry](ctx, c.Transport, "POST", "/api/registries", nil, body)
 }
 
 // CreateSamplePanels calls POST /api/views/samples.
@@ -53,6 +106,36 @@ func (c *Client) CreateView(ctx context.Context, body model.View) (model.View, e
 	return api.Call[model.View](ctx, c.Transport, "POST", "/api/views", nil, body)
 }
 
+// DeleteMachineSnapshot calls DELETE /api/cluster/provider/snapshots.
+func (c *Client) DeleteMachineSnapshot(ctx context.Context, query provider.SnapshotQuery) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", "/api/cluster/provider/snapshots", query, nil)
+	return err
+}
+
+// DeleteObjectStorage calls DELETE /api/cloud/storage.
+func (c *Client) DeleteObjectStorage(ctx context.Context, query storage.Target) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", "/api/cloud/storage", query, nil)
+	return err
+}
+
+// DeleteRegistry calls DELETE /api/registries.
+func (c *Client) DeleteRegistry(ctx context.Context, query registries.RegistryQuery) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", "/api/registries", query, nil)
+	return err
+}
+
+// DeleteRegistryRepository calls DELETE /api/registries/repos.
+func (c *Client) DeleteRegistryRepository(ctx context.Context, query registries.RepoDeleteQuery) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", "/api/registries/repos", query, nil)
+	return err
+}
+
+// DeleteRegistryTag calls DELETE /api/registries/tags.
+func (c *Client) DeleteRegistryTag(ctx context.Context, query registries.TagDeleteQuery) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", "/api/registries/tags", query, nil)
+	return err
+}
+
 // DeleteView calls DELETE /api/views/{id}.
 func (c *Client) DeleteView(ctx context.Context, id string) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/views/{id}", id), nil, nil)
@@ -62,6 +145,11 @@ func (c *Client) DeleteView(ctx context.Context, id string) error {
 // DrillIntoPanel calls POST /api/views/drill.
 func (c *Client) DrillIntoPanel(ctx context.Context, body contract.DrillRequest) (model.Drill, error) {
 	return api.Call[model.Drill](ctx, c.Transport, "POST", "/api/views/drill", nil, body)
+}
+
+// DuplicateClusterNode calls POST /api/cluster/duplicate.
+func (c *Client) DuplicateClusterNode(ctx context.Context, body contract.NodeRequest) (model.Node, error) {
+	return api.Call[model.Node](ctx, c.Transport, "POST", "/api/cluster/duplicate", nil, body)
 }
 
 // Event calls GET /api/events/{id}.
@@ -84,14 +172,60 @@ func (c *Client) Health(ctx context.Context) (contract.Health, error) {
 	return api.Call[contract.Health](ctx, c.Transport, "GET", "/healthz", nil, nil)
 }
 
+// ImportCloudInstance calls POST /api/cluster/provider/import.
+func (c *Client) ImportCloudInstance(ctx context.Context, body provider.ImportRequest) (model.Node, error) {
+	return api.Call[model.Node](ctx, c.Transport, "POST", "/api/cluster/provider/import", nil, body)
+}
+
+// LinkMachineToCloud calls PUT /api/cluster/provider/link.
+func (c *Client) LinkMachineToCloud(ctx context.Context, body model.ProviderLink) (model.Node, error) {
+	return api.Call[model.Node](ctx, c.Transport, "PUT", "/api/cluster/provider/link", nil, body)
+}
+
+// LinkStorageObject calls POST /api/cloud/storage/link.
+func (c *Client) LinkStorageObject(ctx context.Context, body storage.LinkRequest) (storage.Download, error) {
+	return api.Call[storage.Download](ctx, c.Transport, "POST", "/api/cloud/storage/link", nil, body)
+}
+
 // Logs calls GET /api/logs.
 func (c *Client) Logs(ctx context.Context, query model.Filter) ([]model.Event, error) {
 	return api.Call[[]model.Event](ctx, c.Transport, "GET", "/api/logs", query, nil)
 }
 
+// MachineInstance calls GET /api/cluster/provider.
+func (c *Client) MachineInstance(ctx context.Context, query provider.NodeQuery) (provider.Facts, error) {
+	return api.Call[provider.Facts](ctx, c.Transport, "GET", "/api/cluster/provider", query, nil)
+}
+
+// MachinePower calls POST /api/cluster/provider/power.
+func (c *Client) MachinePower(ctx context.Context, body provider.PowerRequest) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "POST", "/api/cluster/provider/power", nil, body)
+	return err
+}
+
+// MachineSnapshots calls GET /api/cluster/provider/snapshots.
+func (c *Client) MachineSnapshots(ctx context.Context, query provider.NodeQuery) ([]provider.SnapshotRow, error) {
+	return api.Call[[]provider.SnapshotRow](ctx, c.Transport, "GET", "/api/cluster/provider/snapshots", query, nil)
+}
+
+// Members calls GET /api/members.
+func (c *Client) Members(ctx context.Context) (members.Roster, error) {
+	return api.Call[members.Roster](ctx, c.Transport, "GET", "/api/members", nil, nil)
+}
+
 // MetricSeries calls GET /api/metrics/series.
 func (c *Client) MetricSeries(ctx context.Context, query contract.SeriesQuery) ([]model.MetricSeries, error) {
 	return api.Call[[]model.MetricSeries](ctx, c.Transport, "GET", "/api/metrics/series", query, nil)
+}
+
+// ObjectStorage calls GET /api/cloud/storage.
+func (c *Client) ObjectStorage(ctx context.Context) ([]storage.AccountStorage, error) {
+	return api.Call[[]storage.AccountStorage](ctx, c.Transport, "GET", "/api/cloud/storage", nil, nil)
+}
+
+// ObjectStorageOptions calls GET /api/cloud/storage/options.
+func (c *Client) ObjectStorageOptions(ctx context.Context, query storage.AccountOptions) (cloud.StorageOptions, error) {
+	return api.Call[cloud.StorageOptions](ctx, c.Transport, "GET", "/api/cloud/storage/options", query, nil)
 }
 
 // PreviewView calls POST /api/views/preview.
@@ -104,9 +238,51 @@ func (c *Client) Purge(ctx context.Context) (contract.Purged, error) {
 	return api.Call[contract.Purged](ctx, c.Transport, "POST", "/api/settings/purge", nil, nil)
 }
 
+// RegenerateObjectStorageKeys calls POST /api/cloud/storage/regenerate.
+func (c *Client) RegenerateObjectStorageKeys(ctx context.Context, body storage.Target) (storage.Credentials, error) {
+	return api.Call[storage.Credentials](ctx, c.Transport, "POST", "/api/cloud/storage/regenerate", nil, body)
+}
+
+// Registries calls GET /api/registries.
+func (c *Client) Registries(ctx context.Context) ([]registries.AccountRegistries, error) {
+	return api.Call[[]registries.AccountRegistries](ctx, c.Transport, "GET", "/api/registries", nil, nil)
+}
+
+// RegistryOptions calls GET /api/registries/options.
+func (c *Client) RegistryOptions(ctx context.Context, query registries.OptionsQuery) (cloud.RegistryOptions, error) {
+	return api.Call[cloud.RegistryOptions](ctx, c.Transport, "GET", "/api/registries/options", query, nil)
+}
+
+// RegistryRepositories calls GET /api/registries/repos.
+func (c *Client) RegistryRepositories(ctx context.Context, query registries.RepoQuery) ([]cloud.Repository, error) {
+	return api.Call[[]cloud.Repository](ctx, c.Transport, "GET", "/api/registries/repos", query, nil)
+}
+
+// RegistryTags calls GET /api/registries/tags.
+func (c *Client) RegistryTags(ctx context.Context, query registries.TagQuery) ([]cloud.Tag, error) {
+	return api.Call[[]cloud.Tag](ctx, c.Transport, "GET", "/api/registries/tags", query, nil)
+}
+
+// RemoveCloudAccount calls DELETE /api/cloud/accounts/{id}.
+func (c *Client) RemoveCloudAccount(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/cloud/accounts/{id}", id), nil, nil)
+	return err
+}
+
 // RemoveClusterNode calls DELETE /api/cluster/{id}.
 func (c *Client) RemoveClusterNode(ctx context.Context, id string) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/cluster/{id}", id), nil, nil)
+	return err
+}
+
+// RemoveMember calls DELETE /api/members/{email}.
+func (c *Client) RemoveMember(ctx context.Context, email string) (members.Removed, error) {
+	return api.Call[members.Removed](ctx, c.Transport, "DELETE", api.Path("/api/members/{email}", email), nil, nil)
+}
+
+// RenameObjectStorage calls PUT /api/cloud/storage/label.
+func (c *Client) RenameObjectStorage(ctx context.Context, body storage.LabelRequest) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "PUT", "/api/cloud/storage/label", nil, body)
 	return err
 }
 
@@ -115,14 +291,56 @@ func (c *Client) ReorderViews(ctx context.Context, body contract.ViewOrder) ([]m
 	return api.Call[[]model.View](ctx, c.Transport, "PUT", "/api/views/order", nil, body)
 }
 
+// RestoreMachineSnapshot calls POST /api/cluster/provider/restore.
+func (c *Client) RestoreMachineSnapshot(ctx context.Context, body provider.RestoreRequest) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "POST", "/api/cluster/provider/restore", nil, body)
+	return err
+}
+
+// RevealObjectStorageKeys calls POST /api/cloud/storage/keys.
+func (c *Client) RevealObjectStorageKeys(ctx context.Context, body storage.Target) (storage.Credentials, error) {
+	return api.Call[storage.Credentials](ctx, c.Transport, "POST", "/api/cloud/storage/keys", nil, body)
+}
+
+// RunClusterAction calls POST /api/cluster/run.
+func (c *Client) RunClusterAction(ctx context.Context, body contract.RunRequest) (model.Run, error) {
+	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/run", nil, body)
+}
+
+// SampleMachine calls POST /api/cluster/stats.
+func (c *Client) SampleMachine(ctx context.Context, body contract.NodeRequest) (model.HostStats, error) {
+	return api.Call[model.HostStats](ctx, c.Transport, "POST", "/api/cluster/stats", nil, body)
+}
+
+// SaveClusterActions calls PUT /api/cluster/actions.
+func (c *Client) SaveClusterActions(ctx context.Context, body contract.ActionList) ([]model.NodeAction, error) {
+	return api.Call[[]model.NodeAction](ctx, c.Transport, "PUT", "/api/cluster/actions", nil, body)
+}
+
+// SetAccountS3Keys calls PUT /api/cloud/accounts/s3.
+func (c *Client) SetAccountS3Keys(ctx context.Context, body accounts.S3Request) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "PUT", "/api/cloud/accounts/s3", nil, body)
+	return err
+}
+
 // Settings calls GET /api/settings.
 func (c *Client) Settings(ctx context.Context) (model.Settings, error) {
 	return api.Call[model.Settings](ctx, c.Transport, "GET", "/api/settings", nil, nil)
 }
 
+// StorageObjects calls GET /api/cloud/storage/objects.
+func (c *Client) StorageObjects(ctx context.Context, query storage.ObjectQuery) (storage.Contents, error) {
+	return api.Call[storage.Contents](ctx, c.Transport, "GET", "/api/cloud/storage/objects", query, nil)
+}
+
 // Summary calls GET /api/summary.
 func (c *Client) Summary(ctx context.Context) (model.Summary, error) {
 	return api.Call[model.Summary](ctx, c.Transport, "GET", "/api/summary", nil, nil)
+}
+
+// TakeMachineSnapshot calls POST /api/cluster/provider/snapshots.
+func (c *Client) TakeMachineSnapshot(ctx context.Context, body provider.SnapshotRequest) (vultr.Snapshot, error) {
+	return api.Call[vultr.Snapshot](ctx, c.Transport, "POST", "/api/cluster/provider/snapshots", nil, body)
 }
 
 // Trace calls GET /api/traces/{id}.

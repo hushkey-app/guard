@@ -1,0 +1,264 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/table"
+	"github.com/hushkey-app/guard/client/ui"
+)
+
+// The object storage page: what a stored account key owns, read live.
+//
+// One thing here is unlike the rest of guard. The provider hands back the S3
+// access key and secret on every read, and those are credentials to somebody's
+// data — so the listing never carries them, every row draws dots, and reading
+// a pair is a press on **Reveal** that goes to its own endpoint and leaves a
+// line in the log. Copying those two strings into an application is the whole
+// reason this page exists instead of another tab on the provider's console;
+// pretending otherwise would just mean the tab stays open.
+templ StoragePanel() {
+	<div class="space-y-6">
+		<p data-storage-status class="hidden rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"></p>
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<p data-storage-summary class="text-sm text-muted-foreground">Loading…</p>
+			<div class="flex items-center gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-storage-refresh": true},
+				}) {
+					Refresh
+				}
+				@button.Button(button.Props{
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-storage-new": true},
+				}) {
+					New storage
+				}
+			</div>
+		</div>
+		<section data-storage-rows class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"></section>
+		<div data-storage-empty hidden>
+			@ui.Empty("No object storage on any stored account. Add one with New storage, or add an account key under Settings → Cloud.")
+		</div>
+		@storageCreate()
+		@storageBrowser()
+	</div>
+	@storageCardTemplate()
+}
+
+// storageBrowser is what is inside a bucket: one folder at a time, read
+// straight from the storage over S3.
+//
+// It is a level of the same page rather than a route, like the registries
+// drill, so going back is instant and nothing is refetched. And it is
+// read-only — there is no upload here and no delete — because guard holding a
+// credential that could destroy somebody's objects would make a guard session
+// a way to destroy them.
+templ storageBrowser() {
+	<section data-storage-browser hidden class="space-y-3">
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<div class="flex min-w-0 items-center gap-3">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-storage-browse-close": true},
+				}) {
+					← Storage
+				}
+				<h2 class="min-w-0 text-lg font-semibold tracking-tight">
+					<span data-browse-title class="truncate"></span>
+					<span data-browse-count class="ml-2 text-sm font-normal text-muted-foreground"></span>
+				</h2>
+			</div>
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-browse-refresh": true},
+			}) {
+				Refresh
+			}
+		</div>
+		// The breadcrumb is the only way back up a prefix, so it is a row of
+		// buttons rather than text: every level above this one is one press.
+		<nav data-browse-path class="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"></nav>
+		<p data-browse-status class="hidden rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"></p>
+		@card.Card(card.Props{Class: "gap-0 py-0"}) {
+			@table.Table() {
+				@ui.TableHead([]string{"Name", "Size", "Modified", ""})
+				@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-browse-rows": true}})
+			}
+		}
+		<div class="flex justify-center">
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Class:      "hidden",
+				Attributes: templ.Attributes{"data-browse-more": true},
+			}) {
+				Load more
+			}
+		</div>
+	</section>
+}
+
+// storageCreate is the ordering form, folded away until asked for: this is a
+// page people open to read a key far more often than to buy a bucket, and the
+// button that bills is not the one that should be under the cursor.
+templ storageCreate() {
+	<div data-storage-form hidden>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					New object storage
+				}
+				@card.Description() {
+					Billed from the moment the provider accepts it, until it is deleted.
+				}
+			}
+			@card.Content(card.ContentProps{Class: "space-y-4"}) {
+				<div class="grid gap-4 sm:grid-cols-3">
+					<label class="grid gap-1.5 text-xs text-muted-foreground">
+						Account
+						<span class="relative flex items-center">
+							<select data-storage-account class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"></select>
+							@ui.Chevron()
+						</span>
+					</label>
+					<label class="grid gap-1.5 text-xs text-muted-foreground">
+						Region
+						<span class="relative flex items-center">
+							<select data-storage-region class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"></select>
+							@ui.Chevron()
+						</span>
+					</label>
+					<label data-storage-tier-field class="grid gap-1.5 text-xs text-muted-foreground">
+						Tier
+						<span class="relative flex items-center">
+							<select data-storage-tier class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"></select>
+							@ui.Chevron()
+						</span>
+					</label>
+					<label data-storage-class-field class="grid gap-1.5 text-xs text-muted-foreground" hidden>
+						Storage class
+						<span class="relative flex items-center">
+							<select data-storage-class class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"></select>
+							@ui.Chevron()
+						</span>
+					</label>
+				</div>
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Label
+					<input data-storage-label maxlength="255" autocomplete="off" placeholder="hushkey-backups" class="cn-input h-9 text-sm"/>
+				</label>
+				<div class="flex flex-wrap items-center justify-end gap-3">
+					<span data-storage-form-status class="mr-auto text-sm text-muted-foreground empty:hidden"></span>
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-storage-cancel": true},
+					}) {
+						Cancel
+					}
+					@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-storage-create": true}}) {
+						Create
+					}
+				</div>
+			}
+		}
+	</div>
+}
+
+// storageCardTemplate is one subscription: what it is, where it is, and the
+// credentials behind dots until somebody asks for them.
+templ storageCardTemplate() {
+	<template data-storage-card-template>
+		<article data-storage-id class="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 text-card-foreground">
+			<div class="flex items-start justify-between gap-3">
+				<div class="min-w-0">
+					<p data-storage-name class="truncate text-lg font-semibold tracking-tight"></p>
+					<p data-storage-account-name class="truncate text-xs text-muted-foreground"></p>
+				</div>
+				<span data-storage-state class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+			</div>
+			<div class="space-y-1">
+				<p class="text-[.6rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Endpoint</p>
+				<p data-storage-host class="truncate font-mono text-xs text-muted-foreground"></p>
+			</div>
+			// What the storage is holding, for the providers that report it.
+			// Absent rather than zero where they do not: "0 B" and "the
+			// provider does not say" are different sentences.
+			<div data-storage-usage-field class="space-y-1" hidden>
+				<p class="text-[.6rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Holding</p>
+				<p data-storage-usage class="text-xs text-muted-foreground"></p>
+			</div>
+			<div data-storage-credentials class="space-y-1.5">
+				<p class="text-[.6rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Credentials</p>
+				<div class="flex items-center gap-2">
+					<code data-storage-access class="min-w-0 flex-1 truncate rounded bg-muted/60 px-2 py-1 font-mono text-[.65rem]"></code>
+					@button.Button(button.Props{
+						Variant:    button.VariantGhost,
+						Size:       button.SizeIconSm,
+						Class:      "shrink-0 text-muted-foreground",
+						Attributes: templ.Attributes{"data-storage-copy": "access", "aria-label": "Copy the access key"},
+					}) {
+						@iconCopy()
+					}
+				</div>
+				<div class="flex items-center gap-2">
+					<code data-storage-secret class="min-w-0 flex-1 truncate rounded bg-muted/60 px-2 py-1 font-mono text-[.65rem] tracking-widest"></code>
+					@button.Button(button.Props{
+						Variant:    button.VariantGhost,
+						Size:       button.SizeIconSm,
+						Class:      "shrink-0 text-muted-foreground",
+						Attributes: templ.Attributes{"data-storage-copy": "secret", "aria-label": "Copy the secret key"},
+					}) {
+						@iconCopy()
+					}
+				</div>
+			</div>
+			// A provider that cannot hand out an S3 pair says where they do
+			// come from, rather than showing dots over something that is
+			// never going to arrive.
+			<p data-storage-keys-note class="text-xs text-muted-foreground" hidden></p>
+			<div class="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-storage-browse": true, "title": "Look inside — read-only"},
+				}) {
+					Browse
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-storage-reveal": true, "title": "Read the keys from the provider — this is logged"},
+				}) {
+					Reveal
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-storage-rename": true},
+				}) {
+					Rename
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-storage-regenerate": true, "title": "Issue a new pair — everything holding the old secret stops working"},
+				}) {
+					Rotate keys
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Size:       button.SizeSm,
+					Class:      "ml-auto text-muted-foreground hover:text-destructive",
+					Attributes: templ.Attributes{"data-storage-delete": true},
+				}) {
+					Delete
+				}
+			</div>
+		</article>
+	</template>
+}

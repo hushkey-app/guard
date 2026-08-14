@@ -2,7 +2,7 @@ package components
 
 import (
 	"github.com/axadrn/shadcn-templ/v2/components/item"
-	"github.com/mirairoad/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui"
 )
 
 // SettingsNav is the second navigation level, shared by every settings page so
@@ -17,6 +17,8 @@ templ SettingsNav(current string) {
 		@item.Group(item.GroupProps{Class: "gap-1", Attributes: templ.Attributes{"aria-label": "Settings sections"}}) {
 			@settingsLink("/settings", "▤", "Data storage", "Retention and cleanup", current)
 			@settingsLink("/settings/cluster", "◈", "Cluster", "Machines to watch", current)
+			@settingsLink("/settings/cloud", "▣", "Cloud accounts", "One key: registries, machines, storage", current)
+			@settingsLink("/settings/members", "◉", "Members", "Who may sign in", current)
 			@item.Item(item.Props{Size: item.SizeSm, Class: "opacity-50", Attributes: templ.Attributes{"aria-disabled": "true"}}) {
 				@item.Media(item.MediaProps{Variant: item.MediaVariantIcon}) {
 					⌘

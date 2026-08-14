@@ -1,0 +1,74 @@
+package members
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/alert"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
+)
+
+templ Head() {
+	<title>Members — Guard</title>
+	<meta name="description" content="Who may sign in to this Guard instance."/>
+}
+
+templ Page() {
+	<section class="space-y-8">
+		@ui.PageHeading("Workspace", "Settings", "Manage Guard's storage, configuration, and administrative controls.")
+		<div class="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
+			@components.SettingsNav("/settings/members")
+			<div class="min-w-0 space-y-6">
+				<div>
+					<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Access</p>
+					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Members</h2>
+					<p class="mt-2 text-muted-foreground">
+						Signing in with Google or Apple proves who somebody is. It does not say
+						whether they may come in — Google will happily prove that a stranger owns
+						their own account. This list is what decides, and it is the only thing
+						that does.
+					</p>
+					<p class="mt-2 text-muted-foreground">
+						A member reads everything the dashboard shows. An admin can also change
+						things: retention, machines, cloud accounts, and this list. The addresses
+						in <code class="font-mono">GUARD_ADMIN_EMAIL</code> are admins by
+						definition — they are listed here, and they cannot be edited from this
+						page, because an environment variable is the way back in when the last
+						stored admin removes themselves.
+					</p>
+				</div>
+				<div data-members-disabled hidden>
+					@alert.Alert() {
+						@alert.Title() {
+							Nobody is being asked to sign in yet
+						}
+						@alert.Description() {
+							This instance has no OAuth credentials, so the dashboard is open to
+							anyone who can reach it and this list is stored but enforced by nothing.
+							Set <code class="font-mono">GUARD_GOOGLE_CLIENT_ID</code> and
+							<code class="font-mono">GUARD_GOOGLE_CLIENT_SECRET</code>, or the four
+							<code class="font-mono">GUARD_APPLE_*</code> values, and restart — the
+							list is waiting.
+						}
+					}
+				</div>
+				@components.MemberForm()
+				@components.MemberList()
+				@components.ConfirmDialog()
+				@alert.Alert() {
+					@alert.Title() {
+						Removing somebody closes their tabs
+					}
+					@alert.Description() {
+						Taking an address off the list deletes every session it holds, so an open
+						dashboard stops working on its next request rather than at the end of the
+						week. The reverse is also true: a member added here can sign in
+						immediately, with no restart and nothing to send them.
+					}
+				}
+			</div>
+		</div>
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("settings-members") }
+func Unmount() { lifecycle.Unmount("settings-members") }

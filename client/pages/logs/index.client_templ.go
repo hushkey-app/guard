@@ -11,8 +11,8 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"github.com/axadrn/shadcn-templ/v2/components/card"
 	"github.com/axadrn/shadcn-templ/v2/components/table"
-	"github.com/mirairoad/guard/client/lifecycle"
-	"github.com/mirairoad/guard/client/ui"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui"
 )
 
 func Head() templ.Component {

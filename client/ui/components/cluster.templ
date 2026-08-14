@@ -5,12 +5,22 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/card"
 	"github.com/axadrn/shadcn-templ/v2/components/field"
 	"github.com/axadrn/shadcn-templ/v2/components/input"
-	"github.com/mirairoad/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui"
 )
 
-// ClusterForm adds a machine to watch: a name and a health URL, which is the
-// whole of it. Auth headers, expected bodies and TCP checks are each a way for
-// a probe to fail that nobody can read off a dashboard.
+// ClusterForm adds a machine to watch.
+//
+// A machine is described twice because it is reached twice: the domain is where
+// the world finds it, the internal address is where guard finds it, and the
+// health path follows the machine between them. Either address is enough; the
+// internal one wins when both are given, because a public name is often
+// answered by a load balancer that keeps saying 200 long after the box behind
+// it stopped.
+//
+// The way in — an SSH login, and the commands to run with it — is set on the
+// machine's own row afterwards. It is not what you are thinking about while
+// typing a name and a URL, and a form that asks for a root password before it
+// has ever reached the box is a form people abandon.
 templ ClusterForm() {
 	@card.Card() {
 		@card.Header() {
@@ -18,56 +28,105 @@ templ ClusterForm() {
 				Add a machine
 			}
 			@card.Description() {
-				Guard fetches this URL on a timer and records whether it answered.
+				Guard fetches the health address on a timer and records whether it answered.
 			}
 		}
 		@card.Content() {
-			<form data-cluster-form class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_7rem_auto] sm:items-start">
-				@field.Field() {
-					@field.Label(field.LabelProps{For: "node-name"}) {
-						Name
-					}
-					@input.Input(input.Props{
-						ID:          "node-name",
-						Placeholder: "VPS-1",
-						Required:    true,
-						Attributes:  templ.Attributes{"data-node": "name", "maxlength": "80", "autocomplete": "off"},
-					})
-				}
-				@field.Field() {
-					@field.Label(field.LabelProps{For: "node-url"}) {
-						Health URL
-					}
-					@input.Input(input.Props{
-						ID:          "node-url",
-						Type:        "url",
-						Placeholder: "https://vps-1.example.com/api/health",
-						Required:    true,
-						Class:       "font-mono",
-						Attributes:  templ.Attributes{"data-node": "url", "spellcheck": "false", "autocomplete": "off"},
-					})
-				}
-				@field.Field() {
-					@field.Label(field.LabelProps{For: "node-interval"}) {
-						Every
-					}
-					<div class="flex items-stretch">
+			<form data-cluster-form class="space-y-4">
+				<div class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "node-name"}) {
+							Name
+						}
 						@input.Input(input.Props{
-							ID:         "node-interval",
-							Type:       "number",
-							Value:      "3",
-							Class:      "rounded-r-none",
-							Attributes: templ.Attributes{"data-node": "interval", "min": "1", "max": "3600"},
+							ID:          "node-name",
+							Placeholder: "VPS-1",
+							Required:    true,
+							Attributes:  templ.Attributes{"data-node": "name", "maxlength": "80", "autocomplete": "off"},
 						})
-						<span class="grid shrink-0 place-items-center rounded-r-lg border border-l-0 border-input px-2 text-sm text-muted-foreground">s</span>
-					</div>
-				}
-				<div class="flex items-end gap-2 sm:pb-[2px]">
-					@button.Button(button.Props{Type: button.TypeSubmit}) {
-						Add
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "node-domain"}) {
+							Address
+						}
+						@input.Input(input.Props{
+							ID:          "node-domain",
+							Placeholder: "https://vps-1.example.com or http://localhost:8000",
+							Required:    true,
+							Class:       "font-mono",
+							Attributes:  templ.Attributes{"data-node": "domain", "spellcheck": "false", "autocomplete": "off"},
+						})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "node-health"}) {
+							Health path
+						}
+						@input.Input(input.Props{
+							ID:          "node-health",
+							Placeholder: "/api/health",
+							Class:       "font-mono",
+							Attributes:  templ.Attributes{"data-node": "health", "spellcheck": "false", "autocomplete": "off"},
+						})
 					}
 				</div>
-				<p data-cluster-status class="text-sm text-muted-foreground sm:col-span-4"></p>
+				<!-- The way in, here rather than hidden behind the row: it is the
+				     second thing anybody sets up, and a login that has to be
+				     found before it can be typed is a login nobody types.
+				     Optional — a machine watched through a load balancer is
+				     never logged in to. -->
+				<div class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "node-interval"}) {
+							Every
+						}
+						<div class="flex items-stretch">
+							@input.Input(input.Props{
+								ID:         "node-interval",
+								Type:       "number",
+								Value:      "3",
+								Class:      "rounded-r-none",
+								Attributes: templ.Attributes{"data-node": "interval", "min": "1", "max": "3600"},
+							})
+							<span class="grid shrink-0 place-items-center rounded-r-lg border border-l-0 border-input px-2 text-sm text-muted-foreground">s</span>
+						</div>
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "node-ssh"}) {
+							SSH address
+						}
+						@input.Input(input.Props{
+							ID:          "node-ssh",
+							Placeholder: "root@10.10.10.10 — optional",
+							Class:       "font-mono",
+							Attributes:  templ.Attributes{"data-node": "ssh", "spellcheck": "false", "autocomplete": "off"},
+						})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "node-password"}) {
+							SSH password
+						}
+						@input.Input(input.Props{
+							ID:          "node-password",
+							Type:        "password",
+							Placeholder: "••••••••",
+							Class:       "font-mono tracking-widest",
+							Attributes:  templ.Attributes{"data-node": "password", "autocomplete": "new-password"},
+						})
+					}
+				</div>
+				<!-- The button goes last and to the right, where a form ends.
+				     Wedged into the field grid it competed with the inputs for
+				     width and pushed the address boxes down to nothing. -->
+				<div class="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+					<p class="max-w-xl text-xs text-muted-foreground">
+						The health path hangs off the address — guard fetches it from the server, so it can be a name
+						only the server resolves. A login, if you give one, has to connect before the machine is added.
+					</p>
+					@button.Button(button.Props{Type: button.TypeSubmit, Class: "ml-auto"}) {
+						Add machine
+					}
+				</div>
+				<p data-cluster-status class="text-sm text-muted-foreground empty:hidden"></p>
 			</form>
 		}
 	}
@@ -98,68 +157,423 @@ templ ClusterList() {
 	}
 }
 
-// ClusterRow is one machine. The strip on the right is the last sixty checks,
-// oldest first — a shape that shows a flapping node, which a single "up" badge
-// never can.
+// ClusterRow is one machine: a header line that is the same on the overview,
+// and a panel underneath that only the settings page opens.
+//
+// The strip on the right is the last sixty checks, oldest first — a shape that
+// shows a flapping node, which a single "up" badge never can.
+//
+// Two addresses, drawn differently on purpose. The domain is a link, because a
+// browser can follow it. The internal address is text, because it is on a
+// network the browser is usually not on, and a link that always fails teaches
+// people to distrust the page instead of the network.
 templ ClusterRow() {
 	<template data-cluster-row-template>
-		<div data-node-row class="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
-			<span data-node-dot class="size-2.5 shrink-0 rounded-full" title="status"></span>
-			<!-- The machine's own favicon when it has one. Hidden by default:
-			     most do not, and an alt-text box where an icon should be is
-			     worse than no icon at all. -->
-			<img data-node-icon hidden alt="" width="16" height="16" class="size-4 shrink-0 rounded-sm"/>
-			<div class="min-w-0 flex-1">
-				<div class="flex items-center gap-2">
-					<p data-node-name class="truncate font-medium"></p>
-					<span data-node-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
-				</div>
-				<a data-node-url target="_blank" rel="noreferrer noopener" class="block truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"></a>
-				<p data-node-error class="mt-0.5 truncate text-xs text-destructive empty:hidden"></p>
-			</div>
-			<div class="flex shrink-0 items-center gap-4">
-				<div class="text-right">
-					<p data-node-latency class="font-mono text-sm tabular-nums"></p>
-					<p data-node-checked class="text-[.65rem] text-muted-foreground"></p>
-				</div>
-				<div class="text-right">
-					<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
-					<p data-node-checks class="text-[.65rem] text-muted-foreground">24h uptime</p>
-				</div>
-				<!-- Editable in place. A machine's cadence is the one thing
-				     about it that gets tuned, and a dialog to change one number
-				     is a dialog nobody opens. -->
-				<label class="flex shrink-0 items-center gap-1 text-[.65rem] text-muted-foreground" title="How often to check this machine">
-					every
-					<input
-						type="number"
-						data-node-interval
-						min="1"
-						max="3600"
-						class="cn-input h-7 w-14 px-1.5 text-center font-mono text-xs tabular-nums"
-					/>
-					s
-				</label>
-				<div data-node-strip class="flex h-6 w-24 items-end gap-px" title="the last sixty checks"></div>
+		<div data-node-row>
+			<!-- The whole strip is the disclosure: the chevron is a target the
+			     width of a thumbnail, and on a narrow card it used to be the
+			     first thing pushed out of reach. Clicking anywhere that is not
+			     itself a control opens the machine. -->
+			<div data-node-head class="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 p-4">
 				@button.Button(button.Props{
 					Variant:    button.VariantGhost,
 					Size:       button.SizeIconSm,
-					Class:      "text-muted-foreground",
-					Attributes: templ.Attributes{"data-node-pause": true, "aria-label": "Pause or resume watching"},
+					Class:      "shrink-0 text-muted-foreground",
+					Attributes: templ.Attributes{"data-node-toggle": true, "aria-label": "Show this machine's settings"},
 				}) {
-					<span data-node-pause-icon>⏸</span>
+					@chevronDisclosure()
+				}
+				<span data-node-dot class="size-2.5 shrink-0 rounded-full" title="status"></span>
+				<!-- The machine's own favicon when it has one. Hidden by default:
+				     most do not, and an alt-text box where an icon should be is
+				     worse than no icon at all. -->
+				<img data-node-icon hidden alt="" width="16" height="16" class="size-4 shrink-0 rounded-sm"/>
+				<div class="min-w-0 flex-1">
+					<div class="flex items-center gap-2">
+						<p data-node-name class="truncate font-medium"></p>
+						<span data-node-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+						<span data-node-lock-badge hidden class="cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+					</div>
+					<div class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+						<a data-node-url target="_blank" rel="noreferrer noopener" class="truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"></a>
+						<!-- Never a link. This address is reached from guard's
+						     network, and the browser reading this page is
+						     usually somewhere else entirely. -->
+						<span data-node-internal class="truncate font-mono text-xs text-muted-foreground empty:hidden" title="Checked by guard from the server — your browser cannot open this"></span>
+					</div>
+					<p data-node-error class="mt-0.5 truncate text-xs text-destructive empty:hidden"></p>
+					<div data-node-tags class="mt-1 flex flex-wrap items-center gap-1.5 empty:hidden"></div>
+				</div>
+				<!-- Allowed to shrink and to wrap. Fixed at its natural width it
+				     ran past the edge of the card on a narrow window, taking the
+				     buttons with it. -->
+				<div class="flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
+					<div class="text-right">
+						<p data-node-latency class="font-mono text-sm tabular-nums"></p>
+						<p data-node-checked class="text-[.65rem] text-muted-foreground"></p>
+					</div>
+					<div class="text-right">
+						<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
+						<p data-node-checks class="text-[.65rem] text-muted-foreground">24h uptime</p>
+					</div>
+					<!-- Editable in place. A machine's cadence is the one thing
+					     about it that gets tuned, and a dialog to change one number
+					     is a dialog nobody opens. -->
+					<label class="flex shrink-0 items-center gap-1 text-[.65rem] text-muted-foreground" title="How often to check this machine">
+						every
+						<input
+							type="number"
+							data-node-interval
+							min="1"
+							max="3600"
+							class="cn-input h-7 w-14 px-1.5 text-center font-mono text-xs tabular-nums"
+						/>
+						s
+					</label>
+					<div data-node-strip class="hidden h-6 w-24 items-end gap-px xl:flex" title="the last sixty checks"></div>
+					@button.Button(button.Props{
+						Variant:    button.VariantGhost,
+						Size:       button.SizeIconSm,
+						Class:      "text-muted-foreground",
+						Attributes: templ.Attributes{"data-node-duplicate": true, "aria-label": "Duplicate this machine", "title": "Copy the address, the cadence and the commands onto a new machine"},
+					}) {
+						@iconCopy()
+					}
+					@button.Button(button.Props{
+						Variant:    button.VariantGhost,
+						Size:       button.SizeIconSm,
+						Class:      "text-muted-foreground",
+						Attributes: templ.Attributes{"data-node-pause": true, "aria-label": "Pause or resume watching"},
+					}) {
+						<span data-node-pause-icon>⏸</span>
+					}
+					@button.Button(button.Props{
+						Variant:    button.VariantGhost,
+						Size:       button.SizeIconSm,
+						Class:      "text-muted-foreground hover:text-destructive",
+						Attributes: templ.Attributes{"data-node-delete": true, "aria-label": "Stop watching this machine"},
+					}) {
+						@iconTrash()
+					}
+				</div>
+			</div>
+			@clusterDetail()
+		</div>
+	</template>
+	@clusterActionRow()
+}
+
+// clusterDetail is everything about one machine that is not a number on its
+// row: where it is, how to get in, and what to run once you are.
+//
+// Inside the row template rather than a panel of its own, because it belongs to
+// a machine and closing the row should close it. It is hidden until asked for:
+// most visits to this page are to see whether everything is green.
+templ clusterDetail() {
+	<div data-node-detail hidden class="space-y-5 border-t border-border bg-muted/30 p-4">
+		<section class="space-y-3">
+			<div class="flex items-center justify-between gap-3">
+				<h3 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Address</h3>
+				<p data-node-probe class="truncate font-mono text-[.65rem] text-muted-foreground"></p>
+			</div>
+			<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]">
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Where the service answers
+					<input data-node-field="domain" spellcheck="false" autocomplete="off" placeholder="https://vps-1.example.com" class="cn-input h-9 font-mono text-xs"/>
+				</label>
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Health path
+					<input data-node-field="health_path" spellcheck="false" autocomplete="off" placeholder="/api/health" class="cn-input h-9 font-mono text-xs"/>
+				</label>
+			</div>
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<p class="max-w-lg text-xs text-muted-foreground">
+					Guard fetches this from the server, so it can be an address only the server can reach.
+					The machine's own IP goes under SSH — that is a way in, not a health check.
+				</p>
+				@button.Button(button.Props{Size: button.SizeSm, Class: "ml-auto", Attributes: templ.Attributes{"data-node-save": true}}) {
+					Save address
+				}
+			</div>
+		</section>
+		<!-- The way in. Two fields on a line of their own, because the password
+		     box shared a row with the buttons before and came out narrow enough
+		     to be missed entirely. Stored encrypted, shown as dots, and never
+		     sent back to the browser — the page is told a password exists. -->
+		<section class="space-y-3 border-t border-border pt-4">
+			<h3 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">SSH</h3>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Address
+					<input data-node-field="ssh_address" spellcheck="false" autocomplete="off" placeholder="root@10.10.10.10" class="cn-input h-9 font-mono text-xs"/>
+				</label>
+				<div class="grid gap-1.5 text-xs text-muted-foreground">
+					<span>Password</span>
+					<div class="flex items-center gap-2">
+						<input data-node-password type="password" autocomplete="new-password" placeholder="not set" class="cn-input h-9 min-w-0 flex-1 font-mono text-xs tracking-widest"/>
+						@button.Button(button.Props{
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Class:      "h-9 shrink-0",
+							Attributes: templ.Attributes{"data-node-password-edit": true},
+						}) {
+							Change
+						}
+					</div>
+				</div>
+			</div>
+			<!-- The same login, used for the one thing guard asks a machine on
+			     a timer: how it is doing. Slower than the health check by two
+			     orders of magnitude, because each sample is a fresh SSH
+			     handshake rather than a request on a connection already open. -->
+			<label class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+				Sample this machine every
+				<input
+					type="number"
+					data-node-field="stats_interval"
+					min="0"
+					max="3600"
+					class="cn-input h-8 w-16 px-1.5 text-center font-mono text-xs tabular-nums"
+				/>
+				seconds — CPU, memory, disk and the containers it is running.
+				<span class="opacity-70">0 turns it off; it needs a stored login.</span>
+			</label>
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<p data-node-fingerprint class="truncate font-mono text-[.65rem] text-muted-foreground empty:hidden"></p>
+				<div class="ml-auto flex flex-wrap items-center gap-2">
+					@button.Button(button.Props{
+						Variant:    button.VariantGhost,
+						Size:       button.SizeSm,
+						Class:      "text-muted-foreground hover:text-destructive",
+						Attributes: templ.Attributes{"data-node-lock": true, "title": "Freeze the login and close the command list for good. The only way back is deleting the machine."},
+					}) {
+						Lock
+					}
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-node-ssh-test": true},
+					}) {
+						Test connection
+					}
+					@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-node-save": true}}) {
+						Save login
+					}
+				</div>
+			</div>
+			<p data-node-lock-note hidden class="text-xs text-warning">
+				Locked. The login is frozen and the command list is closed — nothing can be added, edited or
+				removed, here or through the API. The buttons below are the buttons there will ever be, and
+				the only way back is deleting the machine.
+			</p>
+		</section>
+		<!-- What this machine is, in the words of whoever has to find it again.
+		     Guard attaches no meaning to a tag — it does not know what postgres
+		     is — so the label and the colour are both somebody's choice, and
+		     the palette is fixed so that a wall of cards stays legible. -->
+		<section class="space-y-3 border-t border-border pt-4">
+			<h3 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Tags</h3>
+			<div data-tag-chips class="flex flex-wrap items-center gap-1.5 empty:hidden"></div>
+			<div class="flex flex-wrap items-end gap-2">
+				<label class="grid min-w-0 flex-1 gap-1.5 text-xs text-muted-foreground">
+					Label
+					<input data-tag-input spellcheck="false" autocomplete="off" maxlength="24" placeholder="postgres" class="cn-input h-9 text-xs"/>
+				</label>
+				<!-- Swatches rather than a select: the thing being chosen is a
+				     colour, and a dropdown reading "indigo" makes somebody
+				     imagine it. Filled by cluster.js, because a background
+				     assembled from a variable is a class Tailwind never emits. -->
+				<div data-tag-swatches class="flex flex-wrap items-center gap-1 pb-1.5"></div>
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Class:      "h-9",
+					Attributes: templ.Attributes{"data-tag-add": true},
+				}) {
+					Add tag
+				}
+			</div>
+			<div class="flex justify-end">
+				@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-node-save": true}}) {
+					Save tags
+				}
+			</div>
+		</section>
+		<!-- The cloud account behind the machine, if there is one. Only the
+		     link is set here: what it unlocks — the power switch, the
+		     snapshots — belongs on /cluster, where things are run, and this
+		     page is where they are declared. -->
+		<section data-node-cloud class="space-y-3 border-t border-border pt-4">
+			<div class="flex items-center justify-between gap-3">
+				<h3 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Cloud</h3>
+				<span data-cloud-linked hidden class="cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap">linked</span>
+			</div>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Account
+					<select data-cloud-account class="cn-native-select h-9 text-xs text-foreground [&amp;_option]:bg-popover [&amp;_option]:text-popover-foreground"></select>
+				</label>
+				<label class="grid gap-1.5 text-xs text-muted-foreground">
+					Instance
+					<select data-cloud-instance class="cn-native-select h-9 text-xs text-foreground [&amp;_option]:bg-popover [&amp;_option]:text-popover-foreground"></select>
+				</label>
+			</div>
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<p data-cloud-note class="max-w-lg text-xs text-muted-foreground">
+					Linking adds what a health check cannot see: whether the box is powered on at all,
+					what it costs, and what it can be rolled back to. The instance is checked before it
+					is stored, and the machine is still watched without one.
+				</p>
+				<div class="ml-auto flex items-center gap-2">
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-cloud-unlink": true},
+					}) {
+						Unlink
+					}
+					@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-cloud-link": true}}) {
+						Link
+					}
+				</div>
+			</div>
+		</section>
+		<!-- Commands somebody keeps for this machine. Guard does not know what
+		     they do: the point is that the line you already type at 3am lives
+		     next to the machine you type it at. -->
+		<section class="space-y-3 border-t border-border pt-4">
+			<div class="flex items-center justify-between gap-3">
+				<h3 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Actions</h3>
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-action-add": true},
+				}) {
+					Add action
+				}
+			</div>
+			<div data-action-rows class="space-y-2"></div>
+			<p data-action-empty class="text-xs text-muted-foreground">
+				Nothing saved yet. An action is a name and a command — “Reboot” and <code class="font-mono">reboot</code>,
+				or “Update” and <code class="font-mono">apt-get update &amp;&amp; apt-get upgrade -y</code>.
+			</p>
+			<div class="flex justify-end">
+				@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-actions-save": true}}) {
+					Save actions
+				}
+			</div>
+			<div data-node-output hidden class="space-y-1">
+				<p data-node-output-head class="font-mono text-[.65rem] text-muted-foreground"></p>
+				<pre data-node-output-body class="max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap"></pre>
+			</div>
+		</section>
+	</div>
+}
+
+// clusterActionRow is one command. Locked machines render the same row with the
+// inputs read-only, so the difference between a locked machine and an unlocked
+// one is one attribute rather than a second layout.
+templ clusterActionRow() {
+	<template data-action-row-template>
+		<div data-action class="grid gap-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto] sm:items-center">
+			<input data-action-field="name" maxlength="60" placeholder="Reboot" class="cn-input h-8 text-xs"/>
+			<input data-action-field="command" spellcheck="false" placeholder="sudo reboot" class="cn-input h-8 font-mono text-xs"/>
+			<div class="flex items-center gap-1">
+				<span data-action-last class="mr-1 text-[.65rem] text-muted-foreground empty:hidden"></span>
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-action-run": true},
+				}) {
+					Run
 				}
 				@button.Button(button.Props{
 					Variant:    button.VariantGhost,
 					Size:       button.SizeIconSm,
 					Class:      "text-muted-foreground hover:text-destructive",
-					Attributes: templ.Attributes{"data-node-delete": true, "aria-label": "Stop watching this machine"},
+					Attributes: templ.Attributes{"data-action-remove": true, "aria-label": "Remove this action"},
 				}) {
 					@iconTrash()
 				}
 			</div>
+			<!-- The second line is the unattended half: when guard runs this by
+			     itself, and how long it may go without succeeding before
+			     somebody is told. Both empty is the normal case — a command
+			     that is only ever a button. -->
+			<div class="flex flex-wrap items-center gap-2 sm:col-span-3">
+				<input
+					data-action-field="schedule"
+					maxlength="60"
+					spellcheck="false"
+					placeholder="0 */6 * * * (UTC), or @every 6h"
+					title="A cron expression in UTC, or @every 6h. Empty means this only runs when somebody presses it."
+					class="cn-input h-8 w-56 font-mono text-xs"
+				/>
+				<label class="flex items-center gap-1 text-[.65rem] text-muted-foreground">
+					alert if no success in
+					<input
+						data-action-field="stale"
+						type="number"
+						min="1"
+						step="1"
+						placeholder="420"
+						title="Minutes. Empty means nobody is watching this command."
+						class="cn-input h-8 w-20 text-xs"
+					/>
+					min
+				</label>
+				<span data-action-next class="text-[.65rem] text-muted-foreground empty:hidden"></span>
+			</div>
 		</div>
 	</template>
+}
+
+// ConfirmDialog is the one modal on this page: locking a machine, deleting one,
+// and running a command all ask through it.
+//
+// A native <dialog>, so the focus trap, the Escape key and the inert background
+// are the browser's job rather than three more listeners of ours — and guard
+// serves no interactive component bundle, so anything else here would be a
+// modal hand-built out of divs and getting those three things wrong.
+//
+// The typed confirmation is for the irreversible one. A dialog with a button
+// that says "yes" is a dialog people click without reading; having to type the
+// machine's name is the difference between agreeing and noticing.
+templ ConfirmDialog() {
+	<!-- Centred by a rule in app.css, not by a utility: the stylesheet's base
+	     margin for block elements outranks m-auto, and a modal in the top-left
+	     corner is what that costs. -->
+	<dialog data-confirm class="w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60">
+		<form method="dialog" class="space-y-4 p-6">
+			<div class="space-y-1.5">
+				<h2 data-confirm-title class="text-lg font-semibold tracking-tight"></h2>
+				<p data-confirm-body class="text-sm text-muted-foreground"></p>
+			</div>
+			<pre data-confirm-detail class="max-h-40 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap empty:hidden"></pre>
+			<label data-confirm-typed hidden class="grid gap-1.5 text-xs text-muted-foreground">
+				<span>Type <b data-confirm-phrase class="font-mono text-foreground"></b> to confirm</span>
+				<input data-confirm-input autocomplete="off" spellcheck="false" class="cn-input h-9 font-mono text-sm"/>
+			</label>
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Type:       button.TypeSubmit,
+					Attributes: templ.Attributes{"data-confirm-cancel": true, "value": "cancel"},
+				}) {
+					Cancel
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantDestructive,
+					Size:       button.SizeSm,
+					Type:       button.TypeSubmit,
+					Attributes: templ.Attributes{"data-confirm-ok": true, "value": "ok"},
+				}) {
+					Confirm
+				}
+			</div>
+		</form>
+	</dialog>
 }
 
 // Topology is the overview's answer to "what runs where": each machine with
@@ -231,10 +645,296 @@ templ TopologyInstance() {
 	</template>
 }
 
+// chevronDisclosure is the row's open/close arrow. Not chevronSmall: that one
+// is the native-select ornament — absolutely positioned and pointer-events-none,
+// which inside a button means an arrow that floats out of the card and cannot
+// be clicked.
+// iconCopy is two stacked sheets — the duplicate button. Drawn here rather than
+// pulled from an icon package for the same reason iconTrash is: two paths are
+// cheaper than a dependency.
+templ iconCopy() {
+	<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<rect x="9" y="9" width="12" height="12" rx="2"></rect>
+		<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+	</svg>
+}
+
+templ chevronDisclosure() {
+	<svg data-node-chevron class="size-4 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="m6 9 6 6 6-6"></path>
+	</svg>
+}
+
 templ chevronSmall() {
 	<svg class="cn-native-select-icon pointer-events-none absolute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 		<path d="m6 9 6 6 6-6"></path>
 	</svg>
+}
+
+// ClusterOps is the /cluster page: one card per machine with its stored
+// commands right there to run. It is the operational surface — the settings
+// page declares and edits machines, this page acts on them — so the only
+// writes that leave it are "check now" and "run this saved command", and
+// the command list is read-only on purpose: a page for pressing buttons at
+// 3am should not also be a page where a button can be redefined.
+templ ClusterOps() {
+	<div class="space-y-6">
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<p data-cluster-summary class="text-sm text-muted-foreground">Loading…</p>
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-cluster-check": true},
+			}) {
+				Check all now
+			}
+		</div>
+		<div data-cluster-cards class="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
+		<div data-cluster-cards-empty hidden>
+			@ui.Empty("No machines watched yet. Declare one under Settings → Cluster and it appears here.")
+		</div>
+	</div>
+}
+
+// ClusterOpsCard is the card ClusterOps clones per machine. The status,
+// address and uptime fields reuse the row's data attributes so cluster.js
+// fills both surfaces with one set of writers.
+templ ClusterOpsCard() {
+	<template data-cluster-card-template>
+		<article data-node-id class="flex flex-col rounded-xl border border-border bg-card text-card-foreground">
+			<div class="flex flex-col gap-2 p-5 pb-0">
+				<div class="flex items-start justify-between gap-3">
+					<div class="flex min-w-0 items-center gap-2.5">
+						<span data-node-dot class="size-2.5 shrink-0 rounded-full" title="status"></span>
+						<img data-node-icon hidden alt="" width="16" height="16" class="size-4 shrink-0 rounded-sm"/>
+						<p data-node-name class="truncate text-lg font-semibold tracking-tight"></p>
+						<span data-node-lock-badge hidden class="cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+					</div>
+					<span data-node-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+				</div>
+				<div data-node-tags class="flex flex-wrap items-center gap-1.5 empty:hidden"></div>
+			</div>
+			<div class="flex flex-col gap-4 p-5">
+				<div class="min-w-0">
+					<a data-node-url target="_blank" rel="noreferrer noopener" class="block truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"></a>
+					<span data-node-internal class="block truncate font-mono text-xs text-muted-foreground empty:hidden" title="Checked by guard from the server — your browser cannot open this"></span>
+					<p data-node-error class="mt-0.5 truncate text-xs text-destructive empty:hidden"></p>
+				</div>
+				<div class="flex items-end justify-between gap-3">
+					<div class="flex gap-6">
+						<div>
+							<p data-node-latency class="font-mono text-sm tabular-nums"></p>
+							<p data-node-checked class="text-[.65rem] text-muted-foreground"></p>
+						</div>
+						<div>
+							<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
+							<p data-node-checks class="text-[.65rem] text-muted-foreground">24h uptime</p>
+						</div>
+					</div>
+					<div data-node-strip class="flex h-6 w-24 items-end gap-px" title="the last sixty checks"></div>
+				</div>
+				<!-- What the machine says about itself, over SSH. It sits above
+				     the provider strip because it is the closer answer: the
+				     health path belongs to whatever is serving it — often a
+				     container — and "the app replied" and "the host has 40 MB
+				     of memory left" are routinely both true. -->
+				<div data-host hidden class="space-y-3 border-t border-border pt-4">
+					<div class="flex items-center justify-between gap-3">
+						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Machine</p>
+						<div class="flex items-center gap-2">
+							<span data-host-uptime class="text-[.65rem] text-muted-foreground empty:hidden"></span>
+							@button.Button(button.Props{
+								Variant:    button.VariantGhost,
+								Size:       button.SizeIconSm,
+								Class:      "shrink-0 text-muted-foreground",
+								Attributes: templ.Attributes{"data-host-sample": true, "aria-label": "Sample this machine now", "title": "Ask the machine now instead of waiting for its next sample"},
+							}) {
+								↻
+							}
+						</div>
+					</div>
+					<div class="grid gap-2 sm:grid-cols-3">
+						@hostMeter("cpu", "CPU")
+						@hostMeter("mem", "Memory")
+						@hostMeter("disk", "Disk /")
+					</div>
+					<div class="flex items-center justify-between gap-3">
+						<p data-host-load class="font-mono text-[.65rem] text-muted-foreground empty:hidden"></p>
+						<div data-host-strip class="flex h-5 w-24 items-end gap-px" title="CPU over the last hour"></div>
+					</div>
+					<div data-host-containers class="flex flex-wrap items-center gap-1.5 empty:hidden"></div>
+					<p data-host-note class="text-xs text-muted-foreground empty:hidden"></p>
+					<p data-host-error class="text-xs text-destructive empty:hidden"></p>
+				</div>
+				<!-- What the provider says, for a machine that has one. It sits
+				     above the commands because it answers a question the
+				     commands cannot: a box that is powered off does not fail
+				     an SSH command, it fails to have one run at all. -->
+				<div data-cloud hidden class="space-y-3 border-t border-border pt-4">
+					<div class="flex items-center justify-between gap-3">
+						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Cloud</p>
+						<span data-cloud-state class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+					</div>
+					<p data-cloud-meta class="truncate font-mono text-[.65rem] text-muted-foreground empty:hidden"></p>
+					<div data-cloud-transfer-wrap class="space-y-1">
+						<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+							<div data-cloud-transfer-bar class="h-full rounded-full bg-primary" style="width:0%"></div>
+						</div>
+						<p data-cloud-transfer class="text-[.65rem] text-muted-foreground empty:hidden"></p>
+					</div>
+					<div class="flex flex-wrap items-center gap-2">
+						@button.Button(button.Props{
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Attributes: templ.Attributes{"data-cloud-power": "start", "title": "Power the instance on"},
+						}) {
+							Start
+						}
+						@button.Button(button.Props{
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Attributes: templ.Attributes{"data-cloud-power": "reboot", "title": "Power-cycle the instance — not the same as a reboot over SSH"},
+						}) {
+							Reboot
+						}
+						@button.Button(button.Props{
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Attributes: templ.Attributes{"data-cloud-power": "halt", "title": "Stop the instance. It keeps its disk, its address and its bill."},
+						}) {
+							Halt
+						}
+						@button.Button(button.Props{
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Class:      "ml-auto",
+							Attributes: templ.Attributes{"data-cloud-snapshot": true, "title": "Take an image of this machine's disk"},
+						}) {
+							Snapshot
+						}
+						@button.Button(button.Props{
+							Variant:    button.VariantGhost,
+							Size:       button.SizeIconSm,
+							Class:      "shrink-0 text-muted-foreground",
+							Attributes: templ.Attributes{"data-cloud-snapshots-toggle": true, "aria-label": "Show this machine's snapshots"},
+						}) {
+							@chevronDisclosure()
+						}
+					</div>
+					<div data-cloud-snapshots hidden class="space-y-1.5"></div>
+					<p data-cloud-error class="text-xs text-destructive empty:hidden"></p>
+				</div>
+				<!-- The commands are what folds. Everything above is the state
+				     of the machine and is why the card is on screen at all; a
+				     list of buttons is the part that turns a wall of machines
+				     into a wall of scrolling. -->
+				<div class="space-y-2 border-t border-border pt-4">
+					<div data-commands-head class="flex cursor-pointer items-center justify-between gap-3">
+						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">
+							Commands
+							<span data-commands-count class="ml-1 font-normal tracking-normal normal-case"></span>
+						</p>
+					<div class="flex items-center gap-1">
+						<!-- What actually ran here lately, scheduled or pressed.
+						     One button per machine rather than per command: the
+						     question somebody standing in front of a card has is
+						     "what has been running on this box". -->
+						@button.Button(button.Props{
+							Variant:    button.VariantGhost,
+							Size:       button.SizeSm,
+							Class:      "shrink-0 text-muted-foreground",
+							Attributes: templ.Attributes{"data-card-history": true, "title": "The last runs on this machine"},
+						}) {
+							History
+						}
+						@button.Button(button.Props{
+							Variant:    button.VariantGhost,
+							Size:       button.SizeIconSm,
+							Class:      "shrink-0 text-muted-foreground",
+							Attributes: templ.Attributes{"data-commands-toggle": true, "aria-label": "Show this machine's commands"},
+						}) {
+							@chevronDisclosure()
+						}
+					</div>
+					</div>
+					<div data-commands-body class="space-y-2">
+						<div data-card-actions class="space-y-1.5"></div>
+						<p data-card-actions-empty hidden class="text-xs text-muted-foreground">
+							Nothing saved for this machine — commands are kept under
+							<a href="/settings/cluster" class="underline underline-offset-2 hover:text-foreground">Settings → Cluster</a>.
+						</p>
+						<div data-node-output hidden class="space-y-1">
+							<p data-node-output-head class="font-mono text-[.65rem] text-muted-foreground"></p>
+							<pre data-node-output-body class="max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap"></pre>
+						</div>
+					</div>
+				</div>
+			</div>
+		</article>
+	</template>
+	<!-- One snapshot. "ours" is the ones guard took of this machine — the
+	     provider's snapshot carries no instance, so nothing but guard's own
+	     record can say where an image came from. The rest of the account is
+	     listed too, greyer: a snapshot taken in the provider's console an
+	     hour before a bad deploy is exactly the one somebody will want. -->
+	<template data-cloud-snapshot-template>
+		<div data-snapshot class="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
+			<div class="min-w-0 flex-1">
+				<p data-snapshot-name class="truncate text-xs font-medium"></p>
+				<p data-snapshot-meta class="truncate font-mono text-[.6rem] text-muted-foreground"></p>
+			</div>
+			@button.Button(button.Props{
+				Variant:    button.VariantGhost,
+				Size:       button.SizeSm,
+				Class:      "shrink-0 text-muted-foreground hover:text-destructive",
+				Attributes: templ.Attributes{"data-snapshot-delete": true, "aria-label": "Delete this snapshot"},
+			}) {
+				Delete
+			}
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-snapshot-restore": true, "title": "Write this image back over the machine's disk"},
+			}) {
+				Restore
+			}
+		</div>
+	</template>
+	<template data-card-action-template>
+		<div data-card-action class="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
+			<div class="min-w-0 flex-1">
+				<p data-card-action-name class="truncate text-sm font-medium"></p>
+				<p data-card-action-command class="truncate font-mono text-[.65rem] text-muted-foreground"></p>
+				<!-- What a scheduled command says about itself when nobody is
+				     pressing it: the cadence, and when it is next due. -->
+				<p data-card-action-schedule class="truncate text-[.65rem] text-muted-foreground empty:hidden"></p>
+			</div>
+			<span data-card-action-last class="shrink-0 text-[.65rem] text-muted-foreground empty:hidden"></span>
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-card-run": true},
+			}) {
+				Run
+			}
+		</div>
+	</template>
+}
+
+// hostMeter is one of the three bars: a label, a number, and a bar that turns
+// the number into something readable across a wall of cards. Three, because
+// CPU, memory and disk are the three ways a machine ruins somebody's evening,
+// and a fourth would make the card a table.
+templ hostMeter(key, label string) {
+	<div class="space-y-1">
+		<div class="flex items-baseline justify-between gap-2">
+			<span class="text-[.6rem] uppercase tracking-[.14em] text-muted-foreground">{ label }</span>
+			<span data-host-value={ key } class="font-mono text-xs tabular-nums"></span>
+		</div>
+		<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+			<div data-host-bar={ key } class="h-full rounded-full bg-primary" style="width:0%"></div>
+		</div>
+	</div>
 }
 
 // ClusterCard is the overview's version: the same data, no controls.

@@ -1,5 +1,6 @@
 /guard
 /guard.db
+/guard.db.key
 /guard.db-shm
 /guard.db-wal
 /.DS_Store

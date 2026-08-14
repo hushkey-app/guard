@@ -7,7 +7,7 @@
 // live.
 package store
 
-import "github.com/mirairoad/guard/internal/telemetry"
+import "github.com/hushkey-app/guard/internal/telemetry"
 
 var current *telemetry.Store
 

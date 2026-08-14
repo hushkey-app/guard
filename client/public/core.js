@@ -26,7 +26,37 @@ export const qsa = (selector, root = document) => [...root.querySelectorAll(sele
 
 export async function request(path, options = {}) {
   const response = await fetch(path, { headers: { Accept: "application/json", ...(options.headers || {}) }, ...options });
-  if (!response.ok) throw new Error((await response.text()).trim() || response.statusText);
+  // The session ended — expired, signed out in another tab, or removed from the
+  // members list. The dashboard polls every three seconds, so this is what
+  // notices, and the only sensible answer is the login page: every panel on
+  // screen is about to fail for the same reason, and a wall of error text says
+  // nothing a person can act on.
+  if (response.status === 401 && !path.startsWith("/auth/")) {
+    const body = await response.clone().json().catch(() => ({}));
+    if (body.login) {
+      const next = encodeURIComponent(location.pathname + location.search);
+      location.href = `${body.login}?next=${next}`;
+    }
+  }
+  if (!response.ok) {
+    // The API answers {"error": "...", "correlation_id": "..."}. What goes on
+    // screen is the sentence; the id rides along on the error for anyone who
+    // needs to find the line in the log. Throwing the raw body put a JSON
+    // object in front of the reader — every caller shows .message, and none of
+    // them wanted braces in it.
+    const text = (await response.text()).trim();
+    let message = text;
+    let correlationID = "";
+    try {
+      const body = JSON.parse(text);
+      message = body.error || body.message || text;
+      correlationID = body.correlation_id || "";
+    } catch { /* not JSON: the text is the best there is */ }
+    const failure = new Error(message || response.statusText);
+    failure.status = response.status;
+    failure.correlationID = correlationID;
+    throw failure;
+  }
   if (response.status === 204) return null;
   return response.json();
 }

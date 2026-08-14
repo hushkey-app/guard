@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mirairoad/guard/internal/telemetry"
+	"github.com/hushkey-app/guard/internal/telemetry"
 )
 
 func browserServer(t *testing.T, config Browser) (*telemetry.Store, *httptest.Server) {

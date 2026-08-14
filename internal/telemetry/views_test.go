@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 // seed writes a small but realistic trace workload: three routes, two clients,

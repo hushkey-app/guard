@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry"
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 func spans(t *testing.T, store *telemetry.Store) {

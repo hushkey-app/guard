@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 type Store interface {

@@ -1,0 +1,208 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/axadrn/shadcn-templ/v2/components/table"
+	"github.com/hushkey-app/guard/client/ui"
+)
+
+// RegistryExplorer is the /registries page's working surface: the registry
+// cards, and the two drill levels underneath them. The rows are drawn by
+// registries.js; this file owns the chrome, so the classes stay where
+// Tailwind looks and the panels stay real shadcn markup.
+//
+// The three levels are sections rather than routes on purpose. A registry
+// holds a handful of repositories and a repository holds tags — a drawer's
+// worth of depth — and keeping them on one page keeps "back" instant, with
+// nothing refetched.
+templ RegistryExplorer() {
+	<div class="space-y-6">
+		<p data-registry-status class="hidden rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"></p>
+		<div data-registry-toolbar class="flex flex-wrap items-center justify-between gap-3">
+			<p data-registry-summary class="text-sm text-muted-foreground"></p>
+			<div class="flex items-center gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-registry-refresh": true},
+				}) {
+					Refresh
+				}
+				@button.Button(button.Props{
+					Size:       button.SizeSm,
+					Class:      "hidden",
+					Attributes: templ.Attributes{"data-registry-new": true},
+				}) {
+					New registry
+				}
+			</div>
+		</div>
+		@registryCreate()
+		<section data-registry-overview class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+			<p data-registry-empty class="col-span-full hidden">
+				@ui.Empty("No registries yet. Add a provider API key under Settings → Cloud accounts.")
+			</p>
+		</section>
+		<section data-registry-repos hidden class="space-y-3">
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<div class="flex items-center gap-3">
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-registry-back": "overview"},
+					}) {
+						← Registries
+					}
+					<h2 class="text-lg font-semibold tracking-tight">
+						<span data-repos-title></span>
+						<span data-repos-count class="ml-2 text-sm font-normal text-muted-foreground"></span>
+					</h2>
+				</div>
+				@button.Button(button.Props{
+					Variant:    button.VariantDestructive,
+					Size:       button.SizeSm,
+					Class:      "hidden",
+					Attributes: templ.Attributes{"data-batch-delete": "repos"},
+				}) {
+					Delete selected
+				}
+			</div>
+			@card.Card(card.Props{Class: "gap-0 py-0"}) {
+				@table.Table() {
+					@selectableHead("repos", "Select every repository", []string{"Repository", "Artifacts", "Pulls", "Last push", ""})
+					@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-repo-rows": true}})
+				}
+			}
+		</section>
+		<section data-registry-tags hidden class="space-y-3">
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<div class="flex items-center gap-3">
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-registry-back": "repos"},
+					}) {
+						← Repositories
+					}
+					<h2 class="text-lg font-semibold tracking-tight">
+						<span data-tags-title class="font-mono text-base"></span>
+						<span data-tags-count class="ml-2 text-sm font-normal text-muted-foreground"></span>
+					</h2>
+				</div>
+				<div class="flex flex-wrap items-center gap-3">
+					@input.Input(input.Props{
+						Type:        "search",
+						Placeholder: "Filter tags…",
+						Class:       "h-8 w-56 font-mono text-xs",
+						Attributes:  templ.Attributes{"data-tag-filter": true, "aria-label": "Filter tags", "autocomplete": "off"},
+					})
+					@button.Button(button.Props{
+						Variant:    button.VariantDestructive,
+						Size:       button.SizeSm,
+						Class:      "hidden",
+						Attributes: templ.Attributes{"data-batch-delete": "tags"},
+					}) {
+						Delete selected
+					}
+				</div>
+			</div>
+			@card.Card(card.Props{Class: "gap-0 py-0"}) {
+				@table.Table() {
+					@selectableHead("tags", "Select every listed tag", []string{"Tag", "Digest", "Size", ""})
+					@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-tag-rows": true}})
+				}
+			}
+		</section>
+	</div>
+}
+
+// registryCreate is the ordering form, folded away until asked for — the same
+// shape as the storage page's, and for the same reason: this is a page people
+// open to look at images far more often than to buy a registry, and the button
+// that bills should not be the one under the cursor.
+//
+// It is only offered for accounts whose provider can actually create one.
+// Cloudflare's registry comes with the account and cannot be ordered, so a
+// Cloudflare account is never in this select.
+templ registryCreate() {
+	<div data-registry-form hidden>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					New container registry
+				}
+				@card.Description() {
+					Billed from the moment the provider accepts it, until it is deleted.
+				}
+			}
+			@card.Content(card.ContentProps{Class: "space-y-4"}) {
+				<div class="grid gap-4 sm:grid-cols-3">
+					<label class="grid gap-1.5 text-xs text-muted-foreground">
+						Account
+						<span class="relative flex items-center">
+							<select data-registry-account class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"></select>
+							@ui.Chevron()
+						</span>
+					</label>
+					<label class="grid gap-1.5 text-xs text-muted-foreground">
+						Region
+						<span class="relative flex items-center">
+							<select data-registry-region class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"></select>
+							@ui.Chevron()
+						</span>
+					</label>
+					<label data-registry-plan-field class="grid gap-1.5 text-xs text-muted-foreground">
+						Plan
+						<span class="relative flex items-center">
+							<select data-registry-plan class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"></select>
+							@ui.Chevron()
+						</span>
+					</label>
+				</div>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<label class="grid gap-1.5 text-xs text-muted-foreground">
+						Name
+						<input data-registry-label maxlength="64" autocomplete="off" placeholder="hushkey" class="cn-input h-9 text-sm"/>
+					</label>
+					<label class="flex items-end gap-2 text-xs text-muted-foreground">
+						<input data-registry-public type="checkbox" class="cn-checkbox size-4"/>
+						<span class="pb-1.5">Public — anybody can pull from it without a credential</span>
+					</label>
+				</div>
+				<div class="flex flex-wrap items-center justify-end gap-3">
+					<span data-registry-form-status class="mr-auto text-sm text-muted-foreground empty:hidden"></span>
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-registry-cancel": true},
+					}) {
+						Cancel
+					}
+					@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-registry-create": true}}) {
+						Create
+					}
+				</div>
+			}
+		}
+	</div>
+}
+
+// selectableHead is a table header whose first column is a select-all box —
+// a native checkbox, like the filter controls, because registries.js drives
+// it through .checked and .indeterminate.
+templ selectableHead(scope, label string, columns []string) {
+	@table.Header() {
+		@table.Row() {
+			@table.Head(table.HeadProps{Class: "w-10"}) {
+				<input type="checkbox" data-select-all={ scope } aria-label={ label } class="size-4 cursor-pointer align-middle accent-primary"/>
+			}
+			for _, column := range columns {
+				@table.Head(table.HeadProps{Class: "text-xs font-medium uppercase tracking-wider text-muted-foreground"}) {
+					{ column }
+				}
+			}
+		}
+	}
+}

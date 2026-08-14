@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -164,4 +164,56 @@ type Catalogue struct {
 	Panels       []model.PanelSpec `json:"panels"`
 	Aggregations []string          `json:"aggregations"`
 	Fields       model.Fields      `json:"fields"`
+}
+
+// ActionList is one machine's commands, saved together.
+//
+// The whole list rather than one action at a time: the settings page edits them
+// as a list, and a per-action endpoint would need a delete, a reorder, and an
+// answer to what happens when two tabs disagree about the order.
+type ActionList struct {
+	NodeID  int64              `json:"node_id"`
+	Actions []model.NodeAction `json:"actions"`
+}
+
+func (l ActionList) Validate() error {
+	if l.NodeID <= 0 {
+		return api.Invalid("node_id", "is required")
+	}
+	for _, action := range l.Actions {
+		if err := action.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RunRequest asks for one stored action to be run on the machine it belongs to.
+//
+// An action id, never a command. The two are the same power — anyone who can
+// run this can save an action first — but they are not the same audit trail: a
+// command that ran on somebody's server is a thing that should exist in the
+// database before it exists on the machine.
+type RunRequest struct {
+	ActionID int64 `json:"action_id"`
+}
+
+func (r RunRequest) Validate() error {
+	if r.ActionID <= 0 {
+		return api.Invalid("action_id", "is required")
+	}
+	return nil
+}
+
+// NodeRequest names one machine and nothing else — what the endpoints that act
+// on a whole machine take: the connection test, and the duplicate button.
+type NodeRequest struct {
+	NodeID int64 `json:"node_id"`
+}
+
+func (r NodeRequest) Validate() error {
+	if r.NodeID <= 0 {
+		return api.Invalid("node_id", "is required")
+	}
+	return nil
 }
