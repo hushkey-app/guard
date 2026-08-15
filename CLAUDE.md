@@ -481,9 +481,11 @@ restarts. `/etc/guard/version` pins a box (`latest`, or a tag).
 ## Local dependency
 
 `go.mod` has `replace github.com/mirairoad/howl-go => ../howl-go` while the framework
-changes are unreleased. **`docker build` will fail with this in place** — the Dockerfile
-only copies guard's own source. Remove the replace and pin a published version before
-building an image.
+changes are unreleased, and it is load-bearing: the published `v0.1.0` of the framework
+predates `core/api`, `core/state`, `core/console` and `core/mw`. **Nothing off this
+machine can build guard until those packages are pushed** — CI checks howl-go out beside
+guard so the replace resolves, which needs a ref that actually contains them. When the
+framework publishes a tag with them in it, the replace and that checkout go together.
 
 ## Logging
 

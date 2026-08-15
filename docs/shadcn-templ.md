@@ -12,7 +12,7 @@ The supported workflow copies component source into the application with the CLI
 
 - Every page imports shadcn-templ packages directly. DaisyUI is gone.
 - `client/styles/app.css` is the stylesheet source: Tailwind, the three upstream imports, Guard's theme tokens on `:root`, and a short unlayered block for the detail panel and `.signal-dot`.
-- `make css` compiles it to `client/public/app.css`, which is committed, so `make`, `make dev`, `go test` and `docker build` need no Node/npm. It also writes the gitignored `client/styles/app.sources.css`, which carries this machine's module-cache path.
+- `make css` compiles it to `client/public/app.css`, which is committed, so `make`, `make dev` and `go test` need no Node/npm. It also writes the gitignored `client/styles/app.sources.css`, which carries this machine's module-cache path.
 - Tailwind only emits classes it finds in the `@source` globs — `client/pages/**/*.templ`, `client/ui/**/*.templ`, and `client/public/guard.js`. **A class used only in a dynamically built string in guard.js must be written out in full**, or it will not exist in the bundle.
 - `<html class="dark style-nova">`. `style-nova.css` nests every `cn-*` rule under `.style-nova`; without that class every component renders unstyled but structurally correct, which is a confusing failure. `dark` is what the `dark:` variants key off.
 - `style-nova` selects the component style. Other upstream styles are Vega, Maia, Lyra, Mira, Luma, Sera, and Rhea. Changing style means changing both the imported `style-*.css` in the Make target and the class on `<html>`.
@@ -131,7 +131,7 @@ make       # routes + templ generation + wasm + Guard binary
 go test ./...
 ```
 
-`make css` writes the gitignored `client/styles/app.sources.css` with the resolved module-cache path, then compiles `client/styles/app.css`. The output is committed so normal builds and Docker remain offline.
+`make css` writes the gitignored `client/styles/app.sources.css` with the resolved module-cache path, then compiles `client/styles/app.css`. The output is committed so normal builds and CI remain offline.
 
 ## Upstream provenance
 
