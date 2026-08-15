@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hushkey-app/guard/internal/build"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vault"
 	"github.com/mirairoad/howl-go/core/console"
@@ -51,8 +52,16 @@ func serve(args []string) error {
 	addr := flags.String("addr", env("GUARD_VAULT_ADDR", ":4319"), "HTTP listen address")
 	dbPath := flags.String("db", env("GUARD_DB_PATH", "guard.db"), "the SQLite database guard writes")
 	touch := flags.Duration("touch", envDuration("GUARD_VAULT_TOUCH", time.Minute), "how often one key's use is recorded")
+	showVersion := flags.Bool("version", false, "print the version and exit")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	// Asked by the updater before it decides to do anything, and answered
+	// without opening the database — a binary should be able to say what it is
+	// even when the thing it reads is missing.
+	if *showVersion {
+		fmt.Println(build.Version)
+		return nil
 	}
 	// Tagged, because in development this shares a terminal with guard: two
 	// processes writing tinted lines to one screen, and `app=vault` is the

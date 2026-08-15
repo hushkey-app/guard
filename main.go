@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"log/slog"
@@ -60,7 +61,15 @@ func main() {
 	alertRepeat := flag.Duration("alert-repeat", envDuration("GUARD_ALERT_REPEAT", 6*time.Hour), "how long a stale job stays quiet after it has been reported")
 	monitorInterval := flag.Duration("monitor-interval", envDuration("GUARD_MONITOR_INTERVAL", 30*time.Second), "how often the machine rules are evaluated")
 	viewAlertInterval := flag.Duration("view-alert-interval", envDuration("GUARD_VIEW_ALERT_INTERVAL", time.Minute), "how often the saved views carrying a rule are run")
+	// What this binary is, without starting it. The updater on the box asks the
+	// file on disk rather than keeping its own note of what it installed, which
+	// is the note that goes stale the one time somebody copies a binary by hand.
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(build.Version)
+		return
+	}
 
 	// Tinted columns in a terminal, JSON into a pipe or a log file — which is
 	// what guard itself would rather ingest.

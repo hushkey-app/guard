@@ -1,0 +1,14 @@
+[Unit]
+Description=check for a new guard release
+
+[Timer]
+# Every fifteen minutes, spread so a fleet does not ask GitHub in lockstep.
+# Unauthenticated API calls are limited to 60 an hour per address, and four an
+# hour per box leaves room for a good few boxes behind one NAT.
+OnBootSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

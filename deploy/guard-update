@@ -1,0 +1,108 @@
+#!/bin/sh
+# Install the release guard asks for, or the newest one.
+#
+# Pull, not push: the box reaches out to GitHub, so there is nothing inbound to
+# open, no key to distribute and no SSH anywhere. The repo is public, so this
+# needs no credential at all.
+#
+# It is a shell script on purpose. The updater is the thing that must still work
+# when guard does not, so it has no build step, no dependency on the binaries it
+# replaces, and nothing to update itself. curl, sha256sum, systemctl.
+#
+# Three rules it keeps:
+#
+#   * Verify before installing. A truncated download is the failure that
+#     actually happens, and SHA256SUMS beside the binaries catches it.
+#   * Guard first, then the vault. Guard owns the schema and migrates on start;
+#     a vault started against a table guard has not rebuilt yet is the one
+#     ordering that breaks.
+#   * Roll back on a failed health check, per service. The previous binary is
+#     kept beside the new one, so going back is a rename rather than a download.
+set -eu
+
+REPO="${GUARD_REPO:-hushkey-app/guard}"
+BIN="${GUARD_BIN_DIR:-/usr/local/bin}"
+STATE="${GUARD_STATE_DIR:-/etc/guard}"
+GUARD_URL="${GUARD_HEALTH_URL:-http://127.0.0.1:4318/healthz}"
+VAULT_URL="${GUARD_VAULT_HEALTH_URL:-http://127.0.0.1:4319/healthz}"
+
+log() { echo "guard-update: $*"; }
+die() { log "$*"; exit 1; }
+
+# What we are being asked for. A version written in /etc/guard/version pins the
+# box to it — which is what the dashboard's button writes, and what stops an
+# automatic timer from moving a box somebody deliberately held back.
+wanted=$(cat "$STATE/version" 2>/dev/null || echo latest)
+if [ "$wanted" = "latest" ]; then
+  wanted=$(curl -fsS "https://api.github.com/repos/$REPO/releases/latest" \
+    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)
+  [ -n "$wanted" ] || die "could not read the latest release — leaving this box alone"
+fi
+
+# What is installed. Asked of the binary rather than remembered in a file, which
+# is the file that goes stale the one time somebody copies a binary by hand.
+running=$("$BIN/guard" -version 2>/dev/null || echo none)
+if [ "$running" = "$wanted" ]; then
+  log "already on $wanted"
+  exit 0
+fi
+log "updating $running -> $wanted"
+
+arch=$(uname -m)
+case "$arch" in
+  x86_64) arch=amd64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+  *) die "no release is built for $arch" ;;
+esac
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+base="https://github.com/$REPO/releases/download/$wanted"
+for name in guard guard-vault; do
+  curl -fsSL "$base/$name-linux-$arch" -o "$work/$name" || die "could not download $name"
+done
+curl -fsSL "$base/SHA256SUMS" -o "$work/SHA256SUMS" || die "could not download SHA256SUMS"
+
+# Verify against the published sums, naming only the two files we took.
+( cd "$work" && for name in guard guard-vault; do
+    want=$(sed -n "s/^\([0-9a-f]*\)  *$name-linux-$arch$/\1/p" SHA256SUMS)
+    [ -n "$want" ] || { echo "no checksum published for $name-linux-$arch"; exit 1; }
+    have=$(sha256sum "$name" | cut -d' ' -f1)
+    [ "$want" = "$have" ] || { echo "$name failed its checksum"; exit 1; }
+  done ) || die "the download did not verify — nothing was installed"
+chmod +x "$work/guard" "$work/guard-vault"
+
+# One service at a time: install, restart, prove it answers, or put the old one
+# back. A rename rather than a copy, because a running binary cannot be written
+# over — and because rename is atomic, so there is no moment where the file on
+# disk is half a binary.
+swap() {
+  service=$1; file=$2; url=$3
+  [ -f "$BIN/$file" ] && cp -p "$BIN/$file" "$BIN/$file.prev"
+  mv "$work/$file" "$BIN/$file.new"
+  mv "$BIN/$file.new" "$BIN/$file"
+  systemctl restart "$service"
+
+  n=0
+  while [ "$n" -lt 30 ]; do
+    if curl -fsS -o /dev/null "$url"; then
+      log "$service is up on $wanted"
+      return 0
+    fi
+    n=$((n + 1))
+    sleep 1
+  done
+
+  log "$service did not answer $url — rolling back"
+  if [ -f "$BIN/$file.prev" ]; then
+    mv "$BIN/$file.prev" "$BIN/$file"
+    systemctl restart "$service"
+  fi
+  return 1
+}
+
+# Guard first: it migrates the schema the vault then reads.
+swap guard guard "$GUARD_URL" || die "guard failed to come up — rolled back, the vault was left alone"
+swap guard-vault guard-vault "$VAULT_URL" || die "the vault failed to come up and was rolled back; guard is on $wanted"
+
+log "done — $wanted"

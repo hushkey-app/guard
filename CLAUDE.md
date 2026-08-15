@@ -454,6 +454,24 @@ Sign-in adds `GUARD_GOOGLE_CLIENT_ID`/`GUARD_GOOGLE_CLIENT_SECRET`, the four
 the redirect URI is compared as a string at both providers) and `GUARD_AUTH_SESSION_TTL`.
 All optional; set none and nobody is asked to sign in.
 
+## Deploying
+
+Two static binaries, no runtime dependencies, and the box pulls rather than
+being pushed to — read `docs/deploy.md`. A tag builds `guard` and `guard-vault`
+for linux/amd64 and linux/arm64 in GitHub Actions and publishes them with a
+`SHA256SUMS`; `deploy/guard-update` on a systemd timer verifies, installs and
+restarts. `/etc/guard/version` pins a box (`latest`, or a tag).
+
+- **The updater is a shell script**, because it has to work on the day the
+  binaries do not: no build step, nothing to update itself, curl and systemctl.
+- **Guard first, then the vault, and always the same version.** Guard owns the
+  schema and migrates on start.
+- **Each service is health-gated and rolls back on its own.** The previous
+  binary is kept beside the new one, so going back is a rename; a running binary
+  cannot be written over, so installing is a rename too.
+- `-version` on both binaries is what the updater asks — never a state file
+  that can drift from what is actually installed.
+
 ## Local dependency
 
 `go.mod` has `replace github.com/mirairoad/howl-go => ../howl-go` while the framework

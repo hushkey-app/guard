@@ -139,6 +139,23 @@ application's key reads another's. Locally,
 
 See `docs/secrets.md`.
 
+## Deploying
+
+Two static binaries and no runtime dependencies — the pages, stylesheet and wasm
+are embedded. A tag builds both for linux/amd64 and linux/arm64 in GitHub
+Actions and publishes them as a release; `deploy/guard-update` on a systemd
+timer pulls, verifies the checksum, installs and restarts, rolling back on a
+failed health check. No SSH, no registry, no build on the box.
+
+```bash
+install -m 0755 deploy/guard-update /usr/local/bin/guard-update
+install -m 0644 deploy/*.service deploy/*.timer /etc/systemd/system/
+systemctl enable --now guard guard-vault guard-update.timer
+```
+
+`/etc/guard/version` holds `latest` or a tag, and is the whole interface for
+pinning a box. See `docs/deploy.md`.
+
 ## Send OpenTelemetry
 
 Point any OTLP/HTTP exporter at Guard:
