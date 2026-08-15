@@ -16,12 +16,13 @@ import (
 	e9 "github.com/hushkey-app/guard/server/apis/metrics"
 	e10 "github.com/hushkey-app/guard/server/apis/registries"
 	e11 "github.com/hushkey-app/guard/server/apis/secrets"
-	e12 "github.com/hushkey-app/guard/server/apis/secrets/keys"
-	e13 "github.com/hushkey-app/guard/server/apis/secrets/values"
-	e14 "github.com/hushkey-app/guard/server/apis/settings"
-	e15 "github.com/hushkey-app/guard/server/apis/traces"
-	e16 "github.com/hushkey-app/guard/server/apis/views"
-	e17 "github.com/hushkey-app/guard/server/apis/webhooks"
+	e12 "github.com/hushkey-app/guard/server/apis/secrets/envs"
+	e13 "github.com/hushkey-app/guard/server/apis/secrets/keys"
+	e14 "github.com/hushkey-app/guard/server/apis/secrets/values"
+	e15 "github.com/hushkey-app/guard/server/apis/settings"
+	e16 "github.com/hushkey-app/guard/server/apis/traces"
+	e17 "github.com/hushkey-app/guard/server/apis/views"
+	e18 "github.com/hushkey-app/guard/server/apis/webhooks"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -87,34 +88,37 @@ func FsApiRoutes() []api.Route {
 		api.At("GET", "/api/registries/tags", e10.Tags),
 		api.At("GET", "/api/secrets", e11.List),
 		api.At("POST", "/api/secrets", e11.Save),
+		api.At("GET", "/api/secrets/envs", e12.List),
+		api.At("POST", "/api/secrets/envs", e12.Save),
+		api.At("DELETE", "/api/secrets/envs/{id}", e12.Delete),
 		api.At("GET", "/api/secrets/export", e11.ExportEnv),
 		api.At("POST", "/api/secrets/import", e11.Import),
-		api.At("GET", "/api/secrets/keys", e12.List),
-		api.At("POST", "/api/secrets/keys", e12.Create),
-		api.At("DELETE", "/api/secrets/keys/{id}", e12.Revoke),
-		api.At("GET", "/api/secrets/values", e13.List),
-		api.At("PUT", "/api/secrets/values", e13.Save),
-		api.At("DELETE", "/api/secrets/values/{id}", e13.Delete),
+		api.At("GET", "/api/secrets/keys", e13.List),
+		api.At("POST", "/api/secrets/keys", e13.Create),
+		api.At("DELETE", "/api/secrets/keys/{id}", e13.Revoke),
+		api.At("GET", "/api/secrets/values", e14.List),
+		api.At("PUT", "/api/secrets/values", e14.Save),
+		api.At("DELETE", "/api/secrets/values/{id}", e14.Delete),
 		api.At("DELETE", "/api/secrets/{id}", e11.Delete),
-		api.At("GET", "/api/settings", e14.Read),
-		api.At("PUT", "/api/settings", e14.Update),
-		api.At("POST", "/api/settings/purge", e14.Purge),
+		api.At("GET", "/api/settings", e15.Read),
+		api.At("PUT", "/api/settings", e15.Update),
+		api.At("POST", "/api/settings/purge", e15.Purge),
 		api.At("GET", "/api/summary", Summary),
-		api.At("GET", "/api/traces/{id}", e15.ByID),
-		api.At("GET", "/api/views", e16.List),
-		api.At("POST", "/api/views", e16.Create),
-		api.At("GET", "/api/views/catalogue", e16.Catalogue),
-		api.At("GET", "/api/views/data", e16.Data),
-		api.At("POST", "/api/views/drill", e16.Drill),
-		api.At("PUT", "/api/views/order", e16.Order),
-		api.At("POST", "/api/views/preview", e16.Preview),
-		api.At("POST", "/api/views/samples", e16.Samples),
-		api.At("DELETE", "/api/views/{id}", e16.Remove),
-		api.At("PUT", "/api/views/{id}", e16.Update),
-		api.At("GET", "/api/webhooks", e17.List),
-		api.At("PUT", "/api/webhooks", e17.Save),
-		api.At("POST", "/api/webhooks/test", e17.Test),
-		api.At("DELETE", "/api/webhooks/{id}", e17.Delete),
+		api.At("GET", "/api/traces/{id}", e16.ByID),
+		api.At("GET", "/api/views", e17.List),
+		api.At("POST", "/api/views", e17.Create),
+		api.At("GET", "/api/views/catalogue", e17.Catalogue),
+		api.At("GET", "/api/views/data", e17.Data),
+		api.At("POST", "/api/views/drill", e17.Drill),
+		api.At("PUT", "/api/views/order", e17.Order),
+		api.At("POST", "/api/views/preview", e17.Preview),
+		api.At("POST", "/api/views/samples", e17.Samples),
+		api.At("DELETE", "/api/views/{id}", e17.Remove),
+		api.At("PUT", "/api/views/{id}", e17.Update),
+		api.At("GET", "/api/webhooks", e18.List),
+		api.At("PUT", "/api/webhooks", e18.Save),
+		api.At("POST", "/api/webhooks/test", e18.Test),
+		api.At("DELETE", "/api/webhooks/{id}", e18.Delete),
 		api.At("GET", "/healthz", Health),
 	}
 }

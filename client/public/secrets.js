@@ -22,12 +22,14 @@ import { adminHeaders, el, qs, qsa, relativeTime, request } from "./core.js";
 import { ensure, forget } from "./store.js";
 import { ask } from "./cluster.js";
 
+let workspaces = [];
 let envs = [];
 let secrets = [];
 let keys = [];
-// Which environment is open. Kept in the module rather than the URL: it
-// survives navigating away and back, and an environment name in the address bar
-// is one more place "production" gets copied into a chat.
+// Which application and which of its stages are open. Kept in the module rather
+// than the URL: they survive navigating away and back, and "hushkey/production"
+// in the address bar is one more place it gets copied into a chat.
+let space = 0;
 let current = 0;
 // Which values are unmasked, by secret id. Cleared on every environment change,
 // because "show" was asked about one screen and not about the next.
@@ -36,15 +38,32 @@ const shown = new Set();
 export async function refreshSecrets() {
   if (!qs("[data-secret-envs]")) return;
   try {
-    await ensure("secrets.envs", () => request("/api/secrets", { headers: adminHeaders() }), (answer) => {
-      envs = answer || [];
-      if (!envs.some((env) => env.id === current)) current = envs[0]?.id || 0;
-      renderEnvs();
+    await ensure("secrets.workspaces", () => request("/api/secrets", { headers: adminHeaders() }), (answer) => {
+      workspaces = answer || [];
+      if (!workspaces.some((entry) => entry.id === space)) space = workspaces[0]?.id || 0;
+      renderWorkspaces();
     });
+    await loadEnvs();
     await Promise.all([loadValues(), loadKeys()]);
   } catch (failure) {
     status(failure.message);
   }
+}
+
+async function loadEnvs() {
+  if (!space) {
+    envs = [];
+    current = 0;
+    renderEnvs();
+    return;
+  }
+  await ensure(`secrets.envs.${space}`,
+    () => request(`/api/secrets/envs?workspace=${space}`, { headers: adminHeaders() }),
+    (answer) => {
+      envs = answer || [];
+      if (!envs.some((env) => env.id === current)) current = envs[0]?.id || 0;
+      renderEnvs();
+    });
 }
 
 function status(message) {
@@ -52,6 +71,69 @@ function status(message) {
   if (!note) return;
   note.textContent = message || "";
   note.hidden = !message;
+}
+
+// ---------------------------------------------------------------------------
+// Workspaces
+// ---------------------------------------------------------------------------
+
+function renderWorkspaces() {
+  const picker = qs("[data-secret-workspaces]");
+  if (!picker) return;
+  picker.replaceChildren(...workspaces.map((entry) => {
+    const option = el("option", "", entry.name);
+    option.value = entry.id;
+    option.selected = entry.id === space;
+    return option;
+  }));
+  const counts = qs("[data-workspace-counts]");
+  const open = workspaces.find((entry) => entry.id === space);
+  if (counts) {
+    counts.textContent = open
+      ? `${open.envs} environment${open.envs === 1 ? "" : "s"} · ${open.secrets} secret${open.secrets === 1 ? "" : "s"} · ${open.keys} key${open.keys === 1 ? "" : "s"}`
+      : "No application yet — add one to start.";
+  }
+}
+
+async function addWorkspace() {
+  const name = prompt("New application (pack, hushkey, auth…)", "");
+  if (name === null || !name.trim()) return;
+  try {
+    const saved = await request("/api/secrets", {
+      method: "POST", headers: adminHeaders(), body: JSON.stringify({ name: name.trim() }),
+    });
+    // It arrives with the four stages in it, so open the first one rather than
+    // leaving somebody looking at an empty right-hand column.
+    space = saved.id;
+    current = 0;
+    shown.clear();
+    await reload();
+  } catch (failure) {
+    status(failure.message);
+  }
+}
+
+async function removeWorkspace() {
+  const open = workspaces.find((entry) => entry.id === space);
+  if (!open) return;
+  // Typing the name, like locking a machine: this takes every environment,
+  // every secret and every key underneath it.
+  const agreed = await ask({
+    title: `Delete ${open.name}?`,
+    body: `Its ${open.envs} environment(s), ${open.secrets} secret(s) and ${open.keys} key(s) go with it. Anything still holding one of those keys stops booting.`,
+    detail: "Type the application's name to confirm.",
+    confirm: "Delete application",
+    phrase: open.name,
+  });
+  if (!agreed) return;
+  try {
+    await request(`/api/secrets/${space}`, { method: "DELETE", headers: adminHeaders() });
+    space = 0;
+    current = 0;
+    await reload();
+  } catch (failure) {
+    status(failure.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +147,9 @@ function renderEnvs() {
   const name = qs("[data-secret-env-name]");
   const note = qs("[data-secret-env-note]");
   const open = envs.find((env) => env.id === current);
-  if (name) name.textContent = open ? open.name : "No environment";
+  // Qualified, because "production" alone on a page with eight applications is
+  // the one heading somebody should never have to guess at.
+  if (name) name.textContent = open ? `${open.workspace} / ${open.name}` : "No environment";
   if (note) {
     note.textContent = open
       ? `${open.secrets} secret${open.secrets === 1 ? "" : "s"} · ${open.keys} key${open.keys === 1 ? "" : "s"}`
@@ -93,11 +177,13 @@ function envRow(env) {
 }
 
 async function addEnv() {
+  if (!space) { status("Add an application first."); return; }
   const name = prompt("New environment name", "");
   if (name === null || !name.trim()) return;
   try {
-    const saved = await request("/api/secrets", {
-      method: "POST", headers: adminHeaders(), body: JSON.stringify({ name: name.trim() }),
+    const saved = await request("/api/secrets/envs", {
+      method: "POST", headers: adminHeaders(),
+      body: JSON.stringify({ workspace_id: space, name: name.trim() }),
     });
     current = saved.id;
     await reload();
@@ -120,7 +206,7 @@ async function removeEnv(id, name) {
   });
   if (!agreed) return;
   try {
-    await request(`/api/secrets/${id}`, { method: "DELETE", headers: adminHeaders() });
+    await request(`/api/secrets/envs/${id}`, { method: "DELETE", headers: adminHeaders() });
     if (current === id) current = 0;
     await reload();
   } catch (failure) {
@@ -131,7 +217,8 @@ async function removeEnv(id, name) {
 // reload drops what the store is holding and asks again — after a write, where
 // the counts, the rows and the keys have all moved at once.
 async function reload() {
-  forget("secrets.envs");
+  forget("secrets.workspaces");
+  forget(`secrets.envs.${space}`);
   forget("secrets.values." + current);
   forget("secrets.keys");
   await refreshSecrets();
@@ -351,6 +438,7 @@ function keyRow(template, key) {
   const row = template.content.firstElementChild.cloneNode(true);
   row.dataset.keyId = key.id;
   qs("[data-key-name]", row).textContent = key.name;
+  qs("[data-key-workspace]", row).textContent = key.workspace || "";
   qs("[data-key-env]", row).textContent = key.env_name || "";
   qs("[data-key-prefix]", row).textContent = `${key.prefix}…`;
   const revoked = !!key.revoked_at && !key.revoked_at.startsWith("0001");
@@ -367,7 +455,7 @@ function keyRow(template, key) {
 async function addKey() {
   if (!current) return;
   const env = envs.find((entry) => entry.id === current);
-  const name = prompt(`What holds this key? (reads ${env?.name || "this environment"})`, "");
+  const name = prompt(`What holds this key? (reads ${env ? `${env.workspace}/${env.name}` : "this environment"})`, "");
   if (name === null || !name.trim()) return;
   try {
     const minted = await request("/api/secrets/keys", {
@@ -376,7 +464,8 @@ async function addKey() {
     });
     showToken(minted.token);
     forget("secrets.keys");
-    forget("secrets.envs");
+    forget("secrets.workspaces");
+    forget(`secrets.envs.${space}`);
     await refreshSecrets();
   } catch (failure) {
     status(failure.message);
@@ -415,6 +504,8 @@ async function revokeKey(id) {
 document.addEventListener("click", (event) => {
   if (!qs("[data-secret-envs]")) return;
 
+  if (event.target.closest("[data-workspace-add]")) { addWorkspace(); return; }
+  if (event.target.closest("[data-workspace-remove]")) { removeWorkspace(); return; }
   if (event.target.closest("[data-env-add]")) { addEnv(); return; }
   const removeEnvButton = event.target.closest("[data-env-remove]");
   if (removeEnvButton) {
@@ -482,6 +573,18 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-secret-copy]")) {
     navigator.clipboard?.writeText(qs("[data-secret-value]", row).value);
   }
+});
+
+// The workspace picker. A change here is a different application's secrets, so
+// everything below it is reloaded and nothing shown stays shown.
+document.addEventListener("change", (event) => {
+  const picker = event.target.closest("[data-secret-workspaces]");
+  if (!picker) return;
+  space = Number(picker.value);
+  current = 0;
+  shown.clear();
+  renderWorkspaces();
+  loadEnvs().then(() => Promise.all([loadValues(), loadKeys()])).catch((failure) => status(failure.message));
 });
 
 // Enter saves the row it was typed in, because a table of one-line values is a

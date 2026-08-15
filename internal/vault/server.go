@@ -51,7 +51,11 @@ type Server struct {
 // A map rather than a list because that is what the caller is going to build
 // anyway, and the order of environment variables has never meant anything.
 type Answer struct {
-	Env      string            `json:"env"`
+	// Workspace is which application these belong to. Reported rather than
+	// implied: a fetch that lands in the wrong container's logs should say
+	// whose configuration it was.
+	Workspace string            `json:"workspace"`
+	Env       string            `json:"env"`
 	Revision string            `json:"revision"`
 	Secrets  map[string]string `json:"secrets"`
 	// Unreadable names the keys sealed with a key this vault does not have.
@@ -107,7 +111,8 @@ func (s *Server) values(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(model.FormatEnv(pairs))) //nolint:errcheck
 		return
 	}
-	answer := Answer{Env: holder.EnvName, Revision: strconv.FormatInt(revision, 10), Secrets: map[string]string{}}
+	answer := Answer{Workspace: holder.Workspace, Env: holder.EnvName,
+		Revision: strconv.FormatInt(revision, 10), Secrets: map[string]string{}}
 	for _, pair := range pairs {
 		if pair.Unreadable {
 			answer.Unreadable = append(answer.Unreadable, pair.Key)
@@ -143,7 +148,7 @@ func (s *Server) value(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, model.Secret{Key: pair.Key, Value: pair.Value})
 		return
 	}
-	s.deny(w, r, http.StatusNotFound, "no such secret in "+holder.EnvName)
+	s.deny(w, r, http.StatusNotFound, "no such secret in "+holder.Workspace+"/"+holder.EnvName)
 }
 
 // authorize turns a bearer token into the environment it may read.
@@ -206,7 +211,8 @@ func (s *Server) used(holder Holder, r *http.Request, count int) {
 	s.mu.Unlock()
 
 	ip := callerIP(r)
-	slog.Info("secrets read", slog.String("key", holder.Name), slog.String("env", holder.EnvName),
+	slog.Info("secrets read", slog.String("key", holder.Name),
+		slog.String("workspace", holder.Workspace), slog.String("env", holder.EnvName),
 		slog.Int("count", count), slog.String("ip", ip))
 	// Off the request path entirely, not merely tolerant of failure. A write
 	// against a database that is locked or a disk that is full does not fail —

@@ -8,6 +8,7 @@
 //	guard-vault                      serve on :4319, reading ./guard.db
 //	guard-vault -db /data/guard.db   the usual deployment
 //	guard-vault fetch -env local     print one environment as .env, no server
+//	guard-vault fetch -workspace hushkey -env local
 //
 // The environment a request may read comes from the key it presents, so there
 // is nothing to configure per application beyond a URL and a token.
@@ -22,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -101,6 +103,7 @@ func serve(args []string) error {
 func fetch(args []string) error {
 	flags := flag.NewFlagSet("guard-vault fetch", flag.ExitOnError)
 	dbPath := flags.String("db", env("GUARD_DB_PATH", "guard.db"), "the SQLite database guard writes")
+	workspace := flags.String("workspace", env("GUARD_WORKSPACE", ""), "which application's environment to print; needed once there is more than one")
 	name := flags.String("env", "local", "which environment to print")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -110,9 +113,15 @@ func fetch(args []string) error {
 		return err
 	}
 	defer store.Close()
-	id, err := store.EnvByName(*name)
+	id, err := store.EnvByName(*workspace, *name)
 	if err != nil {
-		return fmt.Errorf("no environment called %q", *name)
+		if strings.Contains(err.Error(), "workspace") {
+			return err
+		}
+		if *workspace == "" {
+			return fmt.Errorf("no environment called %q", *name)
+		}
+		return fmt.Errorf("no environment called %q in workspace %q", *name, *workspace)
 	}
 	pairs, _, err := store.Values(id)
 	if err != nil {

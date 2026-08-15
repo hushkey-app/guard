@@ -247,6 +247,12 @@ serves it. `internal/vault` + `cmd/vault` build `guard-vault`: no pages, no
 ingest, no cluster loops, no import of any of them. Read `docs/secrets.md`
 before changing any of it.
 
+- **Two levels: a workspace is an application, its environments are its own.**
+  pack, hushkey, auth — each with local, develop, staging and production,
+  seeded when it is made. Flat naming (`hushkey-production`) is a convention
+  doing a schema's job, and the first person to type it differently breaks it.
+  A key scopes to one environment, which implies its workspace, and the token
+  carries both names so a leaked one is actionable.
 - **Guard writes, the vault reads.** They share a database file and a key file
   and nothing else, and they are deployed and restarted separately — an
   application asking for its database password at boot must not be waiting on
@@ -259,10 +265,11 @@ before changing any of it.
   can only write to just means the real copy lives in a file on a laptop. The
   page masks values until asked, because the person changing one should not have
   to expose forty.
-- **The environment comes from the key, never from the request.** There is no
-  `?env=` on the vault and there never can be one, so a leaked staging token
-  cannot be pointed at production by editing a URL. One key, one environment —
-  which is what makes revoking one mean something.
+- **The workspace and the environment come from the key, never from the
+  request.** No `?env=`, no `?workspace=`, and there never can be: a leaked
+  staging token cannot be pointed at production, and no application's key can
+  read another's. One key, one environment — which is what makes revoking one
+  mean something.
 - **A token is opaque, not signed.** 32 random bytes, stored as SHA-256, looked
   up every fetch — the same bargain guard's browser sessions make. Revocation is
   therefore instant, there is no signing key to distribute, and no claim can

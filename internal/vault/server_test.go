@@ -26,7 +26,11 @@ func setup(t *testing.T) (*telemetry.Store, *Server, model.APIKey) {
 	}
 	t.Cleanup(func() { guard.Close() })
 
-	envs, err := guard.Envs()
+	spaces, err := guard.Workspaces()
+	if err != nil || len(spaces) != 1 {
+		t.Fatalf("workspaces: %+v %v", spaces, err)
+	}
+	envs, err := guard.Envs(spaces[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +88,10 @@ func TestAKeyReadsItsOwnEnvironment(t *testing.T) {
 	if answer.Env != "production" || answer.Secrets["DATABASE_URL"] != "postgres://db/app" {
 		t.Fatalf("answered %+v", answer)
 	}
+	// Which application's production, said out loud rather than implied.
+	if answer.Workspace != model.DefaultWorkspace {
+		t.Fatalf("the answer does not name its workspace: %+v", answer)
+	}
 	if len(answer.Unreadable) != 0 {
 		t.Fatalf("could not read %+v", answer.Unreadable)
 	}
@@ -102,30 +110,37 @@ func TestAKeyReadsItsOwnEnvironment(t *testing.T) {
 func TestTheEnvironmentComesFromTheKey(t *testing.T) {
 	guard, server, key := setup(t)
 
-	// A second environment with a secret nobody's key may read.
-	other, err := guard.SaveEnv(model.Env{Name: "elsewhere"})
+	// A second application, with its own production holding a secret nobody's
+	// key may read — the case workspaces exist for.
+	other, err := guard.SaveWorkspace(model.Workspace{Name: "elsewhere"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := guard.SaveSecret(model.Secret{EnvID: other.ID, Key: "NOT_YOURS", Value: "x"}); err != nil {
+	theirs, err := guard.Envs(other.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := guard.SaveSecret(model.Secret{EnvID: theirs[0].ID, Key: "NOT_YOURS", Value: "x"}); err != nil {
 		t.Fatal(err)
 	}
 
-	// Every shape of "let me pick the environment" a caller might try. None of
-	// them can work, because nothing reads a parameter — this asserts that no
-	// future handler starts to.
+	// Every shape of "let me pick" a caller might try — including the two that
+	// workspaces make imaginable. None can work, because nothing here reads a
+	// parameter, and this is what asserts no future handler starts to.
 	for _, path := range []string{
 		"/v1/secrets?env=elsewhere",
 		"/v1/secrets?env_id=" + "2",
 		"/v1/secrets?environment=elsewhere",
+		"/v1/secrets?workspace=elsewhere",
+		"/v1/secrets?app=elsewhere",
 	} {
 		response := serve(t, server, "GET", path, key.Token, nil)
 		var answer Answer
 		if err := json.Unmarshal(response.Body.Bytes(), &answer); err != nil {
 			t.Fatal(err)
 		}
-		if answer.Env != "production" {
-			t.Fatalf("%s answered for %q", path, answer.Env)
+		if answer.Env != "production" || answer.Workspace != model.DefaultWorkspace {
+			t.Fatalf("%s answered for %s/%s", path, answer.Workspace, answer.Env)
 		}
 		if _, found := answer.Secrets["NOT_YOURS"]; found {
 			t.Fatalf("%s crossed environments", path)
@@ -187,7 +202,11 @@ func TestGuardsOwnCredentialsAreNotVaultCredentials(t *testing.T) {
 
 func TestAnExpiredKeyStopsWorking(t *testing.T) {
 	guard, server, _ := setup(t)
-	envs, err := guard.Envs()
+	spaces, err := guard.Workspaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	envs, err := guard.Envs(spaces[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}

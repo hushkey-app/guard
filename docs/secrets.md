@@ -1,8 +1,8 @@
 # Secrets
 
-Guard stores the environment variables your applications boot with — key and
-value, grouped by environment, encrypted at rest — and a **second binary**,
-`guard-vault`, hands them out.
+Guard stores the environment variables your applications boot with — one
+workspace per application, its own environments inside it, key and value
+encrypted at rest — and a **second binary**, `guard-vault`, hands them out.
 
 Two processes on one database file is the whole design. Guard is a dashboard: it
 gets deployed, it gets a bad release, somebody restarts it mid-edit. The thing
@@ -19,17 +19,29 @@ guard-vault    GET /v1/secrets, bearer key, nothing else :4319   stays up
 
 | table | what |
 |---|---|
-| `secret_envs` | the groups — local, develop, staging, production, or whatever you name |
-| `secrets` | one key, one sealed value, per group |
+| `secret_workspaces` | one row per application in the VPC — pack, hushkey, auth |
+| `secret_envs` | that application's stages: local, develop, staging, production |
+| `secrets` | one key, one sealed value, per environment |
 | `secret_keys` | the tokens applications hold: a SHA-256 and a visible prefix |
 | `secret_reads` | who fetched what, capped at fifty per key |
 
-An environment is a name and nothing else. No projects, no hierarchy, no
-inheritance between groups — an installation that needs one app's production
-kept apart from another's makes two groups and names them, which is the same
-thing without a schema that has to change when the shape of the organisation
-does. The four defaults are seeded on first migrate because they are what
-everybody was going to type.
+Two levels, and only two. A **workspace** is an application; its **environments**
+are its own stages. That is the whole hierarchy — no folders, no inheritance
+between stages, no sharing a value across applications.
+
+Two levels rather than one because a flat list is fine for one application and
+unreadable for eight: `hushkey-production` beside `auth-production` beside
+`pack-production` is a naming convention doing a schema's job, and the first
+person to type `hushkey_production` breaks it. Environments belong to a
+workspace rather than being global, so `hushkey` can have a `preview` that
+`auth` does not, and two applications both having a `production` is
+unremarkable rather than a collision.
+
+A new workspace arrives with local, develop, staging and production already in
+it, because adding an application should be one press. A fresh installation has
+one workspace called `default`, and so does an installation upgrading from
+before workspaces existed — its environments are moved there rather than
+guessed at, and renaming it is a press.
 
 Values are sealed with the same keeper the SSH passwords use — AES-256-GCM,
 key from `GUARD_SECRET_KEY` or the `0600` file beside the database. **Back that
@@ -89,9 +101,10 @@ token spanning three environments is a token nobody dares rotate when one
 service is redeployed, and "which of the seven services is still using it" is
 not a question a hash can answer.
 
-A token looks like `gsk_production_R-bMf0…` — the prefix makes a leaked one
-findable in a repository or a log, and the environment in it makes staging's key
-tellable from production's at a glance in a deployment file. Guard keeps only
+A token looks like `gsk_hushkey_production_R-bMf0…` — `gsk_` makes a leaked one
+findable in a repository or a log, and both names make it actionable: a token
+that says only "production" starts a hunt through every application. The
+entropy is the 32 random bytes after them. Guard keeps only
 `sha256(token)`, so the answer to the request that created it is the last time
 guard can show it. Losing it means minting another, which is the point.
 
@@ -116,7 +129,7 @@ same reasons.
 ## The vault's surface
 
 ```
-GET /v1/secrets              {"env":…,"revision":…,"secrets":{…}}
+GET /v1/secrets              {"workspace":…,"env":…,"revision":…,"secrets":{…}}
 GET /v1/secrets?format=env   KEY="value" lines
 GET /v1/secrets/{key}        one pair
 GET /healthz
@@ -124,9 +137,10 @@ GET /healthz
 
 Three rules carry it:
 
-- **The environment comes from the key, never from the request.** There is no
-  `?env=` and there never can be one, so a leaked staging key cannot be pointed
-  at production by editing a URL. A test tries three spellings of it.
+- **The workspace and the environment come from the key, never from the
+  request.** There is no `?env=` and no `?workspace=`, and there never can be:
+  a leaked staging key cannot be pointed at production, and no key of any
+  application can read another's. A test tries five spellings of it.
 - **Unknown, revoked and expired are one answer.** A caller that learns which of
   the three it hit has learned something about a token it does not hold.
 - **Bookkeeping never fails a fetch.** Last-used and the read log are written on
@@ -158,8 +172,12 @@ live in the deployment.
 Locally, skip the server:
 
 ```bash
-guard-vault fetch -env local > .env
+guard-vault fetch -workspace hushkey -env local > .env
 ```
+
+`-workspace` may be left out only while there is exactly one; with several it
+refuses rather than picking, because a command that printed the wrong
+application's values because they sorted first is worse than one that asks.
 
 No token: whoever runs that already has the database and the key file, which is
 everything a token would have protected.
@@ -169,7 +187,7 @@ everything a token would have protected.
 ```bash
 guard-vault                      # :4319, ./guard.db
 guard-vault -db /data/guard.db   # the usual deployment
-guard-vault fetch -env local     # print one environment, no server
+guard-vault fetch -workspace hushkey -env local   # print one, no server
 ```
 
 `GUARD_VAULT_ADDR` and `GUARD_DB_PATH` configure it; flags of the same names

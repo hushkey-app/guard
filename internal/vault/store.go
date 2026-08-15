@@ -92,10 +92,11 @@ func (s *Store) Close() error { return s.db.Close() }
 // A Holder is what a token turned out to be: which key, and which environment
 // it may read. Nothing about the token itself, because nothing needs it again.
 type Holder struct {
-	KeyID   int64
-	Name    string
-	EnvID   int64
-	EnvName string
+	KeyID     int64
+	Name      string
+	EnvID     int64
+	EnvName   string
+	Workspace string
 }
 
 // Holder finds the key a token hashes to, if it is one that may still be used.
@@ -105,9 +106,12 @@ type Holder struct {
 func (s *Store) Holder(hash []byte) (Holder, error) {
 	var holder Holder
 	var expires, revoked int64
-	err := s.db.QueryRow(`SELECT k.id, k.name, k.env_id, e.name, k.expires_ns, k.revoked_ns
-FROM secret_keys k JOIN secret_envs e ON e.id = k.env_id WHERE k.hash = ?`, hash).
-		Scan(&holder.KeyID, &holder.Name, &holder.EnvID, &holder.EnvName, &expires, &revoked)
+	err := s.db.QueryRow(`SELECT k.id, k.name, k.env_id, e.name, w.name, k.expires_ns, k.revoked_ns
+FROM secret_keys k
+JOIN secret_envs e ON e.id = k.env_id
+JOIN secret_workspaces w ON w.id = e.workspace_id
+WHERE k.hash = ?`, hash).
+		Scan(&holder.KeyID, &holder.Name, &holder.EnvID, &holder.EnvName, &holder.Workspace, &expires, &revoked)
 	if err != nil {
 		return Holder{}, err
 	}
@@ -159,12 +163,31 @@ func (s *Store) Revision(envID int64) (int64, error) {
 	return revision, err
 }
 
-// EnvByName is for the command line: `guard-vault fetch -env local` reads the
-// file directly rather than asking a server that may not be running, which is
-// the whole reason somebody reaches for it.
-func (s *Store) EnvByName(name string) (int64, error) {
+// EnvByName is for the command line: `guard-vault fetch -workspace hushkey -env
+// local` reads the file directly rather than asking a server that may not be
+// running, which is the whole reason somebody reaches for it.
+//
+// An empty workspace is only allowed to mean "the only one there is". Picking
+// the first of several would be a command that prints production's values on a
+// laptop because the workspaces happened to sort that way.
+func (s *Store) EnvByName(workspace, name string) (int64, error) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		var spaces int
+		if err := s.db.QueryRow(`SELECT count(*) FROM secret_workspaces`).Scan(&spaces); err != nil {
+			return 0, err
+		}
+		if spaces > 1 {
+			return 0, errors.New("this database has several workspaces — name one with -workspace")
+		}
+		var id int64
+		err := s.db.QueryRow(`SELECT e.id FROM secret_envs e WHERE e.name = ? COLLATE NOCASE`,
+			strings.TrimSpace(name)).Scan(&id)
+		return id, err
+	}
 	var id int64
-	err := s.db.QueryRow(`SELECT id FROM secret_envs WHERE name = ? COLLATE NOCASE`, strings.TrimSpace(name)).Scan(&id)
+	err := s.db.QueryRow(`SELECT e.id FROM secret_envs e JOIN secret_workspaces w ON w.id = e.workspace_id
+WHERE w.name = ? COLLATE NOCASE AND e.name = ? COLLATE NOCASE`, workspace, strings.TrimSpace(name)).Scan(&id)
 	return id, err
 }
 

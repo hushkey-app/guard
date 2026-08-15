@@ -6,20 +6,19 @@ import (
 	"github.com/mirairoad/howl-go/core/api"
 )
 
-// Save adds an environment or renames one.
+// Save adds a workspace or renames one.
 //
-// A group is a name and nothing else — there is no project, no hierarchy and
-// no inheritance between environments. An installation that wants one app's
-// production kept apart from another's makes two groups and names them, which
-// is the same thing without a schema that has to change when the shape of the
-// organisation does.
-var Save = api.Define(api.Spec[api.None, model.Env, model.Env]{
-	Name:  "Save Secret Environment",
+// A new one arrives with local, develop, staging and production already in it.
+// Adding an application should be one press: the four stages are what almost
+// everybody was going to make anyway, and an application that needs a fifth
+// adds it, while one that never uses local simply leaves it empty.
+var Save = api.Define(api.Spec[api.None, model.Workspace, model.Workspace]{
+	Name:  "Save Secret Workspace",
 	Roles: []string{"admin"},
-	Handler: func(r *api.Request[api.None, model.Env]) (model.Env, error) {
-		saved, err := store.Get().SaveEnv(r.Body)
+	Handler: func(r *api.Request[api.None, model.Workspace]) (model.Workspace, error) {
+		saved, err := store.Get().SaveWorkspace(r.Body)
 		if err != nil {
-			return model.Env{}, api.BadRequest(err.Error())
+			return model.Workspace{}, api.BadRequest(err.Error())
 		}
 		return saved, nil
 	},

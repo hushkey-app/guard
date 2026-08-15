@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -29,11 +30,26 @@ import (
 
 func migrateVault(db *sql.DB) error {
 	const schema = `
-CREATE TABLE IF NOT EXISTS secret_envs (
+-- One row per application in the VPC: pack, hushkey, auth. Two levels rather
+-- than one because a flat list of environments is fine for one application and
+-- unreadable for eight — "hushkey-production" beside "auth-production" is a
+-- naming convention doing a schema's job.
+CREATE TABLE IF NOT EXISTS secret_workspaces (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE COLLATE NOCASE,
   note TEXT NOT NULL DEFAULT '',
   created_ns INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS secret_envs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL DEFAULT 0,
+  -- NOCASE on the column, so the unique pair below is case-insensitive too: a
+  -- workspace holding both "production" and "Production" is one whose keys
+  -- name an environment ambiguously, and the vault looks them up by name.
+  name TEXT NOT NULL COLLATE NOCASE,
+  note TEXT NOT NULL DEFAULT '',
+  created_ns INTEGER NOT NULL,
+  UNIQUE(workspace_id, name)
 );
 CREATE TABLE IF NOT EXISTS secrets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,33 +90,267 @@ CREATE INDEX IF NOT EXISTS idx_secret_reads_key ON secret_reads(key_id, at_ns DE
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate secrets: %w", err)
 	}
-	// The four groups everybody was going to type anyway. Seeded once — a
-	// deleted environment stays deleted, because this runs INSERT OR IGNORE
-	// against a name that is still taken by nothing.
-	var envs int
-	if err := db.QueryRow(`SELECT count(*) FROM secret_envs`).Scan(&envs); err != nil {
+	if err := rebuildEnvsForWorkspaces(db); err != nil {
+		return err
+	}
+	if err := adoptOrphanEnvs(db); err != nil {
+		return err
+	}
+	// A first workspace, with the four stages everybody was going to type
+	// anyway. Seeded once: a deleted workspace stays deleted, because this only
+	// runs against a database that has none at all.
+	var workspaces int
+	if err := db.QueryRow(`SELECT count(*) FROM secret_workspaces`).Scan(&workspaces); err != nil {
 		return fmt.Errorf("migrate secrets: %w", err)
 	}
-	if envs == 0 {
-		now := time.Now().UTC().UnixNano()
-		for _, name := range model.DefaultEnvs {
-			if _, err := db.Exec(`INSERT OR IGNORE INTO secret_envs(name, created_ns) VALUES(?,?)`, name, now); err != nil {
-				return fmt.Errorf("seed secret environments: %w", err)
-			}
+	if workspaces == 0 {
+		if _, err := seedWorkspace(db, model.DefaultWorkspace); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// Envs lists the groups with their counts and their revision — everything the
-// page's left column shows, in one query, because a count per group done from
-// the browser would be one request per group.
-func (s *Store) Envs() ([]model.Env, error) {
-	rows, err := s.db.Query(`SELECT e.id, e.name, e.note, e.created_ns,
+// rebuildEnvsForWorkspaces upgrades a secret_envs table from before workspaces.
+//
+// It is a rebuild rather than an ADD COLUMN because the constraint has to move:
+// the old table made an environment name unique on its own, and under
+// workspaces two applications both having a "production" is the entire point.
+// SQLite cannot drop a constraint, so the twelve-step dance is the only way —
+// new table, copy, drop, rename, in one transaction so a crash halfway leaves
+// the old one intact.
+//
+// The secrets and keys pointing at these environments are untouched: they carry
+// env_id, the ids are preserved by the copy, and nothing about them changes.
+func rebuildEnvsForWorkspaces(db *sql.DB) error {
+	var current string
+	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='secret_envs'`).Scan(&current)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read secret_envs: %w", err)
+	}
+	// Both properties are checked, not just the column. A table that gained
+	// workspace_id but kept a case-sensitive name is one where "production" and
+	// "Production" are two rows in the same workspace — and the vault looks
+	// environments up with COLLATE NOCASE, so it would have to pick one. Asking
+	// the schema what it actually is, rather than assuming the last version of
+	// this function got it right, is what makes the fix reach a database that
+	// has already been through the earlier one.
+	hadColumn := strings.Contains(current, "workspace_id")
+	if hadColumn && strings.Contains(strings.ToUpper(current), "NOCASE") {
+		return nil
+	}
+	keep := "0"
+	if hadColumn {
+		keep = "workspace_id"
+	}
+	rebuild := `
+CREATE TABLE secret_envs_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL DEFAULT 0,
+  name TEXT NOT NULL COLLATE NOCASE,
+  note TEXT NOT NULL DEFAULT '',
+  created_ns INTEGER NOT NULL,
+  UNIQUE(workspace_id, name)
+);
+INSERT INTO secret_envs_new(id, workspace_id, name, note, created_ns)
+  SELECT id, ` + keep + `, name, note, created_ns FROM secret_envs;
+DROP TABLE secret_envs;
+ALTER TABLE secret_envs_new RENAME TO secret_envs;`
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(rebuild); err != nil {
+		return fmt.Errorf("add workspaces to secret_envs: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	slog.Info("secrets: environments rebuilt to belong to a workspace")
+	return nil
+}
+
+// adoptOrphanEnvs moves environments made before workspaces existed into one
+// named "default".
+//
+// Guessing which application they belonged to is not possible and not this
+// code's business — they were made when there was one list, so they go into
+// one workspace, and renaming it is a press. The alternative, a workspace_id of
+// zero pointing at nothing, is a row that every join quietly drops.
+func adoptOrphanEnvs(db *sql.DB) error {
+	var orphans int
+	if err := db.QueryRow(`SELECT count(*) FROM secret_envs WHERE workspace_id = 0`).Scan(&orphans); err != nil {
+		return fmt.Errorf("migrate secrets: %w", err)
+	}
+	if orphans == 0 {
+		return nil
+	}
+	var id int64
+	err := db.QueryRow(`SELECT id FROM secret_workspaces WHERE name = ? COLLATE NOCASE`, model.DefaultWorkspace).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		result, insertErr := db.Exec(`INSERT INTO secret_workspaces(name, created_ns) VALUES(?,?)`,
+			model.DefaultWorkspace, time.Now().UTC().UnixNano())
+		if insertErr != nil {
+			return fmt.Errorf("migrate secrets: %w", insertErr)
+		}
+		if id, err = result.LastInsertId(); err != nil {
+			return fmt.Errorf("migrate secrets: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("migrate secrets: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE secret_envs SET workspace_id = ? WHERE workspace_id = 0`, id); err != nil {
+		return fmt.Errorf("migrate secrets: %w", err)
+	}
+	slog.Info("secrets: existing environments moved into a workspace",
+		slog.String("workspace", model.DefaultWorkspace), slog.Int("environments", orphans))
+	return nil
+}
+
+// seedWorkspace creates one workspace with the four default stages in it.
+//
+// A new application arrives with local, develop, staging and production
+// already there, because adding one should not be four more presses before it
+// can hold anything.
+func seedWorkspace(db *sql.DB, name string) (int64, error) {
+	now := time.Now().UTC().UnixNano()
+	result, err := db.Exec(`INSERT INTO secret_workspaces(name, created_ns) VALUES(?,?)`, name, now)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	for _, env := range model.DefaultEnvs {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO secret_envs(workspace_id, name, created_ns) VALUES(?,?,?)`,
+			id, env, now); err != nil {
+			return 0, fmt.Errorf("seed secret environments: %w", err)
+		}
+	}
+	return id, nil
+}
+
+// Workspaces lists the applications with what each holds — the page's picker,
+// answered in one query because a count per workspace done from the browser
+// would be one request per application.
+func (s *Store) Workspaces() ([]model.Workspace, error) {
+	rows, err := s.db.Query(`SELECT w.id, w.name, w.note, w.created_ns,
+(SELECT count(*) FROM secret_envs WHERE workspace_id = w.id),
+(SELECT count(*) FROM secrets WHERE env_id IN (SELECT id FROM secret_envs WHERE workspace_id = w.id)),
+(SELECT count(*) FROM secret_keys WHERE revoked_ns = 0
+   AND env_id IN (SELECT id FROM secret_envs WHERE workspace_id = w.id))
+FROM secret_workspaces w ORDER BY w.name COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	spaces := []model.Workspace{}
+	for rows.Next() {
+		var space model.Workspace
+		var created int64
+		if err := rows.Scan(&space.ID, &space.Name, &space.Note, &created,
+			&space.Envs, &space.Secrets, &space.Keys); err != nil {
+			return nil, err
+		}
+		if created > 0 {
+			space.CreatedAt = time.Unix(0, created).UTC()
+		}
+		spaces = append(spaces, space)
+	}
+	return spaces, rows.Err()
+}
+
+// Workspace reads one.
+func (s *Store) Workspace(id int64) (model.Workspace, error) {
+	spaces, err := s.Workspaces()
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	for _, space := range spaces {
+		if space.ID == id {
+			return space, nil
+		}
+	}
+	return model.Workspace{}, sql.ErrNoRows
+}
+
+// SaveWorkspace adds an application or renames one.
+//
+// A new one arrives with the four default stages already in it, which is the
+// whole reason adding an application is one press rather than five.
+func (s *Store) SaveWorkspace(space model.Workspace) (model.Workspace, error) {
+	space.Name = strings.TrimSpace(space.Name)
+	space.Note = strings.TrimSpace(space.Note)
+	if err := space.Validate(); err != nil {
+		return model.Workspace{}, err
+	}
+	if space.ID == 0 {
+		id, err := seedWorkspace(s.db, space.Name)
+		if err != nil {
+			return model.Workspace{}, workspaceError(err, space.Name)
+		}
+		if space.Note != "" {
+			if _, err := s.db.Exec(`UPDATE secret_workspaces SET note = ? WHERE id = ?`, space.Note, id); err != nil {
+				return model.Workspace{}, err
+			}
+		}
+		return s.Workspace(id)
+	}
+	if _, err := s.db.Exec(`UPDATE secret_workspaces SET name = ?, note = ? WHERE id = ?`,
+		space.Name, space.Note, space.ID); err != nil {
+		return model.Workspace{}, workspaceError(err, space.Name)
+	}
+	return s.Workspace(space.ID)
+}
+
+// DeleteWorkspace removes an application, every environment in it, every secret
+// in those, and every key that read them.
+//
+// The whole tree, in one transaction, for the same reason deleting an
+// environment takes its keys: anything left pointing at a deleted parent is a
+// row nothing can reach and nobody thinks to revoke.
+func (s *Store) DeleteWorkspace(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	const envs = `SELECT id FROM secret_envs WHERE workspace_id = ?`
+	for _, statement := range []string{
+		`DELETE FROM secrets WHERE env_id IN (` + envs + `)`,
+		`DELETE FROM secret_keys WHERE env_id IN (` + envs + `)`,
+		`DELETE FROM secret_envs WHERE workspace_id = ?`,
+		`DELETE FROM secret_workspaces WHERE id = ?`,
+	} {
+		if _, err := tx.Exec(statement, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func workspaceError(err error, name string) error {
+	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+		return fmt.Errorf("there is already a workspace called %q", name)
+	}
+	return err
+}
+
+// Envs lists one workspace's stages with their counts and their revision —
+// everything the page's left column shows, in one query, because a count per
+// environment done from the browser would be one request per environment.
+func (s *Store) Envs(workspaceID int64) ([]model.Env, error) {
+	rows, err := s.db.Query(`SELECT e.id, e.workspace_id, w.name, e.name, e.note, e.created_ns,
 (SELECT count(*) FROM secrets WHERE env_id = e.id),
 (SELECT count(*) FROM secret_keys WHERE env_id = e.id AND revoked_ns = 0),
 COALESCE((SELECT max(updated_ns) FROM secrets WHERE env_id = e.id), 0)
-FROM secret_envs e ORDER BY e.name COLLATE NOCASE`)
+FROM secret_envs e JOIN secret_workspaces w ON w.id = e.workspace_id
+WHERE e.workspace_id = ? ORDER BY e.name COLLATE NOCASE`, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +359,8 @@ FROM secret_envs e ORDER BY e.name COLLATE NOCASE`)
 	for rows.Next() {
 		var env model.Env
 		var created int64
-		if err := rows.Scan(&env.ID, &env.Name, &env.Note, &created, &env.Secrets, &env.Keys, &env.Revision); err != nil {
+		if err := rows.Scan(&env.ID, &env.WorkspaceID, &env.Workspace, &env.Name, &env.Note,
+			&created, &env.Secrets, &env.Keys, &env.Revision); err != nil {
 			return nil, err
 		}
 		if created > 0 {
@@ -120,9 +371,13 @@ FROM secret_envs e ORDER BY e.name COLLATE NOCASE`)
 	return envs, rows.Err()
 }
 
-// Env reads one group by id.
+// Env reads one stage by id, whichever workspace it is in.
 func (s *Store) Env(id int64) (model.Env, error) {
-	envs, err := s.Envs()
+	var workspace int64
+	if err := s.db.QueryRow(`SELECT workspace_id FROM secret_envs WHERE id = ?`, id).Scan(&workspace); err != nil {
+		return model.Env{}, err
+	}
+	envs, err := s.Envs(workspace)
 	if err != nil {
 		return model.Env{}, err
 	}
@@ -134,7 +389,7 @@ func (s *Store) Env(id int64) (model.Env, error) {
 	return model.Env{}, sql.ErrNoRows
 }
 
-// SaveEnv adds a group or renames one.
+// SaveEnv adds a stage to a workspace or renames one.
 func (s *Store) SaveEnv(env model.Env) (model.Env, error) {
 	env.Name = strings.TrimSpace(env.Name)
 	env.Note = strings.TrimSpace(env.Note)
@@ -142,8 +397,8 @@ func (s *Store) SaveEnv(env model.Env) (model.Env, error) {
 		return model.Env{}, err
 	}
 	if env.ID == 0 {
-		result, err := s.db.Exec(`INSERT INTO secret_envs(name, note, created_ns) VALUES(?,?,?)`,
-			env.Name, env.Note, time.Now().UTC().UnixNano())
+		result, err := s.db.Exec(`INSERT INTO secret_envs(workspace_id, name, note, created_ns) VALUES(?,?,?,?)`,
+			env.WorkspaceID, env.Name, env.Note, time.Now().UTC().UnixNano())
 		if err != nil {
 			return model.Env{}, envError(err, env.Name)
 		}
@@ -186,7 +441,7 @@ func (s *Store) DeleteEnv(id int64) error {
 
 func envError(err error, name string) error {
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
-		return fmt.Errorf("there is already an environment called %q", name)
+		return fmt.Errorf("this workspace already has an environment called %q", name)
 	}
 	return err
 }
@@ -371,10 +626,12 @@ const tokenPrefix = "gsk_"
 
 // APIKeys lists the tokens, with the environment each belongs to.
 func (s *Store) APIKeys() ([]model.APIKey, error) {
-	rows, err := s.db.Query(`SELECT k.id, k.env_id, e.name, k.name, k.prefix,
+	rows, err := s.db.Query(`SELECT k.id, k.env_id, e.name, w.name, k.name, k.prefix,
 k.created_ns, k.expires_ns, k.last_used_ns, k.revoked_ns
-FROM secret_keys k JOIN secret_envs e ON e.id = k.env_id
-ORDER BY k.revoked_ns, e.name COLLATE NOCASE, k.name COLLATE NOCASE`)
+FROM secret_keys k
+JOIN secret_envs e ON e.id = k.env_id
+JOIN secret_workspaces w ON w.id = e.workspace_id
+ORDER BY k.revoked_ns, w.name COLLATE NOCASE, e.name COLLATE NOCASE, k.name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +640,7 @@ ORDER BY k.revoked_ns, e.name COLLATE NOCASE, k.name COLLATE NOCASE`)
 	for rows.Next() {
 		var key model.APIKey
 		var created, expires, used, revoked int64
-		if err := rows.Scan(&key.ID, &key.EnvID, &key.EnvName, &key.Name, &key.Prefix,
+		if err := rows.Scan(&key.ID, &key.EnvID, &key.EnvName, &key.Workspace, &key.Name, &key.Prefix,
 			&created, &expires, &used, &revoked); err != nil {
 			return nil, err
 		}
@@ -418,7 +675,7 @@ func (s *Store) CreateAPIKey(key model.APIKey) (model.APIKey, error) {
 	if err != nil {
 		return model.APIKey{}, errors.New("that environment does not exist")
 	}
-	token, err := mintToken(env.Name)
+	token, err := mintToken(env.Workspace, env.Name)
 	if err != nil {
 		return model.APIKey{}, err
 	}
@@ -428,7 +685,7 @@ func (s *Store) CreateAPIKey(key model.APIKey) (model.APIKey, error) {
 		expires = key.ExpiresAt.UTC().UnixNano()
 	}
 	result, err := s.db.Exec(`INSERT INTO secret_keys(env_id, name, hash, prefix, created_ns, expires_ns)
-VALUES(?,?,?,?,?,?)`, key.EnvID, key.Name, sum[:], token[:len(tokenPrefix)+8], time.Now().UTC().UnixNano(), expires)
+VALUES(?,?,?,?,?,?)`, key.EnvID, key.Name, sum[:], tokenHead(token), time.Now().UTC().UnixNano(), expires)
 	if err != nil {
 		return model.APIKey{}, err
 	}
@@ -449,15 +706,34 @@ VALUES(?,?,?,?,?,?)`, key.EnvID, key.Name, sum[:], token[:len(tokenPrefix)+8], t
 	return model.APIKey{}, sql.ErrNoRows
 }
 
-// mintToken builds `gsk_<env>_<random>`. The environment is in the token
-// because these end up pasted into deployment configuration, where telling
-// staging's key from production's at a glance is worth more than the two bytes
-// of entropy it does not cost.
-func mintToken(env string) (string, error) {
+// mintToken builds `gsk_<workspace>_<env>_<random>`.
+//
+// Both names are in the token because these end up pasted into deployment
+// configuration and found later in places nobody meant to leave them: a token
+// that says hushkey/production is one somebody can act on, where a token that
+// says only "production" starts a hunt through every application. It costs
+// nothing — the entropy is the 32 random bytes after it.
+func mintToken(workspace, env string) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
+	return tokenPrefix + slugify(workspace) + "_" + slugify(env) + "_" +
+		base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// tokenHead is what the list shows: enough of the token to tell two apart and
+// to recognise one found somewhere it should not be — which now means both
+// names — and nothing that could be presented to the vault.
+func tokenHead(token string) string {
+	cut := strings.LastIndex(token, "_")
+	if cut < 0 || cut+5 > len(token) {
+		return token[:min(len(token), 16)]
+	}
+	return token[:cut+5]
+}
+
+func slugify(name string) string {
 	slug := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
@@ -467,14 +743,14 @@ func mintToken(env string) (string, error) {
 		default:
 			return -1
 		}
-	}, env)
+	}, name)
 	if len(slug) > 12 {
 		slug = slug[:12]
 	}
 	if slug == "" {
-		slug = "env"
+		slug = "x"
 	}
-	return tokenPrefix + slug + "_" + base64.RawURLEncoding.EncodeToString(raw), nil
+	return slug
 }
 
 // RevokeAPIKey stops a token without forgetting it.

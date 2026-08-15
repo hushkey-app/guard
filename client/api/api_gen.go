@@ -19,6 +19,7 @@ import (
 	"github.com/hushkey-app/guard/server/apis/members"
 	"github.com/hushkey-app/guard/server/apis/registries"
 	"github.com/hushkey-app/guard/server/apis/secrets"
+	"github.com/hushkey-app/guard/server/apis/secrets/envs"
 	"github.com/hushkey-app/guard/server/apis/secrets/values"
 	"github.com/hushkey-app/guard/server/apis/webhooks"
 	"github.com/mirairoad/howl-go/core/api"
@@ -168,8 +169,14 @@ func (c *Client) DeleteSecret(ctx context.Context, id string) error {
 	return err
 }
 
-// DeleteSecretEnvironment calls DELETE /api/secrets/{id}.
+// DeleteSecretEnvironment calls DELETE /api/secrets/envs/{id}.
 func (c *Client) DeleteSecretEnvironment(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/secrets/envs/{id}", id), nil, nil)
+	return err
+}
+
+// DeleteSecretWorkspace calls DELETE /api/secrets/{id}.
+func (c *Client) DeleteSecretWorkspace(ctx context.Context, id string) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/secrets/{id}", id), nil, nil)
 	return err
 }
@@ -391,19 +398,29 @@ func (c *Client) SaveSecret(ctx context.Context, body model.Secret) (model.Secre
 	return api.Call[model.Secret](ctx, c.Transport, "PUT", "/api/secrets/values", nil, body)
 }
 
-// SaveSecretEnvironment calls POST /api/secrets.
+// SaveSecretEnvironment calls POST /api/secrets/envs.
 func (c *Client) SaveSecretEnvironment(ctx context.Context, body model.Env) (model.Env, error) {
-	return api.Call[model.Env](ctx, c.Transport, "POST", "/api/secrets", nil, body)
+	return api.Call[model.Env](ctx, c.Transport, "POST", "/api/secrets/envs", nil, body)
 }
 
-// SecretEnvironments calls GET /api/secrets.
-func (c *Client) SecretEnvironments(ctx context.Context) ([]model.Env, error) {
-	return api.Call[[]model.Env](ctx, c.Transport, "GET", "/api/secrets", nil, nil)
+// SaveSecretWorkspace calls POST /api/secrets.
+func (c *Client) SaveSecretWorkspace(ctx context.Context, body model.Workspace) (model.Workspace, error) {
+	return api.Call[model.Workspace](ctx, c.Transport, "POST", "/api/secrets", nil, body)
+}
+
+// SecretEnvironments calls GET /api/secrets/envs.
+func (c *Client) SecretEnvironments(ctx context.Context, query envs.Query) ([]model.Env, error) {
+	return api.Call[[]model.Env](ctx, c.Transport, "GET", "/api/secrets/envs", query, nil)
 }
 
 // SecretKeys calls GET /api/secrets/keys.
 func (c *Client) SecretKeys(ctx context.Context) ([]model.APIKey, error) {
 	return api.Call[[]model.APIKey](ctx, c.Transport, "GET", "/api/secrets/keys", nil, nil)
+}
+
+// SecretWorkspaces calls GET /api/secrets.
+func (c *Client) SecretWorkspaces(ctx context.Context) ([]model.Workspace, error) {
+	return api.Call[[]model.Workspace](ctx, c.Transport, "GET", "/api/secrets", nil, nil)
 }
 
 // Secrets calls GET /api/secrets/values.

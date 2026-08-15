@@ -112,9 +112,10 @@ beside the database, and it refuses to start without it.
 
 ## Secrets
 
-Guard also stores the environment variables your applications boot with —
-key and value, per environment, encrypted at rest — on a `/secrets` page that
-imports and exports whole `.env` files.
+Guard also stores the environment variables your applications boot with — one
+workspace per application, its own environments inside it, key and value
+encrypted at rest — on a `/secrets` page that imports and exports whole `.env`
+files.
 
 They are served by a **second binary**, `guard-vault`, on the same database and
 key file. That is the point of it: a bad dashboard release, a restart or a
@@ -128,12 +129,13 @@ An application holds one key, minted on the page and shown once:
 
 ```bash
 GUARD_VAULT_URL=http://vault.internal:4319
-GUARD_VAULT_KEY=gsk_production_…
+GUARD_VAULT_KEY=gsk_hushkey_production_…
 ```
 
-The key carries its own environment, so there is nothing else to configure and
-a staging token cannot be pointed at production. Locally,
-`guard-vault fetch -env local > .env` skips the server entirely.
+The key carries its own workspace and environment, so there is nothing else to
+configure, a staging token cannot be pointed at production, and no
+application's key reads another's. Locally,
+`guard-vault fetch -workspace hushkey -env local > .env` skips the server.
 
 See `docs/secrets.md`.
 

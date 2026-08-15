@@ -7,9 +7,22 @@ import (
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
+// workspaceID is the seeded one — every fresh store has exactly one.
+func workspaceID(t *testing.T, store *Store) int64 {
+	t.Helper()
+	spaces, err := store.Workspaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spaces) != 1 {
+		t.Fatalf("a fresh store has %+v", spaces)
+	}
+	return spaces[0].ID
+}
+
 func envID(t *testing.T, store *Store, name string) int64 {
 	t.Helper()
-	envs, err := store.Envs()
+	envs, err := store.Envs(workspaceID(t, store))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,11 +35,11 @@ func envID(t *testing.T, store *Store, name string) int64 {
 	return 0
 }
 
-func TestVaultSeedsTheFourEnvironments(t *testing.T) {
+func TestVaultSeedsAWorkspaceWithFourEnvironments(t *testing.T) {
 	store := NewStore(100)
 	t.Cleanup(func() { store.Close() })
 
-	envs, err := store.Envs()
+	envs, err := store.Envs(workspaceID(t, store))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,6 +49,122 @@ func TestVaultSeedsTheFourEnvironments(t *testing.T) {
 	for _, env := range envs {
 		if env.Secrets != 0 || env.Keys != 0 || env.Revision != 0 {
 			t.Fatalf("a fresh environment is not empty: %+v", env)
+		}
+		if env.Workspace != model.DefaultWorkspace {
+			t.Fatalf("environment %q is not in the default workspace: %+v", env.Name, env)
+		}
+	}
+}
+
+// The reason workspaces exist: two applications both have a production, and
+// neither knows about the other's.
+func TestTwoWorkspacesMayBothHaveAProduction(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	hushkey, err := store.SaveWorkspace(model.Workspace{Name: "hushkey"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth, err := store.SaveWorkspace(model.Workspace{Name: "auth"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each arrives with the four stages already in it.
+	if hushkey.Envs != len(model.DefaultEnvs) || auth.Envs != len(model.DefaultEnvs) {
+		t.Fatalf("seeded %+v and %+v", hushkey, auth)
+	}
+	if _, err := store.SaveWorkspace(model.Workspace{Name: "HUSHKEY"}); err == nil {
+		t.Fatal("two workspaces differing only in case were stored")
+	}
+
+	production := func(space model.Workspace) model.Env {
+		t.Helper()
+		envs, err := store.Envs(space.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, env := range envs {
+			if env.Name == "production" {
+				return env
+			}
+		}
+		t.Fatalf("no production in %q", space.Name)
+		return model.Env{}
+	}
+	one, two := production(hushkey), production(auth)
+	if one.ID == two.ID {
+		t.Fatal("the two productions are the same row")
+	}
+
+	// The same key name in both, with different values, and neither leaks.
+	if _, err := store.SaveSecret(model.Secret{EnvID: one.ID, Key: "DATABASE_URL", Value: "hushkey-db"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveSecret(model.Secret{EnvID: two.ID, Key: "DATABASE_URL", Value: "auth-db"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := store.Secret(one.ID, "DATABASE_URL"); got.Value != "hushkey-db" {
+		t.Fatalf("hushkey production reads %q", got.Value)
+	}
+	if got, _ := store.Secret(two.ID, "DATABASE_URL"); got.Value != "auth-db" {
+		t.Fatalf("auth production reads %q", got.Value)
+	}
+	// And one workspace's environments are not the other's.
+	for _, env := range mustEnvs(t, store, hushkey.ID) {
+		if env.WorkspaceID != hushkey.ID {
+			t.Fatalf("hushkey listed %+v", env)
+		}
+	}
+}
+
+func mustEnvs(t *testing.T, store *Store, workspace int64) []model.Env {
+	t.Helper()
+	envs, err := store.Envs(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return envs
+}
+
+// Deleting an application takes everything under it — otherwise a key would
+// outlive the environment it reads, which is a token nobody thinks to revoke.
+func TestDeletingAWorkspaceTakesTheTreeWithIt(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	space, err := store.SaveWorkspace(model.Workspace{Name: "pack"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envs := mustEnvs(t, store, space.ID)
+	if _, err := store.SaveSecret(model.Secret{EnvID: envs[0].ID, Key: "TOKEN", Value: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	minted, err := store.CreateAPIKey(model.APIKey{EnvID: envs[0].ID, Name: "pack app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if minted.Workspace != "pack" {
+		t.Fatalf("the key does not name its workspace: %+v", minted)
+	}
+
+	if err := store.DeleteWorkspace(space.ID); err != nil {
+		t.Fatal(err)
+	}
+	if left := mustEnvs(t, store, space.ID); len(left) != 0 {
+		t.Fatalf("environments outlived the workspace: %+v", left)
+	}
+	if left, err := store.Secrets(envs[0].ID); err != nil || len(left) != 0 {
+		t.Fatalf("secrets outlived the workspace: %+v %v", left, err)
+	}
+	keys, err := store.APIKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		if key.ID == minted.ID {
+			t.Fatalf("a key outlived its workspace: %+v", key)
 		}
 	}
 }
@@ -67,11 +196,7 @@ func TestSecretRoundTripsAndCounts(t *testing.T) {
 		t.Fatalf("after the second write: %+v", secrets)
 	}
 
-	envs, err := store.Envs()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, env := range envs {
+	for _, env := range mustEnvs(t, store, workspaceID(t, store)) {
 		if env.ID != production {
 			continue
 		}
@@ -172,7 +297,7 @@ func TestAPIKeyIsShownOnceAndScopedToOneEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(minted.Token, "gsk_staging_") {
+	if !strings.HasPrefix(minted.Token, "gsk_default_staging_") {
 		t.Fatalf("minted %q", minted.Token)
 	}
 	if minted.Prefix == "" || strings.Contains(minted.Token[len(minted.Prefix):], minted.Prefix) {
@@ -210,14 +335,14 @@ func TestDeletingAnEnvironmentTakesItsSecretsAndKeys(t *testing.T) {
 	store := NewStore(100)
 	t.Cleanup(func() { store.Close() })
 
-	env, err := store.SaveEnv(model.Env{Name: "  preview  "})
+	env, err := store.SaveEnv(model.Env{WorkspaceID: workspaceID(t, store), Name: "  preview  "})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if env.Name != "preview" {
 		t.Fatalf("stored %q", env.Name)
 	}
-	if _, err := store.SaveEnv(model.Env{Name: "PREVIEW"}); err == nil {
+	if _, err := store.SaveEnv(model.Env{WorkspaceID: workspaceID(t, store), Name: "PREVIEW"}); err == nil {
 		t.Fatal("two environments differing only in case were stored")
 	}
 	if _, err := store.SaveSecret(model.Secret{EnvID: env.ID, Key: "TOKEN", Value: "x"}); err != nil {

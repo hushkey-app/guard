@@ -6,16 +6,16 @@ import (
 	"github.com/mirairoad/howl-go/core/api"
 )
 
-// List returns the environments with their counts — the page's left column,
-// and everything it needs to draw it: how many secrets are in each group, how
-// many live keys read it, and when it last changed.
+// List returns the workspaces — one per application in the VPC — with what
+// each holds.
 //
-// One query rather than a count per group, because a page that asked per group
-// would be four requests on a fresh installation and twenty on a real one.
-var List = api.Define(api.Spec[api.None, api.None, []model.Env]{
-	Name:  "Secret Environments",
+// The page's top level. Counts come down with it because "pack: 4 environments,
+// 31 secrets, 2 keys" is what somebody scanning for the application they meant
+// is reading, and asking per workspace would be one request per application.
+var List = api.Define(api.Spec[api.None, api.None, []model.Workspace]{
+	Name:  "Secret Workspaces",
 	Roles: []string{"admin"},
-	Handler: func(r *api.Request[api.None, api.None]) ([]model.Env, error) {
-		return store.Get().Envs()
+	Handler: func(r *api.Request[api.None, api.None]) ([]model.Workspace, error) {
+		return store.Get().Workspaces()
 	},
 })

@@ -18,17 +18,39 @@ import (
 	"unicode"
 )
 
-// An Env is a group of secrets — local, develop, staging, production, or
-// whatever else somebody needs.
+// A Workspace is one application: pack, hushkey, auth — whatever runs in the
+// VPC and needs configuration.
 //
-// A name and nothing else, on purpose. There is no project table and no
-// hierarchy: an installation that later wants one app's production separate
-// from another's makes two groups and names them, which is the same thing
-// without a schema that has to be migrated when the shape of the org changes.
-type Env struct {
+// Two levels rather than one, because a flat list of environments is fine for
+// one application and unreadable for eight: "hushkey-production" beside
+// "auth-production" beside "pack-production" is a naming convention doing a
+// schema's job, and the first person to type "hushkey_production" breaks it.
+// A workspace owns its environments, so one application can have a preview
+// stage that the others do not.
+type Workspace struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 	Note string `json:"note,omitempty"`
+	// Envs, Secrets and Keys are what it holds, counted for the picker: an
+	// application nobody has configured yet should say so before it is opened.
+	Envs      int       `json:"envs"`
+	Secrets   int       `json:"secrets"`
+	Keys      int       `json:"keys"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
+func (w Workspace) Validate() error {
+	return validName(w.Name, "workspace", 40)
+}
+
+// An Env is a stage of one workspace — local, develop, staging, production, or
+// whatever else that application needs.
+type Env struct {
+	ID          int64  `json:"id"`
+	WorkspaceID int64  `json:"workspace_id"`
+	Workspace   string `json:"workspace,omitempty"`
+	Name        string `json:"name"`
+	Note        string `json:"note,omitempty"`
 	// Secrets is how many are in it. Cheap to count and the first thing
 	// anybody wants to know about a group they have not opened.
 	Secrets   int       `json:"secrets"`
@@ -40,23 +62,38 @@ type Env struct {
 	Revision int64 `json:"revision,omitempty"`
 }
 
-// DefaultEnvs are the four groups a new installation starts with. Named rather
-// than left empty because "local, develop, staging, production" is what almost
-// everybody was going to type, and a page that opens on an empty list has to
-// be understood before it can be used.
+// DefaultEnvs are the four stages every new workspace starts with. Seeded
+// rather than left empty because "local, develop, staging, production" is what
+// almost everybody was going to type, and adding an application should not be
+// four more presses before it can hold anything.
 var DefaultEnvs = []string{"local", "develop", "staging", "production"}
 
+// DefaultWorkspace is where an installation's environments live until somebody
+// names an application. It is also where the ones from before workspaces
+// existed are put on upgrade, rather than being guessed at.
+const DefaultWorkspace = "default"
+
 func (e Env) Validate() error {
-	name := strings.TrimSpace(e.Name)
-	if name == "" {
-		return errors.New("an environment needs a name")
+	if e.WorkspaceID == 0 {
+		return errors.New("an environment belongs to one workspace")
 	}
-	if len(name) > 40 {
-		return errors.New("an environment name must be 40 characters or fewer")
+	return validName(e.Name, "environment", 40)
+}
+
+// validName holds workspace and environment names to what can appear in a
+// token, a URL and a log line without quoting — they are identifiers people
+// type, not prose.
+func validName(name, kind string, limit int) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("a %s needs a name", kind)
+	}
+	if len(name) > limit {
+		return fmt.Errorf("a %s name must be %d characters or fewer", kind, limit)
 	}
 	for _, r := range name {
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_' && r != '.' {
-			return fmt.Errorf("an environment name is letters, digits, dashes, underscores and dots — %q is not", name)
+			return fmt.Errorf("a %s name is letters, digits, dashes, underscores and dots — %q is not", kind, name)
 		}
 	}
 	return nil
@@ -126,7 +163,11 @@ type APIKey struct {
 	ID      int64  `json:"id"`
 	EnvID   int64  `json:"env_id"`
 	EnvName string `json:"env_name,omitempty"`
-	Name    string `json:"name"`
+	// Workspace is which application's environment this reads. Carried on the
+	// key rather than looked up beside it, because a list of twenty tokens
+	// where three are called "production" is a list nobody dares revoke from.
+	Workspace string `json:"workspace,omitempty"`
+	Name      string `json:"name"`
 	// Prefix is the readable head of the token — enough to tell two keys apart
 	// in a list and in a log line, and not enough to be one.
 	Prefix string `json:"prefix"`
