@@ -49,6 +49,14 @@ type Filter struct {
 	Severity string    `query:"severity"`
 	Name     string    `query:"name"`
 	Query    string    `query:"q"`
+	// Nodes narrows to the machines these cluster nodes cover — comma-separated
+	// ids, because more than one is the useful case: "everything on the two
+	// web boxes" is a question, and "everything on exactly one" usually is not.
+	//
+	// A list of ids rather than a list of services, so that the filter follows
+	// the cluster as its membership changes. Pin a new service to a machine and
+	// a saved "node 3" filter includes it without being edited.
+	Nodes string `query:"nodes"`
 	From     time.Time `query:"from"`
 	To       time.Time `query:"to"`
 	Limit    int       `query:"limit"`
@@ -63,6 +71,12 @@ type Instance struct {
 	Errors   int       `json:"errors"`
 	Spans    int       `json:"spans"`
 	Metrics  int       `json:"metrics"`
+	// NodeID and Placement are filled in only by ClusterTopology: which machine
+	// this instance was filed under, and whether that was worked out from its
+	// telemetry ("host") or stated by a person ("assigned"). Empty everywhere
+	// else, because everywhere else the question has not been asked.
+	NodeID    int64  `json:"node_id,omitempty"`
+	Placement string `json:"placement,omitempty"`
 }
 
 type Summary struct {

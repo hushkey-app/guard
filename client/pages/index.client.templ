@@ -5,8 +5,9 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/button"
 	"github.com/axadrn/shadcn-templ/v2/components/card"
 	"github.com/axadrn/shadcn-templ/v2/components/table"
-	"github.com/mirairoad/guard/client/lifecycle"
-	"github.com/mirairoad/guard/client/ui"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
 )
 
 templ Head() {
@@ -18,7 +19,7 @@ templ Page() {
 	<section class="space-y-8">
 		<div class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
 			<div>
-				<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Pack status</p>
+				<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Status</p>
 				<h1 class="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Everything in sight.</h1>
 				<p class="mt-2 max-w-2xl text-muted-foreground">Logs, traces, and metrics from every service—one small receiver, no sprawling stack.</p>
 			</div>
@@ -26,18 +27,29 @@ templ Page() {
 				Inspect live logs →
 			}
 		</div>
-		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+			@ui.Stat("Cluster", "cluster", "—", "machines reachable")
 			@ui.Stat("Instances", "instances", "—", "active identities")
 			@ui.Stat("Logs", "logs", "—", "retained records")
 			@ui.Stat("Errors", "errors", "—", "need attention")
 			@ui.Stat("Spans", "spans", "—", "trace activity")
 			@ui.Stat("Metrics", "metrics", "—", "data points")
 		</div>
+		// What runs where. An instance is discovered from telemetry and a node
+		// is declared, and the two are joined on the hosts the telemetry names —
+		// so a machine that stops reporting keeps its place here and goes red,
+		// instead of quietly vanishing from a flat list.
+		@components.Topology()
+		@components.TopologyGroup()
+		@components.TopologyInstance()
 		<div class="grid gap-6 xl:grid-cols-[1fr_1.6fr]">
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
 						Instances
+					}
+					@card.Description() {
+						Every identity that has reported, placed or not
 					}
 					@card.Action() {
 						@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {

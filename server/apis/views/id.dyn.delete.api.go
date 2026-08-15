@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/mirairoad/guard/server/apis/store"
+	"github.com/hushkey-app/guard/server/apis/store"
 	"github.com/mirairoad/howl-go/core/api"
 )
 

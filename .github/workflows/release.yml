@@ -1,0 +1,87 @@
+# Build the two binaries on a tag and publish them as a release.
+#
+# The box downloads what CI built rather than building its own: every host then
+# runs identical bytes, a bad update is diagnosable, and nothing but the two
+# files ever reaches production. Public repo, so the artifacts are a plain
+# HTTPS download with no credential, and the minutes and the hosting are free.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # Buildable by hand, for the release you want to cut without tagging first.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "version to build and publish, e.g. v0.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: guard
+
+      # guard's go.mod still has `replace github.com/mirairoad/howl-go =>
+      # ../howl-go`, and the published v0.1.0 of the framework predates the
+      # packages guard imports — so the replace is load-bearing rather than
+      # stale, and CI resolves it by checking the framework out beside guard.
+      #
+      # Pinned to a ref rather than tracking main: the same guard tag must build
+      # the same bytes next month. When howl-go publishes a tag with core/api in
+      # it, delete this step and the replace together.
+      - uses: actions/checkout@v4
+        with:
+          repository: mirairoad/howl-go
+          ref: main
+          path: howl-go
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: guard/go.mod
+          cache-dependency-path: guard/go.sum
+
+      - name: Work out the version
+        id: version
+        run: echo "value=${{ github.event.inputs.version || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      # The generated artifacts — templ, the route tables, the wasm bundle and
+      # the stylesheet — are committed and embedded, so this needs Go and
+      # nothing else. No templ, no Node, no wasm step.
+      - name: Build
+        working-directory: guard
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -eu
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            for target in "guard:." "guard-vault:./cmd/vault"; do
+              name="${target%%:*}"
+              pkg="${target#*:}"
+              CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+                -trimpath \
+                -ldflags "-s -w -X github.com/hushkey-app/guard/internal/build.Version=$VERSION" \
+                -o "dist/$name-linux-$arch" "$pkg"
+            done
+          done
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      # Pure Go, so the whole matrix cross-compiles on one runner and the
+      # architectures cannot drift apart in the way two parallel jobs can.
+      - name: Publish
+        working-directory: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -eu
+          gh release create "$VERSION" dist/* \
+            --title "$VERSION" \
+            --generate-notes \
+            || gh release upload "$VERSION" dist/* --clobber

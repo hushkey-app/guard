@@ -1,0 +1,18 @@
+[Unit]
+Description=guard — telemetry, cluster and the secrets dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/guard -db /var/lib/guard/guard.db
+User=guard
+Restart=always
+RestartSec=2
+# It writes the database, its WAL and the key file beside them.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/guard
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

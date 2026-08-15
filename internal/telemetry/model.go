@@ -16,7 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/secrets"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 
 	_ "modernc.org/sqlite"
 )
@@ -42,6 +43,10 @@ type Store struct {
 	lifecycle  sync.RWMutex
 	closing    bool
 	lastPurge  atomic.Int64
+	topology   topologyCache
+	// secrets seals the SSH passwords. One keeper for the store, because the
+	// key belongs to the database file rather than to any row in it.
+	secrets *secrets.Keeper
 }
 
 type writeRequest struct {
@@ -116,6 +121,13 @@ func open(dsn, displayPath string, defaults Settings, memory bool) (*Store, erro
 		writeDelay = 5 * time.Millisecond
 	}
 	store := &Store{db: db, path: displayPath, writeCh: make(chan writeRequest, 256), stopWriter: make(chan struct{}), writerDone: make(chan struct{}), writeDelay: writeDelay}
+	// A memory store's secrets end with the process either way, so it never
+	// writes a key file next to a database that does not exist on disk.
+	if memory {
+		store.secrets = secrets.Ephemeral()
+	} else {
+		store.secrets = secrets.Open(displayPath)
+	}
 	if err := store.migrate(defaults); err != nil {
 		db.Close()
 		return nil, err
@@ -189,6 +201,40 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	// against. Separate because it has to inspect the table it is altering —
 	// SQLite has no ADD COLUMN IF NOT EXISTS.
 	if err := migrateViews(s.db); err != nil {
+		return err
+	}
+	// The cluster: machines guard watches from the outside, rather than ones
+	// that talk to it.
+	if err := migrateCluster(s.db); err != nil {
+		return err
+	}
+	// What those machines say about themselves, sampled over SSH.
+	if err := migrateHostStats(s.db); err != nil {
+		return err
+	}
+	// The cloud accounts: stored keys that unlock registries, instances and
+	// object storage.
+	if err := migrateProviders(s.db); err != nil {
+		return err
+	}
+	// Where events go, and the rules that send them there.
+	if err := migrateNotify(s.db); err != nil {
+		return err
+	}
+	// Who may look at any of it, when guard has been given OAuth credentials:
+	// the sessions it has issued and the sign-ins in flight.
+	if err := migrateAuth(s.db); err != nil {
+		return err
+	}
+	// And who those sessions may belong to: the members list is the allowlist.
+	if err := migrateMembers(s.db); err != nil {
+		return err
+	}
+	// The secrets an application is given at boot, and the keys that read them.
+	// Guard owns this schema even though a second binary serves it — one
+	// migration, in the process that has the dashboard people change things
+	// from.
+	if err := migrateVault(s.db); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO settings(id, retention_hours, max_events) VALUES(1, ?, ?)`, defaults.RetentionHours, defaults.MaxEvents); err != nil {
@@ -313,6 +359,7 @@ signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,
 			if e.Service == "" {
 				e.Service = "unknown-service"
 			}
+			e.Message = stripANSI(e.Message)
 			// A nil map marshals to the JSON scalar `null`, not to an object,
 			// and every query that walks the attributes has to special-case it
 			// from then on. An event with no attributes has an empty set of
@@ -386,7 +433,10 @@ func (s *Store) Query(f Filter) ([]Event, error) {
 	if f.Offset < 0 {
 		f.Offset = 0
 	}
-	where, args := filterSQL(f)
+	where, args, err := s.filterSQL(f)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json
 FROM events `+where+` ORDER BY timestamp_ns DESC, id DESC LIMIT ? OFFSET ?`, append(args, f.Limit, f.Offset)...)
 	if err != nil {
@@ -396,7 +446,74 @@ FROM events `+where+` ORDER BY timestamp_ns DESC, id DESC LIMIT ? OFFSET ?`, app
 	return scanEvents(rows)
 }
 
-func filterSQL(f Filter) (string, []any) {
+// filterSQL builds the WHERE clause for a Filter.
+//
+// A method rather than a function because of one field: Nodes names cluster
+// machines, and which services run on a machine is a question only the store
+// can answer — see clusterClause.
+func (s *Store) filterSQL(f Filter) (string, []any, error) {
+	where, args := columnFilterSQL(f)
+	clause, clusterArgs, err := s.clusterClause(f.Nodes)
+	if err != nil {
+		return "", nil, err
+	}
+	if clause == "" {
+		return where, args, nil
+	}
+	args = append(args, clusterArgs...)
+	if where == "" {
+		return "WHERE " + clause, args, nil
+	}
+	return where + " AND " + clause, args, nil
+}
+
+// clusterClause turns "nodes=1,3" into a predicate over the service and
+// instance pairs those machines are known to run.
+//
+// Resolved at query time, not stored: the point of filtering by machine rather
+// than by service is that the answer follows the cluster. Pin a new service to
+// node 3 and every "node 3" filter includes it, without anyone editing a list.
+func (s *Store) clusterClause(nodes string) (string, []any, error) {
+	wanted := map[int64]bool{}
+	for _, field := range strings.Split(nodes, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(field, 10, 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("nodes: %q is not a node id", field)
+		}
+		wanted[id] = true
+	}
+	if len(wanted) == 0 {
+		return "", nil, nil
+	}
+
+	topology, err := s.ClusterTopology()
+	if err != nil {
+		return "", nil, err
+	}
+	var clauses []string
+	var args []any
+	for _, group := range topology.Groups {
+		if group.Node == nil || !wanted[group.Node.ID] {
+			continue
+		}
+		for _, instance := range group.Instances {
+			clauses = append(clauses, "(service = ? AND instance = ?)")
+			args = append(args, instance.Service, instance.Instance)
+		}
+	}
+	if len(clauses) == 0 {
+		// The machines are real but nothing has reported from them. Matching
+		// everything would be the opposite of what was asked for.
+		return "1 = 0", nil, nil
+	}
+	return "(" + strings.Join(clauses, " OR ") + ")", args, nil
+}
+
+func columnFilterSQL(f Filter) (string, []any) {
 	var clauses []string
 	var args []any
 	add := func(clause string, value any) { clauses = append(clauses, clause); args = append(args, value) }
@@ -540,7 +657,10 @@ func (s *Store) Metrics(f Filter, groupBy string) ([]MetricSeries, error) {
 	if f.Limit <= 0 || f.Limit > 5000 {
 		f.Limit = 2000
 	}
-	where, args := filterSQL(f)
+	where, args, err := s.filterSQL(f)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(`SELECT timestamp_ns,service,instance,name,metric_value,unit,metric_type FROM events `+where+` AND metric_value IS NOT NULL ORDER BY timestamp_ns ASC LIMIT ?`, append(args, f.Limit)...)
 	if err != nil {
 		return nil, err

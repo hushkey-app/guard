@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry"
+	"github.com/hushkey-app/guard/internal/telemetry"
 	collectorlogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	collectormetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"

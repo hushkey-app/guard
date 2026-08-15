@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry"
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 func spans(t *testing.T, store *telemetry.Store) {
@@ -221,6 +221,174 @@ func TestCatalogueDescribesWhatThisBinaryCanDo(t *testing.T) {
 	}
 	if !indexed {
 		t.Error("no indexed attributes offered")
+	}
+}
+
+// The sample dashboard is one panel per visualisation, and every one of them
+// has to actually run — a sample that draws an error is worse than no sample.
+func TestSamplePanelsAllRender(t *testing.T) {
+	store, srv := server(t, "")
+	spans(t, store)
+
+	var created []model.View
+	if code := call(t, http.MethodPost, srv.URL+"/api/views/samples", nil, &created); code != http.StatusOK {
+		t.Fatalf("samples = %d", code)
+	}
+	if len(created) != len(model.Panels) {
+		t.Fatalf("created %d panels, want one per visualisation (%d)", len(created), len(model.Panels))
+	}
+	drawn := map[string]bool{}
+	for _, view := range created {
+		drawn[view.Panel] = true
+		var frame model.Frame
+		if code := call(t, http.MethodGet, srv.URL+"/api/views/data?id="+itoa(view.ID), nil, &frame); code != http.StatusOK {
+			t.Errorf("%s (%s) = %d", view.Name, view.Panel, code)
+			continue
+		}
+		if frame.Shape != model.ShapeOf(view.Panel) {
+			t.Errorf("%s: shape %q, want %q", view.Panel, frame.Shape, model.ShapeOf(view.Panel))
+		}
+	}
+	for _, spec := range model.Panels {
+		if !drawn[spec.Panel] {
+			t.Errorf("no sample for %s", spec.Panel)
+		}
+	}
+
+	// Running it twice must not double the dashboard.
+	var again []model.View
+	call(t, http.MethodPost, srv.URL+"/api/views/samples", nil, &again)
+	if len(again) != 0 {
+		t.Errorf("second run created %d more panels", len(again))
+	}
+}
+
+// Dragging a card rewrites the whole layout in one request, and the answer is
+// what was stored — so the browser can settle on that rather than trusting its
+// own optimistic shuffle.
+func TestReorderEndpoint(t *testing.T) {
+	store, srv := server(t, "secret")
+	spans(t, store)
+
+	var ids []int64
+	for _, name := range []string{"one", "two", "three"} {
+		var created model.View
+		call(t, http.MethodPost, srv.URL+"/api/views", model.View{
+			Name: name, Panel: "bar", Query: model.ViewQuery{GroupBy: "service", Agg: "count"},
+		}, &created)
+		ids = append(ids, created.ID)
+	}
+	// Creating needed the token; the helper does not send one, so this
+	// dashboard is empty and the reorder below has nothing to do — which is the
+	// point of the next assertion.
+	if code := call(t, http.MethodPut, srv.URL+"/api/views/order", contractOrder{IDs: []int64{1}}, nil); code != http.StatusUnauthorized {
+		t.Fatalf("reorder without a token = %d, want 401", code)
+	}
+
+	_, open := server(t, "")
+	ids = ids[:0]
+	for _, name := range []string{"one", "two", "three"} {
+		var created model.View
+		call(t, http.MethodPost, open.URL+"/api/views", model.View{
+			Name: name, Panel: "bar", Query: model.ViewQuery{GroupBy: "service", Agg: "count"},
+		}, &created)
+		ids = append(ids, created.ID)
+	}
+	var reordered []model.View
+	if code := call(t, http.MethodPut, open.URL+"/api/views/order", contractOrder{IDs: []int64{ids[2], ids[1], ids[0]}}, &reordered); code != http.StatusOK {
+		t.Fatalf("reorder = %d", code)
+	}
+	if len(reordered) != 3 || reordered[0].Name != "three" || reordered[2].Name != "one" {
+		t.Fatalf("order = %v", []string{reordered[0].Name, reordered[1].Name, reordered[2].Name})
+	}
+	// An empty list is a client bug, not an instruction to flatten the layout.
+	if code := call(t, http.MethodPut, open.URL+"/api/views/order", contractOrder{}, nil); code != http.StatusBadRequest {
+		t.Errorf("empty order = %d, want 400", code)
+	}
+}
+
+type contractOrder struct {
+	IDs []int64 `json:"ids"`
+}
+
+// Clicking a bar asks for the events behind it, and gets exactly those.
+func TestDrillEndpoint(t *testing.T) {
+	store, srv := server(t, "")
+	spans(t, store)
+
+	var drill model.Drill
+	code := call(t, http.MethodPost, srv.URL+"/api/views/drill", map[string]any{
+		"panel":     "bar",
+		"query":     model.ViewQuery{Signal: "traces", Range: "1h", GroupBy: "attr:http.route", Agg: "count"},
+		"selection": model.Selection{Series: "/checkout", HasSeries: true},
+	}, &drill)
+	if code != http.StatusOK {
+		t.Fatalf("drill = %d", code)
+	}
+	if drill.Total != 1 || len(drill.Events) != 1 || drill.Events[0].Name != "GET /checkout" {
+		t.Fatalf("drill = %#v", drill)
+	}
+
+	// Reading, so it needs no token even where writing does.
+	_, secured := server(t, "secret")
+	if code := call(t, http.MethodPost, secured.URL+"/api/views/drill", map[string]any{
+		"panel": "bar", "query": model.ViewQuery{GroupBy: "service", Agg: "count"}, "selection": model.Selection{},
+	}, nil); code != http.StatusOK {
+		t.Errorf("drill without a token = %d, want 200", code)
+	}
+}
+
+// Adding a node decides which URLs guard will fetch, on a timer, from inside
+// whatever network it runs in — so it is admin even though it looks like a
+// bookmark.
+func TestClusterEndpoints(t *testing.T) {
+	_, secured := server(t, "secret")
+	if code := call(t, http.MethodPost, secured.URL+"/api/cluster", model.Node{Name: "VPS-1", URL: "https://example.com/health"}, nil); code != http.StatusUnauthorized {
+		t.Fatalf("adding a node without a token = %d, want 401", code)
+	}
+
+	_, srv := server(t, "")
+	var node model.Node
+	if code := call(t, http.MethodPost, srv.URL+"/api/cluster", model.Node{Name: "VPS-1", URL: "https://example.com/health"}, &node); code != http.StatusOK {
+		t.Fatalf("add = %d", code)
+	}
+	if !node.Enabled || node.Status != model.StatusUnknown {
+		t.Fatalf("new node = %#v; it should be watched and not yet checked", node)
+	}
+
+	for _, bad := range []string{"", "not-a-url", "file:///etc/passwd"} {
+		if code := call(t, http.MethodPost, srv.URL+"/api/cluster", model.Node{Name: "x", URL: bad}, nil); code != http.StatusBadRequest {
+			t.Errorf("url %q = %d, want 400", bad, code)
+		}
+	}
+
+	node.Enabled = false
+	var paused model.Node
+	if code := call(t, http.MethodPut, srv.URL+"/api/cluster/"+itoa(node.ID), node, &paused); code != http.StatusOK || paused.Enabled {
+		t.Fatalf("pause = %d, enabled %v", code, paused.Enabled)
+	}
+
+	var listed []model.Node
+	call(t, http.MethodGet, srv.URL+"/api/cluster", nil, &listed)
+	if len(listed) != 1 {
+		t.Fatalf("listed %d nodes", len(listed))
+	}
+
+	if code := call(t, http.MethodDelete, srv.URL+"/api/cluster/"+itoa(node.ID), nil, nil); code != http.StatusNoContent {
+		t.Fatalf("delete = %d, want 204", code)
+	}
+	if code := call(t, http.MethodDelete, srv.URL+"/api/cluster/"+itoa(node.ID), nil, nil); code != http.StatusNotFound {
+		t.Fatalf("second delete = %d, want 404", code)
+	}
+}
+
+// The test server wires no prober, which is the case a running binary should
+// never be in — but an endpoint that panicked over it would take the whole API
+// down rather than the one request.
+func TestCheckNowWithoutAProber(t *testing.T) {
+	_, srv := server(t, "")
+	if code := call(t, http.MethodPost, srv.URL+"/api/cluster/check", nil, nil); code != http.StatusServiceUnavailable {
+		t.Fatalf("check with no prober = %d, want 503", code)
 	}
 }
 

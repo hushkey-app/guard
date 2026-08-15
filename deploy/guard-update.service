@@ -1,0 +1,13 @@
+[Unit]
+Description=install the guard release this box is asked for
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/guard-update
+# root, because it restarts the two services and writes into /usr/local/bin.
+# This is the reason it is a separate unit rather than something guard runs:
+# the dashboard holds every application's secrets and does not need to be the
+# thing that can also replace binaries.
+User=root

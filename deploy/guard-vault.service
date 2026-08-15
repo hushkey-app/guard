@@ -1,0 +1,23 @@
+[Unit]
+Description=guard-vault — secrets for the applications
+After=network-online.target
+Wants=network-online.target
+# Started after guard, because guard owns the schema and migrates on start. Not
+# a hard dependency: once the tables exist the vault does not need guard at all,
+# and that is the entire point of it being a second process.
+After=guard.service
+
+[Service]
+# Bind to the VPC address rather than 0.0.0.0. Nothing about this wants to be
+# on the internet.
+ExecStart=/usr/local/bin/guard-vault -db /var/lib/guard/guard.db -addr 127.0.0.1:4319
+User=guard
+Restart=always
+RestartSec=2
+ProtectSystem=strict
+ReadWritePaths=/var/lib/guard
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

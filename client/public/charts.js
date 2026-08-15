@@ -13,7 +13,7 @@
 // computed at runtime goes in an inline style, never in a class name — Tailwind
 // only emits classes it can see as literal strings.
 
-import { axisTimeText, colourFor, compact, duration, el, niceScale, palette, svg, text, withUnit } from "./core.js";
+import { axisTimeText, colourFor, compact, duration, el, niceScale, number, palette, svg, text, withUnit } from "./core.js";
 
 const WIDTH = 960;
 const HEIGHT = 320;
@@ -39,7 +39,10 @@ export function draw(host, frame, options = {}) {
     return [];
   }
   if (!frame.rows?.length) {
-    host.replaceChildren(note(options.emptyMessage || "Nothing matched this window."));
+    // The server explains empty results when it can — an empty store, a filter
+    // that matches nothing, data that is simply older than the window. Prefer
+    // its sentence to ours, which knows none of that.
+    host.replaceChildren(note(frame.notes?.join(" ") || options.emptyMessage || "Nothing matched this window."));
     return [];
   }
   return render(host, frame, options) || [];
@@ -88,6 +91,12 @@ function label(x, y, value, anchor = "middle", extra = "") {
   return node;
 }
 
+// How a frame's numbers are written on an axis: durations as durations, and
+// everything else compacted. One function so a renderer cannot forget.
+function axisFormat(frame) {
+  return frame?.unit === "ms" ? duration : compact;
+}
+
 function yAxis(area, scale, format = compact) {
   const nodes = [];
   const ticks = Math.round((scale.max - scale.min) / scale.step);
@@ -112,11 +121,105 @@ function xTimeAxis(area, minX, maxX) {
   return nodes;
 }
 
-function tooltip(node, value) {
+// ---------------------------------------------------------------------------
+// Marks: hover and click
+// ---------------------------------------------------------------------------
+//
+// Every drawn thing goes through mark(). It carries what the thing means — a
+// title, a few labelled rows — and what it stands for: either one event, or a
+// selection describing which slice of the query it summarises.
+//
+// This replaced <title> children, which are free and accessible but appear
+// after a second's delay, cannot be styled, and cannot say "217 events · click
+// to list them". The <title> stays for anything a pointer never reaches.
+
+let tip;
+
+function tooltipLayer() {
+  if (!tip) tip = document.querySelector("[data-chart-tooltip]");
+  return tip;
+}
+
+function showTip(event, datum) {
+  const layer = tooltipLayer();
+  if (!layer) return;
+  layer.querySelector("[data-tooltip-title]").textContent = datum.title || "";
+  const body = layer.querySelector("[data-tooltip-rows]");
+  body.replaceChildren(...(datum.rows || []).map(([label, value]) => {
+    const row = el("div", "flex items-baseline justify-between gap-4");
+    row.append(el("span", "text-muted-foreground", label), el("span", "font-mono tabular-nums", value));
+    return row;
+  }));
+  const hint = layer.querySelector("[data-tooltip-hint]");
+  hint.textContent = datum.hint || "";
+  hint.classList.toggle("hidden", !datum.hint);
+  layer.classList.remove("hidden");
+  moveTip(event);
+}
+
+function moveTip(event) {
+  const layer = tooltipLayer();
+  if (!layer || layer.classList.contains("hidden")) return;
+  const box = layer.getBoundingClientRect();
+  const pad = 14;
+  // Flip rather than clamp: a tooltip pinned to the edge covers the mark that
+  // opened it, which is the one thing the reader is trying to look at.
+  const x = event.clientX + pad + box.width > window.innerWidth ? event.clientX - pad - box.width : event.clientX + pad;
+  const y = event.clientY + pad + box.height > window.innerHeight ? event.clientY - pad - box.height : event.clientY + pad;
+  layer.style.transform = `translate(${Math.max(4, x)}px, ${Math.max(4, y)}px)`;
+}
+
+export function hideTip() {
+  tooltipLayer()?.classList.add("hidden");
+}
+
+// mark wires one drawn element. datum:
+//
+//	{ title, rows: [[label, value]], eventId, selection, hint }
+//
+// eventId opens that event directly — the mark is one event. selection opens
+// the list of events the mark summarises. Neither means hover only.
+function mark(node, datum, options = {}) {
+  const clickable = (datum.eventId && options.onEvent) || (datum.selection && options.onSelect);
+  if (clickable) {
+    node.classList.add("cursor-pointer");
+    node.addEventListener("click", (event) => {
+      event.stopPropagation();
+      hideTip();
+      if (datum.eventId && options.onEvent) options.onEvent(datum.eventId);
+      else options.onSelect(datum.selection, datum);
+    });
+    datum = { ...datum, hint: datum.hint ?? (datum.eventId ? "Click to open this event" : "Click to list these events") };
+  }
+  node.addEventListener("pointerenter", (event) => showTip(event, datum));
+  node.addEventListener("pointermove", moveTip);
+  node.addEventListener("pointerleave", hideTip);
+  // Kept for pointerless readers and for the accessibility tree, which the
+  // hover layer is invisible to.
   const title = svg("title");
-  title.appendChild(text(value));
+  title.appendChild(text([datum.title, ...(datum.rows || []).map(([l, v]) => `${l}: ${v}`)].filter(Boolean).join(" · ")));
   node.appendChild(title);
   return node;
+}
+
+// The width of one time bucket, read back from the buckets themselves. The
+// compiler knows it exactly; the frame does not carry it, and the difference
+// between two adjacent buckets is the same number.
+function stepOf(times) {
+  if (times.length < 2) return 0;
+  let step = Infinity;
+  for (let i = 1; i < times.length; i++) step = Math.min(step, times[i] - times[i - 1]);
+  return Number.isFinite(step) ? step : 0;
+}
+
+// A time selection covering the bucket that starts at `at`.
+function bucketSelection(at, step, series) {
+  const selection = { from: new Date(at).toISOString(), to: new Date(at + (step || 60_000)).toISOString() };
+  if (series !== undefined && series !== null) {
+    selection.series = series;
+    selection.has_series = true;
+  }
+  return selection;
 }
 
 // Series in a frame arrive as flat rows. Every time-shaped renderer wants them
@@ -144,17 +247,18 @@ function legendFor(series) {
 // Time series
 // ---------------------------------------------------------------------------
 
-function renderTimeseries(host, frame) {
+function renderTimeseries(host, frame, options = {}) {
   const series = seriesFrom(frame);
   const points = series.flatMap((item) => item.points);
   if (!points.length) return [];
   const [minX, maxX] = extent(points.map((p) => p.x));
+  const step = stepOf([...new Set(points.map((p) => p.x))].sort((a, b) => a - b));
   const scale = niceScale(...extent(points.map((p) => p.y)));
   const area = plot(host, "Time series");
   const x = (value) => (maxX === minX ? area.left + area.width / 2 : area.left + ((value - minX) / (maxX - minX)) * area.width);
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale), ...xTimeAxis(area, minX, maxX));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)), ...xTimeAxis(area, minX, maxX));
   for (const item of series) {
     if (!item.points.length) continue;
     area.root.appendChild(svg("polyline", {
@@ -166,20 +270,36 @@ function renderTimeseries(host, frame) {
       "vector-effect": "non-scaling-stroke",
       points: item.points.map((p) => `${x(p.x)},${y(p.y)}`).join(" "),
     }));
-    // Dots stop being helpful once they merge into the line.
-    if (item.points.length <= 60) {
-      for (const point of item.points) {
-        area.root.appendChild(tooltip(
-          svg("circle", { cx: x(point.x), cy: y(point.y), r: 2.5, fill: item.colour }),
-          `${item.key ? `${item.key} · ` : ""}${withUnit(point.y, frame.unit)} · ${new Date(point.x).toLocaleString()}`,
-        ));
+    for (const point of item.points) {
+      // Dots stop being helpful once they merge into the line, but the target
+      // has to stay: an invisible circle keeps every point hoverable and
+      // clickable at a size a pointer can actually hit.
+      if (item.points.length <= 60) {
+        area.root.appendChild(svg("circle", { cx: x(point.x), cy: y(point.y), r: 2.5, fill: item.colour }));
       }
+      area.root.appendChild(mark(svg("circle", { cx: x(point.x), cy: y(point.y), r: 7, fill: "transparent" }), {
+        title: item.key || "All events",
+        rows: [
+          [measureLabel(options), withUnit(point.y, frame.unit)],
+          ["at", new Date(point.x).toLocaleString()],
+        ],
+        selection: bucketSelection(point.x, step, item.key || undefined),
+      }, options));
     }
   }
   return legendFor(series);
 }
 
-function renderBarTimeseries(host, frame) {
+// What the measured number is, in the words the panel was built with. The
+// frame does not carry the query — it is a result, not a request — so this
+// reads the view the caller is drawing.
+function measureLabel(options = {}) {
+  const query = options.view?.query || {};
+  const agg = query.agg || "count";
+  return agg === "count" ? "events" : `${agg} ${fieldLabel(query.value)}`.trim();
+}
+
+function renderBarTimeseries(host, frame, options = {}) {
   const series = seriesFrom(frame);
   const buckets = [...new Set(frame.rows.map((row) => new Date(row[0]).getTime()))].sort((a, b) => a - b);
   const points = series.flatMap((item) => item.points);
@@ -190,16 +310,20 @@ function renderBarTimeseries(host, frame) {
   const barWidth = Math.max(1, (slot * 0.8) / series.length);
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale), ...xTimeAxis(area, buckets[0], buckets.at(-1)));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)), ...xTimeAxis(area, buckets[0], buckets.at(-1)));
   series.forEach((item, index) => {
     for (const point of item.points) {
       const slotIndex = buckets.indexOf(point.x);
       if (slotIndex < 0) continue;
       const x = area.left + slotIndex * slot + slot * 0.1 + index * barWidth;
-      area.root.appendChild(tooltip(svg("rect", {
+      area.root.appendChild(mark(svg("rect", {
         x, y: y(point.y), width: barWidth, height: Math.max(0, area.bottom - y(point.y)),
         fill: item.colour, rx: 1,
-      }), `${item.key ? `${item.key} · ` : ""}${withUnit(point.y, frame.unit)}`));
+      }), {
+        title: item.key || "All events",
+        rows: [[measureLabel(options), withUnit(point.y, frame.unit)], ["at", new Date(point.x).toLocaleString()]],
+        selection: bucketSelection(point.x, stepOf(buckets), item.key || undefined),
+      }, options));
     }
   });
   return legendFor(series);
@@ -209,11 +333,12 @@ function renderBarTimeseries(host, frame) {
 // a single block. Merging is the point: twelve identical adjacent buckets are
 // one state that lasted twelve buckets, and drawing them separately hides
 // exactly the transition you opened the panel to find.
-function renderStateTimeline(host, frame) {
+function renderStateTimeline(host, frame, options = {}) {
   const series = seriesFrom(frame);
   const points = series.flatMap((item) => item.points);
   if (!points.length) return [];
   const [minX, maxX] = extent(points.map((p) => p.x));
+  const step = stepOf([...new Set(points.map((p) => p.x))].sort((a, b) => a - b));
   const area = plot(host, "State timeline");
   const laneHeight = Math.min(34, area.height / Math.max(series.length, 1));
   const x = (value) => (maxX === minX ? area.left : area.left + ((value - minX) / (maxX - minX)) * area.width);
@@ -222,21 +347,35 @@ function renderStateTimeline(host, frame) {
     const top = area.top + index * laneHeight;
     area.root.appendChild(label(area.left - 8, top + laneHeight / 2 + 4, truncate(item.key || "all", 14), "end"));
     let run = null;
-    const flush = (endX) => {
+    const flush = (endX, endAt) => {
       if (!run) return;
       const left = x(run.from);
-      area.root.appendChild(tooltip(svg("rect", {
+      area.root.appendChild(mark(svg("rect", {
         x: left, y: top + 3, width: Math.max(2, endX - left), height: laneHeight - 6,
         fill: colourFor(String(run.value)), rx: 3, opacity: 0.85,
-      }), `${item.key ? `${item.key} · ` : ""}${withUnit(run.value, frame.unit)} from ${new Date(run.from).toLocaleString()}`));
+      }), {
+        title: item.key || "All events",
+        rows: [
+          [measureLabel(options), withUnit(run.value, frame.unit)],
+          ["from", new Date(run.from).toLocaleString()],
+          ["until", new Date(endAt).toLocaleTimeString()],
+        ],
+        // A run is many buckets that read the same, so its selection is the
+        // whole run rather than the bucket the pointer happened to be over.
+        selection: {
+          from: new Date(run.from).toISOString(),
+          to: new Date(endAt).toISOString(),
+          ...(item.key ? { series: item.key, has_series: true } : {}),
+        },
+      }, options));
       run = null;
     };
     for (const point of item.points) {
       if (run && run.value === point.y) continue;
-      flush(x(point.x));
+      flush(x(point.x), point.x);
       run = { value: point.y, from: point.x };
     }
-    flush(area.right);
+    flush(area.right, maxX + (step || 60_000));
   });
   area.root.append(...xTimeAxis(area, minX, maxX));
   return [];
@@ -245,7 +384,7 @@ function renderStateTimeline(host, frame) {
 // Status history keeps every bucket as its own block — the opposite choice from
 // the state timeline, and the right one for a periodic check, where "reported
 // twelve times" and "reported once and stayed" are different facts.
-function renderStatusHistory(host, frame) {
+function renderStatusHistory(host, frame, options = {}) {
   const series = seriesFrom(frame);
   const buckets = [...new Set(frame.rows.map((row) => new Date(row[0]).getTime()))].sort((a, b) => a - b);
   if (!series.length || !buckets.length) return [];
@@ -261,12 +400,16 @@ function renderStatusHistory(host, frame) {
     for (const point of item.points) {
       const slotIndex = buckets.indexOf(point.x);
       if (slotIndex < 0) continue;
-      area.root.appendChild(tooltip(svg("rect", {
+      area.root.appendChild(mark(svg("rect", {
         x: area.left + slotIndex * slot + 1, y: top + 3,
         width: Math.max(2, slot - 2), height: laneHeight - 6,
         fill: item.colour, rx: 2,
         opacity: high === low ? 0.85 : 0.35 + 0.6 * ((point.y - low) / (high - low)),
-      }), `${item.key ? `${item.key} · ` : ""}${withUnit(point.y, frame.unit)} · ${new Date(point.x).toLocaleString()}`));
+      }), {
+        title: item.key || "All events",
+        rows: [[measureLabel(options), withUnit(point.y, frame.unit)], ["at", new Date(point.x).toLocaleString()]],
+        selection: bucketSelection(point.x, stepOf(buckets), item.key || undefined),
+      }, options));
     }
   });
   area.root.append(...xTimeAxis(area, buckets[0], buckets.at(-1)));
@@ -280,9 +423,10 @@ function renderStatusHistory(host, frame) {
 // Horizontal, because the labels are route templates and service names. A
 // vertical bar chart of "/api/v1/publishers/{id}/properties" is a chart of
 // rotated text with some bars behind it.
-function renderBar(host, frame) {
+function renderBar(host, frame, options = {}) {
   const rows = frame.rows;
   const max = Math.max(...rows.map((row) => row[1]), 0) || 1;
+  const total = rows.reduce((sum, row) => sum + row[1], 0) || 1;
   const area = plot(host, "Bar chart");
   const rowHeight = Math.min(30, (area.height + PAD.bottom) / rows.length);
   const labelWidth = 150;
@@ -291,16 +435,26 @@ function renderBar(host, frame) {
     const top = area.top + index * rowHeight;
     const width = Math.max(2, ((value / max) * (area.width + PAD.left - labelWidth)));
     area.root.appendChild(label(labelWidth - 8, top + rowHeight / 2 + 4, truncate(String(category), 22), "end"));
-    area.root.appendChild(tooltip(svg("rect", {
+    // The hit area is the whole row, not just the drawn bar: a category with
+    // two events has a bar four pixels wide, and that is exactly the row
+    // someone wants to click.
+    area.root.appendChild(mark(svg("rect", {
+      x: labelWidth, y: top, width: area.right - labelWidth, height: rowHeight, fill: "transparent",
+    }), {
+      title: String(category),
+      rows: [[measureLabel(options), withUnit(value, frame.unit)], ["share", `${((value / total) * 100).toFixed(1)}%`]],
+      selection: { series: String(category), has_series: true },
+    }, options));
+    area.root.appendChild(svg("rect", {
       x: labelWidth, y: top + 3, width, height: Math.max(4, rowHeight - 8),
-      fill: colourFor(String(category), index), rx: 3,
-    }), `${category} · ${withUnit(value, frame.unit)}`));
+      fill: colourFor(String(category), index), rx: 3, "pointer-events": "none",
+    }));
     area.root.appendChild(label(labelWidth + width + 6, top + rowHeight / 2 + 4, withUnit(value, frame.unit), "start", "fill-foreground"));
   });
   return [];
 }
 
-function renderPie(host, frame) {
+function renderPie(host, frame, options = {}) {
   const rows = frame.rows;
   const total = rows.reduce((sum, row) => sum + row[1], 0);
   if (!total) return [];
@@ -315,12 +469,16 @@ function renderPie(host, frame) {
   rows.forEach(([category, value], index) => {
     const sweep = (value / total) * Math.PI * 2;
     const colour = colourFor(String(category), index);
-    root.appendChild(tooltip(svg("path", {
+    root.appendChild(mark(svg("path", {
       d: arc(centre, centre, inner, outer, angle, angle + sweep),
       fill: colour,
       class: "stroke-card",
       "stroke-width": 2,
-    }), `${category} · ${withUnit(value, frame.unit)} · ${((value / total) * 100).toFixed(1)}%`));
+    }), {
+      title: String(category),
+      rows: [[measureLabel(options), withUnit(value, frame.unit)], ["share", `${((value / total) * 100).toFixed(1)}%`]],
+      selection: { series: String(category), has_series: true },
+    }, options));
     angle += sweep;
   });
 
@@ -349,35 +507,44 @@ function arc(cx, cy, inner, outer, from, to) {
 // Distribution
 // ---------------------------------------------------------------------------
 
-function renderHistogram(host, frame) {
+function renderHistogram(host, frame, options = {}) {
   const rows = frame.rows;
   const counts = rows.map((row) => row[2]);
+  const total = counts.reduce((sum, count) => sum + count, 0) || 1;
   const scale = niceScale(0, Math.max(...counts, 1));
   const area = plot(host, "Histogram");
   const slot = area.width / rows.length;
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)));
   rows.forEach(([start, end, count], index) => {
     const x = area.left + index * slot;
-    area.root.appendChild(tooltip(svg("rect", {
+    area.root.appendChild(svg("rect", {
       x: x + 1, y: y(count), width: Math.max(1, slot - 2), height: Math.max(0, area.bottom - y(count)),
-      fill: palette[1], rx: 2, opacity: count ? 0.9 : 0.25,
-    }), `${compact(start)}–${compact(end)}${frame.unit ? ` ${frame.unit}` : ""} · ${count} events`));
+      fill: palette[1], rx: 2, opacity: count ? 0.9 : 0.25, "pointer-events": "none",
+    }));
+    // Full-height target: a bucket holding three events is two pixels tall.
+    area.root.appendChild(mark(svg("rect", {
+      x: x + 1, y: area.top, width: Math.max(1, slot - 2), height: area.height, fill: "transparent",
+    }), {
+      title: `${withUnit(start, frame.unit)} – ${withUnit(end, frame.unit)}`,
+      rows: [["events", number.format(count)], ["of total", `${((count / total) * 100).toFixed(1)}%`]],
+      selection: count ? { min: start, max: end } : null,
+    }, options));
     // Label every few bars, or the axis becomes a smear.
     if (index % Math.ceil(rows.length / 6) === 0) {
       area.root.appendChild(label(x + slot / 2, area.bottom + 18, compact(start)));
     }
   });
   const last = rows.at(-1);
-  area.root.appendChild(label(area.right, area.bottom + 18, `${compact(last[1])}${frame.unit ? ` ${frame.unit}` : ""}`, "end"));
+  area.root.appendChild(label(area.right, area.bottom + 18, withUnit(last[1], frame.unit), "end"));
   return [];
 }
 
 // The latency heatmap: time across, value buckets up, colour by how many events
 // landed in each cell. It is the panel that shows a slow tail as a band that
 // was always there rather than as an average that moved a little.
-function renderHeatmap(host, frame) {
+function renderHeatmap(host, frame, options = {}) {
   const times = [...new Set(frame.rows.map((row) => new Date(row[0]).getTime()))].sort((a, b) => a - b);
   const bands = [...new Set(frame.rows.map((row) => row[1]))].sort((a, b) => a - b);
   if (!times.length || !bands.length) return [];
@@ -391,7 +558,7 @@ function renderHeatmap(host, frame) {
     const column = times.indexOf(new Date(time).getTime());
     const row = bands.indexOf(start);
     if (column < 0 || row < 0) continue;
-    area.root.appendChild(tooltip(svg("rect", {
+    area.root.appendChild(mark(svg("rect", {
       x: area.left + column * cellWidth,
       y: area.bottom - (row + 1) * cellHeight,
       width: Math.max(1, cellWidth),
@@ -401,7 +568,11 @@ function renderHeatmap(host, frame) {
       // the square root keeps a cell with three events visible next to one
       // with three hundred.
       opacity: 0.12 + 0.88 * Math.sqrt(count / max),
-    }), `${compact(start)}–${compact(end)}${frame.unit ? ` ${frame.unit}` : ""} · ${count} events · ${new Date(time).toLocaleString()}`));
+    }), {
+      title: `${withUnit(start, frame.unit)} – ${withUnit(end, frame.unit)}`,
+      rows: [["events", number.format(count)], ["at", new Date(time).toLocaleString()]],
+      selection: { ...bucketSelection(new Date(time).getTime(), stepOf(times)), min: start, max: end },
+    }, options));
   }
   const step = Math.ceil(bands.length / 5);
   bands.forEach((start, index) => {
@@ -432,7 +603,7 @@ function renderScatter(host, frame, options = {}, connect = false) {
   const x = (value) => (maxX === minX ? area.left + area.width / 2 : area.left + ((value - minX) / (maxX - minX)) * area.width);
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)));
   if (timeAxis) {
     area.root.append(...xTimeAxis(area, minX, maxX));
   } else {
@@ -453,15 +624,19 @@ function renderScatter(host, frame, options = {}, connect = false) {
     }
   }
   for (const point of points) {
-    const dot = svg("circle", {
-      cx: x(point.x), cy: y(point.y), r: 3,
+    // One dot is one event, so it opens that event rather than a list of them.
+    area.root.appendChild(mark(svg("circle", {
+      cx: x(point.x), cy: y(point.y), r: 3.5,
       fill: colourFor(point.label, labels.indexOf(point.label)),
       opacity: 0.75,
-      class: options.onPoint ? "cursor-pointer" : "",
-    });
-    tooltip(dot, `${point.label ? `${point.label} · ` : ""}${withUnit(point.y, frame.unit)} · ${timeAxis ? new Date(point.x).toLocaleString() : compact(point.x)}`);
-    if (options.onPoint && point.id) dot.addEventListener("click", () => options.onPoint(point.id));
-    area.root.appendChild(dot);
+    }), {
+      title: point.label || "Event",
+      rows: [
+        [fieldLabel(options.view?.query?.value) || "value", withUnit(point.y, frame.unit)],
+        [timeAxis ? "at" : fieldLabel(options.view?.query?.x) || "x", timeAxis ? new Date(point.x).toLocaleString() : compact(point.x)],
+      ],
+      eventId: point.id,
+    }, options));
   }
   return labels.filter(Boolean).map((key, index) => ({ colour: colourFor(key, index), label: key }));
 }
@@ -474,7 +649,7 @@ function renderScatter(host, frame, options = {}, connect = false) {
 // columns mean — open/high/low/close against min/p25/p75/max. Drawing them from
 // one function keeps that relationship visible instead of duplicating the axis
 // code twice and letting the two drift.
-function renderOHLC(host, frame, options, box) {
+function renderOHLC(host, frame, options = {}, box) {
   const rows = frame.rows.filter((row) => row.slice(1).every((value) => Number.isFinite(value)));
   if (!rows.length) return [];
   const values = rows.flatMap((row) => row.slice(1));
@@ -485,7 +660,7 @@ function renderOHLC(host, frame, options, box) {
   const bodyWidth = Math.max(2, Math.min(26, slot * 0.6));
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale), ...xTimeAxis(area, times[0], times.at(-1)));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)), ...xTimeAxis(area, times[0], times.at(-1)));
   rows.forEach(([time, a, b, c, d], index) => {
     const centre = area.left + index * slot + slot / 2;
     const [low, high] = box ? [a, d] : [c, b];
@@ -498,7 +673,7 @@ function renderOHLC(host, frame, options, box) {
       x1: centre, x2: centre, y1: y(high), y2: y(low),
       stroke: colour, "stroke-width": 1.5, "vector-effect": "non-scaling-stroke",
     }));
-    const body = svg("rect", {
+    area.root.appendChild(svg("rect", {
       x: centre - bodyWidth / 2,
       y: y(bodyHigh),
       width: bodyWidth,
@@ -507,11 +682,18 @@ function renderOHLC(host, frame, options, box) {
       opacity: box ? 0.45 : 0.9,
       stroke: colour,
       rx: 1,
-    });
-    tooltip(body, box
-      ? `min ${compact(a)} · p25 ${compact(b)} · p75 ${compact(c)} · max ${compact(d)} · ${new Date(time).toLocaleString()}`
-      : `open ${compact(a)} · high ${compact(b)} · low ${compact(c)} · close ${compact(d)} · ${new Date(time).toLocaleString()}`);
-    area.root.appendChild(body);
+      "pointer-events": "none",
+    }));
+    const unit = frame.unit;
+    area.root.appendChild(mark(svg("rect", {
+      x: centre - slot / 2, y: area.top, width: slot, height: area.height, fill: "transparent",
+    }), {
+      title: new Date(time).toLocaleString(),
+      rows: box
+        ? [["minimum", withUnit(a, unit)], ["p25", withUnit(b, unit)], ["p75", withUnit(c, unit)], ["maximum", withUnit(d, unit)]]
+        : [["open", withUnit(a, unit)], ["high", withUnit(b, unit)], ["low", withUnit(c, unit)], ["close", withUnit(d, unit)]],
+      selection: bucketSelection(new Date(time).getTime(), stepOf(times)),
+    }, options));
   });
   return [];
 }
@@ -522,12 +704,13 @@ function renderOHLC(host, frame, options, box) {
 
 // The single-value panels are markup, not drawings — the templates in
 // client/ui/components own their layout, and this only fills the slots.
-export function fillSingle(body, frame, view = {}) {
+export function fillSingle(body, frame, options = {}) {
+  const view = options.view || {};
   const [value, previous] = frame.rows[0] ?? [0, null];
   const query = view.query || {};
   const unit = frame.unit;
   const valueNode = body.querySelector("[data-stat-value]");
-  if (valueNode) valueNode.textContent = unit === "ms" ? duration(value) : withUnit(value, unit);
+  if (valueNode) valueNode.textContent = withUnit(value, unit);
 
   // The caption says what the number is being read against — not what the
   // number is. The panel subtitle already says that, and repeating it here
@@ -594,6 +777,15 @@ export function fillSingle(body, frame, view = {}) {
       arcNode.setAttribute("stroke-dashoffset", String(length * (1 - fraction)));
       arcNode.setAttribute("stroke", colour);
     }
+  }
+
+  // A single number summarises the whole window, so clicking it lists the
+  // whole window. There is no smaller slice to offer.
+  if (options.onSelect) {
+    const target = valueNode || body;
+    target.classList.add("cursor-pointer", "hover:text-primary");
+    target.title = "Click to list these events";
+    target.onclick = () => options.onSelect({}, { title: view.name || "Events" });
   }
   return [];
 }
@@ -663,12 +855,30 @@ export function drawWaterfall(host, trace, options = {}) {
     bar.style.width = `${Math.max(0.6, Math.min(100, (span.duration_ms / total) * 100))}%`;
     bar.style.background = errored ? "var(--destructive)" : colour;
     bar.style.opacity = span.orphan ? "0.5" : "0.9";
-    row.title = `${span.name} · ${span.service} · ${duration(span.duration_ms)} · starts +${duration(span.offset_ms)}`;
 
-    if (options.onSpan && span.id) {
+    const datum = {
+      title: span.name || "unnamed span",
+      rows: [
+        ["service", span.service],
+        ["took", duration(span.duration_ms)],
+        ["starts at", `+${duration(span.offset_ms)}`],
+        ...(span.kind ? [["kind", span.kind]] : []),
+        ...(span.orphan ? [["parent", "not in this trace"]] : []),
+      ],
+      eventId: span.id,
+    };
+    const open = options.onEvent || options.onSpan;
+    if (open && span.id) {
       row.classList.add("cursor-pointer");
-      row.addEventListener("click", () => options.onSpan(span.id));
+      row.addEventListener("click", () => {
+        hideTip();
+        open(span.id);
+      });
+      datum.hint = "Click to open this span";
     }
+    row.addEventListener("pointerenter", (event) => showTip(event, datum));
+    row.addEventListener("pointermove", moveTip);
+    row.addEventListener("pointerleave", hideTip);
     return row;
   }));
 }
@@ -707,9 +917,9 @@ const renderers = {
   trend: (host, frame, options) => renderScatter(host, frame, options, true),
   candlestick: (host, frame, options) => renderOHLC(host, frame, options, false),
   box: (host, frame, options) => renderOHLC(host, frame, options, true),
-  stat: (host, frame, options) => fillSingle(host, frame, options.view),
-  gauge: (host, frame, options) => fillSingle(host, frame, options.view),
-  bar_gauge: (host, frame, options) => fillSingle(host, frame, options.view),
+  stat: fillSingle,
+  gauge: fillSingle,
+  bar_gauge: fillSingle,
   waterfall: renderWaterfallPanel,
 };
 

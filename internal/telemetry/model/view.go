@@ -35,6 +35,215 @@ type View struct {
 	Width     int       `json:"width"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Alert is the panel watching itself: the same query, run on a timer, with
+	// a line drawn across it. Optional, and on the view rather than in a table
+	// of its own because it is one rule about one panel — "tell me when this
+	// chart goes bad" is the chart's question, and a separate rules page would
+	// make somebody describe the query twice.
+	Alert *ViewAlert `json:"alert,omitempty"`
+}
+
+// ViewAlert is "tell me when this panel's number crosses a line".
+//
+// It watches the *latest* value the panel would draw, which is the number a
+// person looking at the panel would read: the last bucket of a time series, the
+// value of a stat, the largest category, the worst dot on a scatter. Where a
+// query splits into series, the worst one decides — the highest for an "above"
+// rule, the lowest for a "below" one — and the event names which series it was.
+// Watching the average across series would be the number that hides exactly the
+// outage worth alerting on.
+type ViewAlert struct {
+	Enabled bool `json:"enabled"`
+	// Op and Threshold are the line, in the panel's own unit — a latency rule
+	// is typed in milliseconds because that is what the chart is drawn in, and
+	// a threshold in different units from the chart is a rule nobody can check
+	// by looking at it.
+	Op        string  `json:"op"`
+	Threshold float64 `json:"threshold"`
+	// ForSeconds is the hold, the same idea the machine rules have: one bucket
+	// over the line during a deploy is not an incident.
+	ForSeconds int   `json:"for_seconds"`
+	WebhookID  int64 `json:"webhook_id"`
+
+	// Where it stands, kept so the judgement survives a restart.
+	Firing  bool      `json:"firing"`
+	Since   time.Time `json:"since,omitempty"`
+	Alerted time.Time `json:"alerted,omitempty"`
+	Value   float64   `json:"value"`
+	Series  string    `json:"series,omitempty"`
+}
+
+// For is the hold as a duration.
+func (a ViewAlert) For() time.Duration { return time.Duration(a.ForSeconds) * time.Second }
+
+// Breached reports whether a reading is on the wrong side of the line.
+func (a ViewAlert) Breached(value float64) bool {
+	if a.Op == MonitorBelow {
+		return value < a.Threshold
+	}
+	return value > a.Threshold
+}
+
+func (a ViewAlert) Validate() error {
+	if !a.Enabled {
+		return nil
+	}
+	if a.Op != MonitorAbove && a.Op != MonitorBelow {
+		return errors.New("an alert is above or below a number")
+	}
+	if a.WebhookID <= 0 {
+		return errors.New("an alert needs somewhere to send its events")
+	}
+	if a.ForSeconds < 0 || a.ForSeconds > 24*3600 {
+		return errors.New("hold the condition for something between nothing and a day")
+	}
+	return nil
+}
+
+// Watched reports whether this view is one the alert loop has to run.
+func (v View) Watched() bool { return v.Alert != nil && v.Alert.Enabled && v.Alert.WebhookID > 0 }
+
+// Reading is the number a person reading this frame would take from it, and the
+// series it came from.
+//
+// Latest rather than aggregate, and worst rather than mean, for the reason in
+// ViewAlert's doc. A frame with no rows answers false: an empty window is not a
+// zero, and a rule that fired every time telemetry paused would be a rule
+// somebody turns off.
+func (f Frame) Reading(op string) (float64, string, bool) {
+	index := func(name string) int {
+		for i, field := range f.Fields {
+			if field.Name == name {
+				return i
+			}
+		}
+		return -1
+	}
+	number := func(cell any) (float64, bool) {
+		switch value := cell.(type) {
+		case float64:
+			return value, true
+		case int64:
+			return float64(value), true
+		case int:
+			return float64(value), true
+		}
+		return 0, false
+	}
+	worst := func(candidates map[string]float64) (float64, string, bool) {
+		var bestName string
+		var best float64
+		found := false
+		for name, value := range candidates {
+			if !found || (op == MonitorBelow && value < best) || (op != MonitorBelow && value > best) {
+				best, bestName, found = value, name, true
+			}
+		}
+		return best, bestName, found
+	}
+	// keep is "the worse of the two", used where a shape has many rows per
+	// name and only one of them can be the reading.
+	keep := func(into map[string]float64, name string, value float64) {
+		current, seen := into[name]
+		if !seen || (op == MonitorBelow && value < current) || (op != MonitorBelow && value > current) {
+			into[name] = value
+		}
+	}
+
+	switch f.Shape {
+	case ShapeSingle:
+		if len(f.Rows) == 0 {
+			return 0, "", false
+		}
+		value, ok := number(f.Rows[0][index("value")])
+		return value, "", ok
+	case ShapeTimeseries:
+		timeAt, seriesAt, valueAt := index("time"), index("series"), index("value")
+		if timeAt < 0 || valueAt < 0 {
+			return 0, "", false
+		}
+		// The last bucket each series has a value in. Rows arrive in time
+		// order, so the last one wins.
+		latest := map[string]float64{}
+		for _, row := range f.Rows {
+			value, ok := number(row[valueAt])
+			if !ok {
+				continue
+			}
+			name := ""
+			if seriesAt >= 0 && row[seriesAt] != nil {
+				name = fmt.Sprint(row[seriesAt])
+			}
+			latest[name] = value
+		}
+		return worst(latest)
+	case ShapeCategorical:
+		categoryAt, valueAt := index("category"), index("value")
+		if valueAt < 0 {
+			return 0, "", false
+		}
+		values := map[string]float64{}
+		for _, row := range f.Rows {
+			value, ok := number(row[valueAt])
+			if !ok {
+				continue
+			}
+			name := ""
+			if categoryAt >= 0 && row[categoryAt] != nil {
+				name = fmt.Sprint(row[categoryAt])
+			}
+			values[name] = value
+		}
+		return worst(values)
+	case ShapeScatter:
+		// One dot per event, so the number a person reads off it is the worst
+		// dot in the window: the slowest request, the biggest payload. A
+		// scatter has no average anybody is looking at, and "the slowest
+		// request in the last fifteen minutes was nine seconds" is exactly the
+		// sentence somebody wants at 3am.
+		yAt, labelAt := index("y"), index("label")
+		if yAt < 0 {
+			return 0, "", false
+		}
+		values := map[string]float64{}
+		for _, row := range f.Rows {
+			value, ok := number(row[yAt])
+			if !ok {
+				continue
+			}
+			name := ""
+			if labelAt >= 0 && row[labelAt] != nil {
+				name = fmt.Sprint(row[labelAt])
+			}
+			keep(values, name, value)
+		}
+		return worst(values)
+	}
+	// Everything else — a waterfall, a heatmap, a distribution — has no single
+	// number a person reads off it, so no rule can pretend to.
+	return 0, "", false
+}
+
+// Alertable reports whether a panel produces a number a rule could watch, so
+// the builder can say why the section is not offered rather than offering a
+// control that silently never fires.
+func Alertable(panel string) bool {
+	switch ShapeOf(panel) {
+	case ShapeSingle, ShapeTimeseries, ShapeCategorical, ShapeScatter:
+		return true
+	}
+	return false
+}
+
+// AlertUnit is what a threshold for this query is typed in, so the form can put
+// "ms" beside the box and say what 1500 of them are in seconds. It is the same
+// function that labels a frame, because a threshold in different units from the
+// chart it is drawn on is a rule nobody can check by looking.
+func AlertUnit(q ViewQuery) string {
+	if q.Value == "duration_ms" && q.Agg != "count" {
+		return "ms"
+	}
+	return ""
 }
 
 // ViewQuery is the question. It compiles to exactly one SQL statement, chosen
@@ -165,6 +374,37 @@ type TraceSpan struct {
 	// Orphan marks a span whose parent is not in this trace — a partial export,
 	// or a parent still in flight. It is drawn at the root rather than hidden.
 	Orphan bool `json:"orphan,omitempty"`
+}
+
+// Selection is one mark on a panel, expressed in the terms the query already
+// uses: a time bucket, a series key, a value range. It is what turns a chart
+// back into the events it was drawn from.
+//
+// Every field is optional and they compose. A bar on a categorical chart sends
+// only Series; a histogram bar sends only Min and Max; a heatmap cell sends a
+// bucket and a range; a point on a time series sends a bucket and a series.
+type Selection struct {
+	From time.Time `json:"from,omitempty"`
+	To   time.Time `json:"to,omitempty"`
+	// Series is compared against the same expression the panel grouped by, so
+	// "(none)" here means what it means on the axis: the events the group field
+	// does not cover.
+	Series    string `json:"series,omitempty"`
+	HasSeries bool   `json:"has_series,omitempty"`
+	// Min and Max bound the value field — pointers because a histogram bucket
+	// starting at exactly zero is a real bucket, and "unset" has to differ.
+	Min   *float64 `json:"min,omitempty"`
+	Max   *float64 `json:"max,omitempty"`
+	Limit int      `json:"limit,omitempty"`
+}
+
+// Drill is what the drawer shows: the events behind one mark, and how many
+// there were in total. The two differ whenever a bar is taller than the list is
+// long, and saying so is the difference between "these are the 100 slowest" and
+// "this is all of it".
+type Drill struct {
+	Total  int     `json:"total"`
+	Events []Event `json:"events"`
 }
 
 // Fields is what the builder offers: the columns every event has, plus the

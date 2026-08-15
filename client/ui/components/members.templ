@@ -1,0 +1,81 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/field"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/axadrn/shadcn-templ/v2/components/table"
+	"github.com/hushkey-app/guard/client/ui"
+)
+
+// The members chrome: the list of addresses allowed to sign in, and the two
+// fields that add one.
+//
+// There is no invite email and no token, because there is nothing to send one
+// to. An address on this list is a standing answer to a question guard will be
+// asked later — "Google says this person is ana@example.com; may she in?" — and
+// until she signs in, the row is exactly that.
+//
+// The rows are drawn by client/public/members.js. The chrome is here for the
+// same reason every other panel's is: a class that only ever appears in a
+// JavaScript string is a class Tailwind may not have emitted.
+
+// MemberForm adds an address, or changes the role of one already on the list.
+templ MemberForm() {
+	@card.Card() {
+		@card.Content() {
+			<form data-member-form class="space-y-5">
+				<div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "member-email"}) {
+							Email address
+						}
+						@input.Input(input.Props{
+							ID:          "member-email",
+							Type:        "email",
+							Placeholder: "ana@example.com",
+							Required:    true,
+							Attributes:  templ.Attributes{"data-member": "email", "autocomplete": "off"},
+						})
+						@field.Description() {
+							The address the account signs in with. Apple's "Hide My Email" gives a
+							relay address instead of the real one — that relay is what has to be
+							on this list.
+						}
+					}
+					@ui.Field("", "member-role", "Role") {
+						<span class="relative flex items-center">
+							<select
+								id="member-role"
+								data-member="role"
+								class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"
+							>
+								<option value="member" selected>Member — can read everything</option>
+								<option value="admin">Admin — can also change things</option>
+							</select>
+							@ui.Chevron()
+						</span>
+					}
+				</div>
+				<div class="flex flex-wrap items-center gap-3 border-t border-border pt-5">
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						Add member
+					}
+					<span data-member-status class="text-sm text-muted-foreground empty:hidden"></span>
+				</div>
+			</form>
+		}
+	}
+}
+
+// MemberList is who may sign in. The last column is a removal, except on the
+// rows where it is not: an address from GUARD_ADMIN_EMAIL, and your own.
+templ MemberList() {
+	@card.Card(card.Props{Class: "gap-0 py-0"}) {
+		@table.Table() {
+			@ui.TableHead([]string{"Member", "Role", "Last seen", ""})
+			@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-member-rows": true}})
+		}
+	}
+}

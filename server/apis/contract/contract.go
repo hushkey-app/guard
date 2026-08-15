@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -111,6 +111,50 @@ func (q ViewDataQuery) Apply(stored model.ViewQuery) model.ViewQuery {
 	return stored
 }
 
+// Assignment states which machine an instance runs on, when its telemetry
+// cannot. NodeID zero releases it back to the automatic match.
+type Assignment struct {
+	Service  string `json:"service"`
+	Instance string `json:"instance"`
+	NodeID   int64  `json:"node_id"`
+}
+
+func (a Assignment) Validate() error {
+	if a.Service == "" {
+		return api.Invalid("service", "is required")
+	}
+	return nil
+}
+
+// ViewOrder is the dashboard's layout: the panel ids, in the order they should
+// appear. Views the caller does not mention keep their relative order and
+// follow, so a panel added in another tab mid-drag is not quietly dropped.
+type ViewOrder struct {
+	IDs []int64 `json:"ids"`
+}
+
+func (o ViewOrder) Validate() error {
+	if len(o.IDs) == 0 {
+		return api.Invalid("ids", "is required")
+	}
+	return nil
+}
+
+// DrillRequest asks for the events behind one mark on a panel: the query that
+// drew it, and which mark was clicked.
+//
+// The query travels with the request rather than a view id, because the mark
+// you clicked may be on a preview that has never been saved — and because a
+// saved view whose window was overridden by the dashboard picker is no longer
+// the query stored under its id.
+type DrillRequest struct {
+	Panel     string          `json:"panel"`
+	Query     model.ViewQuery `json:"query"`
+	Selection model.Selection `json:"selection"`
+}
+
+func (d DrillRequest) Validate() error { return d.Query.ValidateFor(d.Panel) }
+
 // Catalogue is everything the builder needs to offer a choice: the panels this
 // binary can render, the aggregations the compiler implements, and the fields
 // this instance has actually seen. One request, because all three change at
@@ -120,4 +164,56 @@ type Catalogue struct {
 	Panels       []model.PanelSpec `json:"panels"`
 	Aggregations []string          `json:"aggregations"`
 	Fields       model.Fields      `json:"fields"`
+}
+
+// ActionList is one machine's commands, saved together.
+//
+// The whole list rather than one action at a time: the settings page edits them
+// as a list, and a per-action endpoint would need a delete, a reorder, and an
+// answer to what happens when two tabs disagree about the order.
+type ActionList struct {
+	NodeID  int64              `json:"node_id"`
+	Actions []model.NodeAction `json:"actions"`
+}
+
+func (l ActionList) Validate() error {
+	if l.NodeID <= 0 {
+		return api.Invalid("node_id", "is required")
+	}
+	for _, action := range l.Actions {
+		if err := action.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RunRequest asks for one stored action to be run on the machine it belongs to.
+//
+// An action id, never a command. The two are the same power — anyone who can
+// run this can save an action first — but they are not the same audit trail: a
+// command that ran on somebody's server is a thing that should exist in the
+// database before it exists on the machine.
+type RunRequest struct {
+	ActionID int64 `json:"action_id"`
+}
+
+func (r RunRequest) Validate() error {
+	if r.ActionID <= 0 {
+		return api.Invalid("action_id", "is required")
+	}
+	return nil
+}
+
+// NodeRequest names one machine and nothing else — what the endpoints that act
+// on a whole machine take: the connection test, and the duplicate button.
+type NodeRequest struct {
+	NodeID int64 `json:"node_id"`
+}
+
+func (r NodeRequest) Validate() error {
+	if r.NodeID <= 0 {
+		return api.Invalid("node_id", "is required")
+	}
+	return nil
 }

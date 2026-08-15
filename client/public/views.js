@@ -5,7 +5,8 @@
 // division is the same one the server makes — a view is a stored query, and
 // this file is the only place that knows what a query looks like as a form.
 
-import { adminHeaders, el, qs, qsa, request, text } from "./core.js";
+import { adminHeaders, duration, el, qs, qsa, request, text } from "./core.js";
+import { get as recall, set as remember } from "./store.js";
 import { bodyKind, describe, draw, fieldLabel } from "./charts.js";
 
 // The catalogue is the running binary's own answer to "what can be built" —
@@ -31,16 +32,41 @@ async function loadCatalogue(force = false) {
 // The dashboard
 // ---------------------------------------------------------------------------
 
+const signatureOf = (list) => list.map((view) => `${view.id}:${view.updated_at}:${view.width}`).join(",");
+
 export async function refreshViews() {
   const grid = qs("[data-view-grid]");
   if (!grid) return;
-  views = await request("/api/views");
+  // The live tick keeps running while the layout is being changed, and
+  // rebuilding the grid under a card someone is holding would drop it.
+  if (dragging) return;
+  // A refresh that was already in flight when the layout changed is answering
+  // a question about the old order. Applying it would put the card back where
+  // it was, a moment after it was moved — so the revision it started under is
+  // checked against the one in force when it lands.
+  const revision = layoutRevision;
+  // The panel *chrome* comes from the last visit so the dashboard's shape is
+  // on screen in the same frame as the navigation — the titles, the widths,
+  // the order. The numbers inside never come from a cache: every panel runs
+  // its query below, and a chart drawn from a remembered frame would be a
+  // chart quietly showing yesterday.
+  const cached = revision === layoutRevision ? recall("views.list") : undefined;
+  if (cached && !renderedSignature) {
+    views = cached;
+    qs("[data-view-empty]")?.toggleAttribute("hidden", views.length > 0);
+    renderedSignature = signatureOf(views);
+    grid.replaceChildren(...views.map((view) => buildPanel(qs("[data-panel-template]"), view)));
+  }
+  const fetched = await request("/api/views");
+  if (revision !== layoutRevision) return;
+  views = fetched;
+  remember("views.list", views);
   qs("[data-view-empty]")?.toggleAttribute("hidden", views.length > 0);
 
   // The panels are rebuilt only when the set of them changes. A live tick
   // redraws bodies, and rebuilding the cards underneath would throw away the
   // scroll position of every waterfall on the page every three seconds.
-  const signature = views.map((view) => `${view.id}:${view.updated_at}:${view.width}`).join(",");
+  const signature = signatureOf(views);
   if (signature !== renderedSignature) {
     renderedSignature = signature;
     const template = qs("[data-panel-template]");
@@ -86,13 +112,32 @@ async function loadPanel(view) {
   try {
     const frame = await request(`/api/views/data?${params}`);
     error.textContent = "";
+    frameUnit = frame.unit || "";
+    applyAlertUnit();
     notes.textContent = (frame.notes || []).join(" ");
     const body = qs("[data-panel-body]", node).firstElementChild || qs("[data-panel-body]", node);
-    const legend = draw(body, frame, { view, onPoint: openEvent });
+    // The drill has to be against the window that was drawn, not the one that
+    // was saved — the dashboard picker may have overridden it, and a list of
+    // events from a different hour than the bar is worse than no list.
+    const drawn = { ...view, query: range ? { ...view.query, range } : view.query };
+    const legend = draw(body, frame, { view: drawn, ...interactions(drawn) });
     renderLegend(qs("[data-panel-legend]", node), legend);
   } catch (failure) {
     error.textContent = failure.message;
   }
+}
+
+// What a mark does when it is hovered or clicked. One event opens directly;
+// anything summarising several opens the list of them. guard.js owns the
+// drawer both go to.
+function interactions(view) {
+  return {
+    onEvent: (id) => globalThis.guardOpenDetail?.(id),
+    onSelect: (selection, datum) => globalThis.guardOpenDrill?.(
+      { panel: view.panel, query: view.query, selection: selection || {} },
+      { title: datum?.title ? `${view.name || "Panel"} · ${datum.title}` : view.name },
+    ),
+  };
 }
 
 function renderLegend(host, entries) {
@@ -107,12 +152,6 @@ function renderLegend(host, entries) {
     node.append(dot, text(entry.label));
     return node;
   }));
-}
-
-// A scatter point is one event, so clicking it opens the same detail panel the
-// tables use. guard.js owns that panel and publishes the opener.
-function openEvent(id) {
-  globalThis.guardOpenDetail?.(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +201,7 @@ async function openBuilder(id) {
   const filters = qs("[data-filters]");
   filters.replaceChildren(...(query.filters || []).map(addFilterRow));
 
+  await fillAlert(editing);
   applyNeeds();
   preview();
 }
@@ -237,6 +277,7 @@ function applyNeeds() {
     node.toggleAttribute("hidden", !wanted);
   }
   qs("[data-builder-hint]").textContent = spec?.hint || "";
+  applyAlertShape();
 }
 
 function addFilterRow(condition = {}) {
@@ -288,13 +329,114 @@ function collect() {
     query.trace_id = readValue("trace_id") || undefined;
     query.order = readValue("trace_pick");
   }
-  return {
+  const view = {
     id: editing?.id || 0,
     name: readValue("name"),
     panel,
     width: Number(readValue("width")) || 6,
     query,
   };
+  // The alert rides on the view because it is the view's own question. A panel
+  // that cannot produce a reading sends none at all rather than an enabled rule
+  // that could never fire.
+  if (alertable(panel)) {
+    const enabled = qs('[data-builder="alert_enabled"]')?.checked || false;
+    const webhook = Number(readValue("alert_webhook")) || 0;
+    if (enabled || webhook) {
+      view.alert = {
+        enabled: enabled && webhook > 0,
+        op: readValue("alert_op") || "above",
+        threshold: Number(readValue("alert_threshold")) || 0,
+        // Typed in minutes, stored in seconds, like every other hold in guard.
+        for_seconds: Math.round(Number(readValue("alert_for") || 0) * 60),
+        webhook_id: webhook,
+      };
+    }
+  }
+  return view;
+}
+
+// Which panels produce a number a rule could watch. The same three shapes the
+// server will accept — a waterfall or a heatmap has no single reading, and
+// offering a threshold box for one would be offering a rule that never fires.
+// A scatter is in the list: the number a person reads off one dot per event is
+// the worst dot — the slowest request in the window — which is the whole reason
+// to have that panel on a dashboard at all.
+const ALERTABLE_SHAPES = ["timeseries", "categorical", "single", "scatter"];
+
+function alertable(panel) {
+  return ALERTABLE_SHAPES.includes(panelSpec(panel)?.shape);
+}
+
+// The unit the panel currently draws in, learned from the preview frame — the
+// alert threshold is typed in it, and says what it means in words underneath.
+let frameUnit = "";
+
+// A threshold in milliseconds is a threshold people mistype. 15000 is fifteen
+// seconds, and the form should say so rather than leaving it to be worked out
+// during the incident that follows.
+function applyAlertUnit() {
+  const unit = qs("[data-alert-unit]");
+  if (unit) unit.textContent = frameUnit;
+  const hint = qs("[data-alert-threshold-hint]");
+  if (!hint) return;
+  const typed = Number(readValue("alert_threshold"));
+  hint.textContent = frameUnit === "ms" && Number.isFinite(typed) && typed >= 1000
+    ? `= ${duration(typed)}`
+    : "";
+}
+
+// The destinations come from the same list the machine rules use, so a channel
+// is typed once and pointed at from anywhere.
+let destinations = null;
+
+async function fillAlert(view) {
+  const alert = view?.alert || {};
+  if (destinations === null) {
+    try {
+      destinations = await request("/api/webhooks", { headers: adminHeaders() });
+    } catch {
+      // Not an admin, or nothing configured. The section still renders — it
+      // says there is nowhere to send instead of vanishing, which is the
+      // difference between "not for you" and "broken".
+      destinations = [];
+    }
+  }
+  const select = qs('[data-builder="alert_webhook"]');
+  if (select) {
+    fillSelect(select, destinations.length
+      ? destinations.map((hook) => [String(hook.id), hook.name])
+      : [["", "no destinations yet — add one in Settings → Alerts"]]);
+  }
+  const box = qs('[data-builder="alert_enabled"]');
+  if (box) box.checked = !!alert.enabled;
+  setValue("alert_op", alert.op || "above");
+  setValue("alert_threshold", alert.threshold ?? "");
+  setValue("alert_for", alert.for_seconds ? Math.round(alert.for_seconds / 60) : "");
+  if (select && alert.webhook_id) select.value = String(alert.webhook_id);
+
+  const state = qs("[data-alert-state]");
+  applyAlertUnit();
+  if (state) {
+    state.textContent = alert.firing
+      ? `firing since ${new Date(alert.since).toLocaleString()} · last read ${alert.value}${alert.series ? ` (${alert.series})` : ""}`
+      : (view?.alert ? `ok · last read ${alert.value ?? "—"}` : "");
+    state.className = alert.firing
+      ? "text-xs text-destructive empty:hidden"
+      : "text-xs text-muted-foreground empty:hidden";
+  }
+  applyAlertShape();
+}
+
+// The threshold controls appear only when the box is ticked, and the whole
+// section only for panels that can be read as a number.
+function applyAlertShape() {
+  const panel = readValue("panel");
+  const usable = alertable(panel);
+  qs("[data-alert-section]")?.toggleAttribute("hidden", !usable);
+  qs("[data-alert-unavailable]")?.toggleAttribute("hidden", usable);
+  const enabled = qs('[data-builder="alert_enabled"]')?.checked;
+  qs("[data-alert-fields]")?.toggleAttribute("hidden", !enabled);
 }
 
 // The preview is the whole point of the builder: the panel on screen is drawn
@@ -319,9 +461,13 @@ async function preview() {
     // A slower earlier preview must not overwrite a faster later one.
     if (token !== previewToken) return;
     error.textContent = "";
+    frameUnit = frame.unit || "";
+    applyAlertUnit();
     notes.textContent = (frame.notes || []).join(" ");
     status.textContent = `${frame.rows.length} row${frame.rows.length === 1 ? "" : "s"}`;
-    renderLegend(qs("[data-preview-legend]"), draw(host.firstElementChild || host, frame, { view }));
+    // The preview is clickable too: checking that a bar contains what you
+    // meant it to is most of what building a panel is.
+    renderLegend(qs("[data-preview-legend]"), draw(host.firstElementChild || host, frame, { view, ...interactions(view) }));
   } catch (failure) {
     if (token !== previewToken) return;
     status.textContent = "";
@@ -403,7 +549,27 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (event.target.closest("[data-views-refresh]")) refreshViews().catch(() => {});
+  const samples = event.target.closest("[data-views-samples]");
+  if (samples) {
+    samples.disabled = true;
+    addSamples().finally(() => { samples.disabled = false; });
+  }
 });
+
+// One panel per visualisation, built from this instance's own telemetry. The
+// difference between a state timeline and a status history is obvious once you
+// have seen both drawn from your own data, and unclear in any number of words.
+async function addSamples() {
+  const empty = qs("[data-view-empty]");
+  try {
+    const created = await request("/api/views/samples", { method: "POST", headers: adminHeaders() });
+    renderedSignature = "";
+    await refreshViews();
+    if (!created.length && empty) empty.textContent = "Those sample panels already exist.";
+  } catch (failure) {
+    if (empty) empty.textContent = failure.message;
+  }
+}
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && qs("[data-builder-shell]")?.classList.contains("open")) closeBuilder();
@@ -421,6 +587,16 @@ document.addEventListener("change", (event) => {
   }
   if (!event.target.closest("[data-builder-form]")) return;
   if (event.target.matches('[data-builder="panel"]') || event.target.matches('[data-builder="agg"]')) applyNeeds();
+  // Ticking the alert box opens its fields. It changes nothing about the
+  // query, so it does not re-run the preview.
+  if (event.target.matches('[data-builder="alert_enabled"]')) {
+    applyAlertShape();
+    return;
+  }
+  if (event.target.id?.startsWith("builder-alert")) {
+    applyAlertUnit();
+    return;
+  }
   if (event.target.matches("[data-builder]")) schedulePreview();
 });
 
@@ -429,6 +605,106 @@ document.addEventListener("submit", (event) => {
   event.preventDefault();
   saveView(event.target);
 });
+
+// ---------------------------------------------------------------------------
+// Reordering
+// ---------------------------------------------------------------------------
+//
+// Native drag and drop, driven from the handle. The alternative — pointer
+// events and a floating clone — is a few hundred lines to reimplement what the
+// platform already does, including the drag image, the cursor, and the escape
+// key cancelling the whole thing.
+//
+// The order is applied to the DOM as you drag and sent once on drop. Sending
+// per-move would be a request per pixel; waiting for the response to move the
+// card would be a card that lags the pointer.
+
+let dragging = null;
+// Bumped whenever the layout changes locally, so a refresh that crosses a
+// reorder can tell that its answer is out of date.
+let layoutRevision = 0;
+
+function panelOf(node) {
+  return node?.closest("[data-panel-id]");
+}
+
+document.addEventListener("dragstart", (event) => {
+  const handle = event.target.closest("[data-panel-drag]");
+  if (!handle) return;
+  dragging = panelOf(handle);
+  if (!dragging) return;
+  dragging.classList.add("opacity-40");
+  event.dataTransfer.effectAllowed = "move";
+  // Firefox will not start a drag without data on the transfer.
+  event.dataTransfer.setData("text/plain", dragging.dataset.panelId);
+});
+
+document.addEventListener("dragover", (event) => {
+  if (!dragging) return;
+  const over = panelOf(event.target);
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  if (!over || over === dragging) return;
+  // Compare against the midpoint of the card the pointer is over, so a card
+  // swaps once you are past half of it rather than the moment you touch it.
+  const box = over.getBoundingClientRect();
+  const after = event.clientX > box.left + box.width / 2;
+  over.parentNode.insertBefore(dragging, after ? over.nextSibling : over);
+});
+
+document.addEventListener("drop", (event) => {
+  if (dragging) event.preventDefault();
+});
+
+document.addEventListener("dragend", () => {
+  if (!dragging) return;
+  dragging.classList.remove("opacity-40");
+  dragging = null;
+  saveOrder();
+});
+
+// Arrow keys on a focused handle. Same operation, no pointer.
+document.addEventListener("keydown", (event) => {
+  const handle = event.target.closest?.("[data-panel-drag]");
+  if (!handle) return;
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+  if (!step) return;
+  event.preventDefault();
+  const panel = panelOf(handle);
+  const sibling = step > 0 ? panel.nextElementSibling : panel.previousElementSibling;
+  if (!sibling) return;
+  panel.parentNode.insertBefore(step > 0 ? sibling : panel, step > 0 ? panel : sibling);
+  // Moving a node detaches it, and a detached node loses focus — which would
+  // end the keyboard interaction after one press.
+  handle.focus();
+  saveOrder();
+});
+
+async function saveOrder() {
+  const ids = qsa("[data-panel-id]").map((node) => Number(node.dataset.panelId));
+  if (!ids.length) return;
+  // The grid already shows the new order, so nothing here re-renders on
+  // success — only a failure has anything to say.
+  layoutRevision++;
+  views = ids.map((id) => views.find((view) => view.id === id)).filter(Boolean);
+  renderedSignature = signatureOf(views);
+  try {
+    views = await request("/api/views/order", {
+      method: "PUT",
+      headers: adminHeaders(),
+      body: JSON.stringify({ ids }),
+    });
+    renderedSignature = signatureOf(views);
+  } catch (failure) {
+    // Put the dashboard back the way the server still has it, rather than
+    // leaving a layout on screen that will not survive a reload.
+    layoutRevision++;
+    renderedSignature = "";
+    await refreshViews();
+    const empty = qs("[data-view-empty]");
+    if (empty) empty.textContent = failure.message;
+  }
+}
 
 export function mountViews() {
   renderedSignature = "";

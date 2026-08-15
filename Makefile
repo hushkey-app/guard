@@ -1,9 +1,16 @@
-.PHONY: all generate apis wasm run dev test clean css
+.PHONY: all generate apis wasm vault run dev seed test clean css
 
-MODULE := github.com/mirairoad/guard
+MODULE := github.com/hushkey-app/guard
 
 all: wasm
 	go build -o guard .
+	go build -o guard-vault ./cmd/vault
+
+# The secrets server, on its own. A second binary rather than a flag on the
+# first: an application asking for its database password at boot must not be
+# waiting on the dashboard's release.
+vault:
+	go build -o guard-vault ./cmd/vault
 
 generate: apis
 	go run github.com/mirairoad/howl-go/core/cmd/fsroutes -module $(MODULE)/client/pages
@@ -23,15 +30,40 @@ apis:
 run: all
 	./guard
 
+# Post an hour of plausible telemetry to a running instance, over OTLP exactly
+# as an exporter would. For the state a new instance starts in: empty, with no
+# way to tell whether the panels are broken or the data is simply not there.
+# Override with ENDPOINT=, REQUESTS=, WINDOW=, TOKEN=.
+seed:
+	go run ./dev/seed \
+		-endpoint $(or $(ENDPOINT),http://localhost:4318) \
+		-requests $(or $(REQUESTS),900) \
+		-window $(or $(WINDOW),1h) \
+		-token "$(TOKEN)"
+
 # Watch, rebuild, restart, reload the browser. The port stays up across
 # restarts; a failed build keeps the last good binary serving and shows the
 # compiler error in the browser.
+#
+# The secrets server comes up beside it, on its own watcher, sharing this
+# terminal — its lines carry `app=vault`. Backgrounded with a trap rather than
+# left to be started by hand, because the whole promise of the split is that
+# secrets keep being served while guard restarts, and a develop setup where
+# they are only served when somebody remembered to start them is one where that
+# promise is never actually exercised. GUARD_VAULT_ADDR= makes it stay away.
+dev: GUARD_VAULT_ADDR ?= :4319
 dev:
+	@trap 'kill 0' EXIT INT TERM; \
+	if [ -n "$(GUARD_VAULT_ADDR)" ]; then \
+		go run ./dev/vault -addr $(GUARD_VAULT_ADDR) -db $(or $(GUARD_DB_PATH),guard.db) & \
+	fi; \
 	go run github.com/mirairoad/howl-go/core/cmd/howl dev -addr :4318 \
 		-pre "go run github.com/mirairoad/howl-go/core/cmd/fsapis -dir server/apis -module $(MODULE)/server/apis -client client/api/api_gen.go -client-pkg apiclient"
 
 # The only Node in the project, and the only target that needs it: Tailwind
 # compiling client/styles/app.css into the committed client/public/app.css.
+# Run it BEFORE `make`, not after: the binary embeds client/public, so a css
+# rebuild that follows the go build is a stylesheet the server does not serve.
 # `make`, `make dev`, `go test` and `docker build` all read the committed
 # bundle, so run this only after using a Tailwind class no source used before.
 # The generated sources file carries the module-cache path of the pinned
@@ -48,14 +80,26 @@ css:
 		'@source "../ui/**/*.templ";' \
 		'@source "../public/guard.js";' \
 		'@source "../public/core.js";' \
+		'@source "../public/store.js";' \
 		'@source "../public/charts.js";' \
 		'@source "../public/views.js";' \
+		'@source "../public/cluster.js";' \
+		'@source "../public/registries.js";' \
+		'@source "../public/cloud.js";' \
+		'@source "../public/storage.js";' \
+		'@source "../public/members.js";' \
+		'@source "../public/alerts.js";' \
+		'@source "../public/secrets.js";' \
 		"@source \"$$SHADCN_TEMPL_PATH/components/**/*.templ\";" \
 		> client/styles/app.sources.css
 	.howl/tailwind/node_modules/.bin/tailwindcss -i client/styles/app.css -o client/public/app.css --minify
 
 test: generate
 	go test ./...
+	@# The store is the one client module with logic worth asserting rather
+	@# than eyeballing: what it draws, when it stays quiet, and what a cold
+	@# tab starts with.
+	@node client/public/store_test.mjs
 
 clean:
-	rm -f guard client/public/views.wasm client/public/wasm_exec.js
+	rm -f guard guard-vault client/public/views.wasm client/public/wasm_exec.js

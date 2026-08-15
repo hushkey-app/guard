@@ -4,9 +4,53 @@
 // The shared vocabulary lives in core.js, the panel renderers in charts.js, and
 // everything under /views in views.js. This file imports all three; none of
 // them imports this one, so the dependency runs one way.
-import { adminHeaders, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
+import { adminHeaders, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
+import { clusterNodes, refreshCluster } from "./cluster.js";
+import { refreshRegistries } from "./registries.js";
+import { refreshCloud } from "./cloud.js";
+import { refreshStorage } from "./storage.js";
+import { refreshMembers } from "./members.js";
+import { refreshAlerts } from "./alerts.js";
+import { refreshSecrets } from "./secrets.js";
+import { screenCleared } from "./store.js";
+
+// Which machines the signal pages are scoped to. Shared across logs, traces and
+// metrics, and remembered: "I am looking at the two web boxes" is a stance you
+// hold while moving between pages, not a per-page setting you re-enter.
+const clusterFilter = new Set(JSON.parse(localStorage.getItem("guard.cluster") || "[]"));
+
+async function renderClusterFilter() {
+  const hosts = qsa("[data-cluster-filter]");
+  if (!hosts.length) return;
+  const nodes = await clusterNodes();
+  for (const host of hosts) {
+    // No machines watched, no filter: a control that can only say "all" is a
+    // control that says nothing.
+    host.classList.toggle("hidden", nodes.length === 0);
+    host.classList.toggle("flex", nodes.length > 0);
+    if (!nodes.length) continue;
+
+    const label = el("span", `text-xs font-medium ${muted}`, "Machines");
+    const chips = nodes.map((node) => {
+      const on = clusterFilter.has(node.id);
+      const chip = el("button", `cn-badge inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap ${
+        on ? "border-primary/40 bg-primary/15 text-primary" : "cn-badge-variant-secondary"}`);
+      chip.type = "button";
+      chip.dataset.clusterChip = node.id;
+      chip.setAttribute("aria-pressed", String(on));
+      const dot = el("span", "size-1.5 shrink-0 rounded-full");
+      dot.style.background = node.status === "up" ? "var(--primary)" : node.status === "down" ? "var(--destructive)" : "var(--muted-foreground)";
+      chip.append(dot, text(node.name));
+      return chip;
+    });
+    const all = el("button", `text-xs underline-offset-2 hover:underline ${muted}`, "All machines");
+    all.type = "button";
+    all.dataset.clusterChip = "all";
+    host.replaceChildren(label, ...chips, ...(clusterFilter.size ? [all] : []));
+  }
+}
 
 const pageSize = 50;
 const signalPages = new Map([["logs", 0], ["traces", 0], ["metrics", 0]]);
@@ -173,6 +217,7 @@ function filterParams(signal, paginate = false) {
   const value = (name) => qs(`[data-filter="${name}"]`, root)?.value || "";
   for (const name of ["service", "severity", "name"]) if (value(name)) params.set(name, value(name));
   if (value("query")) params.set("q", value("query"));
+  if (clusterFilter.size) params.set("nodes", [...clusterFilter].join(","));
   const range = value("range");
   const durations = { "15m": 15 * 60e3, "1h": 3600e3, "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 86400e3 };
   if (durations[range]) params.set("from", new Date(Date.now() - durations[range]).toISOString());
@@ -340,6 +385,9 @@ async function openDetail(id) {
   const attrs = document.createElement("section"); const heading = document.createElement("h3"); heading.className = "mb-3 font-medium"; heading.appendChild(text(`Attributes · ${Object.keys(event.attributes || {}).length}`));
   const pre = document.createElement("pre"); pre.className = "overflow-x-auto rounded-xl bg-code p-4 font-mono text-xs leading-6 text-code-foreground"; pre.appendChild(text(JSON.stringify(event.attributes || {}, null, 2))); attrs.append(heading, pre);
   qs("[data-detail-content]").replaceChildren(grid, attrs); qs("[data-detail-shell]").classList.add("open"); document.body.classList.add("overflow-hidden");
+  // Arriving from a drill-down leaves a list to go back to; arriving from a
+  // table does not, and an inert button would be worse than none.
+  qs("[data-detail-footer]").hidden = !lastDrill;
   if (event.trace_id) showTrace(event.trace_id).catch(() => {});
 }
 
@@ -360,11 +408,82 @@ async function showTrace(traceID) {
   card.hidden = false;
 }
 
-function closeDetail() { qs("[data-detail-shell]")?.classList.remove("open"); document.body.classList.remove("overflow-hidden"); }
+function closeDetail() {
+  qs("[data-detail-shell]")?.classList.remove("open");
+  document.body.classList.remove("overflow-hidden");
+  lastDrill = null;
+  qs("[data-detail-footer]").hidden = true;
+}
 
-// views.js opens the detail panel when a scatter point is clicked — one panel
-// per document, owned here, reachable from there.
+// The drawer's second mode: the events behind one mark on a chart.
+//
+// A bar is an aggregate — 217 events, not one — so clicking it cannot open
+// "the" event. It opens the list, and a row in that list opens the event. The
+// list is remembered so the detail view has somewhere to go back to.
+let lastDrill = null;
+
+async function openDrill(request, datum = {}) {
+  const drill = await request_("/api/views/drill", request);
+  lastDrill = { request, datum, drill };
+  renderDrill();
+  qs("[data-detail-shell]").classList.add("open");
+  document.body.classList.add("overflow-hidden");
+}
+
+function request_(path, body) {
+  return request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+function renderDrill() {
+  if (!lastDrill) return;
+  const { datum, drill } = lastDrill;
+  const shown = drill.events.length;
+  qs("[data-detail-eyebrow]").textContent = shown === drill.total
+    ? `${number.format(drill.total)} ${drill.total === 1 ? "event" : "events"}`
+    : `${number.format(shown)} of ${number.format(drill.total)} events`;
+  qs("[data-detail-title]").textContent = datum.title || "Selected events";
+  qs("[data-detail-footer]").hidden = true;
+
+  const template = qs("[data-drill-row-template]");
+  const list = document.createElement("div");
+  list.className = "-mt-2";
+  if (!shown) {
+    list.appendChild(Object.assign(document.createElement("p"), {
+      className: `py-8 text-center text-sm ${muted}`,
+      textContent: "No events behind this mark.",
+    }));
+  }
+  for (const event of drill.events) {
+    const row = template.content.firstElementChild.cloneNode(true);
+    row.dataset.eventId = event.id;
+    qs("[data-drill-time]", row).textContent = timeText(event.timestamp);
+    const badge = qs("[data-drill-badge]", row);
+    const label = event.signal === "logs" ? (event.severity || "log").toLowerCase() : event.signal.replace(/s$/, "");
+    badge.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${
+      event.signal === "traces" ? tones.trace : event.signal === "metrics" ? tones.metric
+        : /error|fatal/i.test(event.severity || "") ? tones.error : tones.neutral}`;
+    badge.textContent = label;
+    qs("[data-drill-text]", row).textContent = `${event.service} · ${eventText(event)}`;
+    qs("[data-drill-value]", row).textContent = event.duration_ms
+      ? `${number.format(Math.round(event.duration_ms))} ms`
+      : event.value !== undefined ? number.format(event.value) : "";
+    list.appendChild(row);
+  }
+  const content = qs("[data-detail-content]");
+  content.replaceChildren(list);
+  content.scrollTop = 0;
+}
+
+// views.js opens the drawer when a chart is clicked — one drawer per document,
+// owned here, reachable from there. Both entry points are published rather than
+// imported, because guard.js imports views.js and the reverse would be a cycle.
 globalThis.guardOpenDetail = (id) => openDetail(id).catch(() => {});
+globalThis.guardOpenDrill = (request, datum) => openDrill(request, datum).catch((failure) => {
+  qs("[data-detail-eyebrow]").textContent = "Could not read these events";
+  qs("[data-detail-title]").textContent = failure.message;
+  qs("[data-detail-content]").replaceChildren();
+  qs("[data-detail-shell]").classList.add("open");
+});
 
 async function loadSettings() {
   const form = qs("[data-settings-form]"); if (!form) return;
@@ -393,7 +512,29 @@ async function refreshPage({ facets = false } = {}) {
   const work = [refreshSignal("logs"), refreshSignal("traces"), refreshSignal("metrics"), refreshMetrics(), loadSettings()];
   if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
   if (qs("[data-view-grid]")) work.push(refreshViews());
-  if (facets) work.push(refreshFacets());
+  if (qs("[data-cluster-rows]") || qs("[data-topology]") || qs("[data-cluster-cards]")) work.push(refreshCluster());
+  // Forced only alongside a facets refresh — a mount or an explicit click —
+  // because behind this one is a provider's API, not guard's database.
+  if (qs("[data-registry-overview]")) work.push(refreshRegistries(facets));
+  if (qs("[data-cloud-accounts]") || qs("[data-import-rows]")) work.push(refreshCloud());
+  // Guard's own SQLite, but it changes when a person presses something rather
+  // than when telemetry arrives — so it is read on a mount and after a change,
+  // not on the tick.
+  if (facets && qs("[data-member-rows]")) work.push(refreshMembers());
+  // The alert rules and their destinations: guard's own SQLite, but read on a
+  // mount and after a change rather than on the tick. Nothing here moves
+  // except when somebody edits it — and a row being redrawn under a cursor
+  // mid-edit is the one thing this page must not do.
+  if (facets && qs("[data-webhooks]")) work.push(refreshAlerts());
+  // The storage page reads the provider, so it refreshes on a mount or an
+  // explicit press — never on the three-second tick.
+  if (facets && qs("[data-storage-rows]")) work.push(refreshStorage());
+  // The secrets page is guard's own SQLite and moves only when somebody edits
+  // it — and a value being redrawn under a cursor mid-edit is the one thing
+  // this page must not do. So: on a mount and after a change, never on the
+  // tick.
+  if (facets && qs("[data-secret-envs]")) work.push(refreshSecrets());
+  if (facets) work.push(refreshFacets(), renderClusterFilter());
   await Promise.allSettled(work);
 }
 
@@ -419,13 +560,23 @@ globalThis.guardPageMount = (page) => {
   if (page === initializedPage && initialRefresh) {
     const pending = initialRefresh;
     initialRefresh = null;
-    return pending;
+    // That eager pass started when guard.js was evaluated — before the WASM
+    // had rendered anything — so every branch of refreshPage that asks "is
+    // this page's markup here?" answered no, and pages like /storage and
+    // /settings/alerts never fetched at all. Their first paint said "Loading…"
+    // and stayed there. So the page's own pass runs here as well; the store
+    // shares in-flight loads by key, so this is not a second round of
+    // requests, and everything it does put in the store is already drawn.
+    return Promise.allSettled([pending, refreshPage({ facets: true })]);
   }
   initializedPage = page;
   if (page === "views") return mountViews();
   return refreshPage({ facets: true });
 };
 globalThis.guardPageUnmount = () => {
+  // The outlet is about to throw this page's DOM away. The store keeps track of
+  // what is on screen so it can skip redundant redraws; from here, nothing is.
+  screenCleared();
   clearTimeout(filterTimer);
   filterTimer = undefined;
   for (const signal of signalRequests.keys()) signalRequests.set(signal, signalRequests.get(signal) + 1);
@@ -442,6 +593,20 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-nav-link]")) { const drawer = qs("#nav-drawer"); if (drawer) drawer.checked = false; }
   const toggle = event.target.closest("[data-live-toggle]");
   if (toggle) { live = !live; localStorage.setItem("guard.live", live ? "on" : "off"); updateLiveControl(); if (live) refreshPage(); return; }
+  const chip = event.target.closest("[data-cluster-chip]");
+  if (chip) {
+    const id = chip.dataset.clusterChip;
+    if (id === "all") clusterFilter.clear();
+    else if (!clusterFilter.delete(Number(id))) clusterFilter.add(Number(id));
+    localStorage.setItem("guard.cluster", JSON.stringify([...clusterFilter]));
+    // Back to the first page: the rows under a different set of machines are
+    // different rows, and page four of the old set means nothing in the new.
+    for (const signal of signalPages.keys()) signalPages.set(signal, 0);
+    renderClusterFilter();
+    refreshPage();
+    return;
+  }
+  if (event.target.closest("[data-detail-back]")) { renderDrill(); return; }
   if (event.target.closest("[data-detail-close]")) { closeDetail(); return; }
   if (event.target.closest("[data-trace-close]")) { qs("[data-trace-card]").hidden = true; return; }
   const pageButton = event.target.closest("[data-page-action]");

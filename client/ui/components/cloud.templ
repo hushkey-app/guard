@@ -1,0 +1,260 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/field"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/axadrn/shadcn-templ/v2/components/table"
+	"github.com/hushkey-app/guard/client/ui"
+)
+
+// The cloud account chrome: the key that unlocks a provider, and the two
+// things it unlocks that are not container registries — the instances behind
+// the machines on the cluster page, and object storage.
+//
+// One key, three surfaces. It is one credential at the provider, so guard
+// stores it once: asking for it per feature would only mean the same secret
+// typed three times and revoked once.
+
+// CloudAccountForm adds a provider API key.
+//
+// The provider select, the word above the secret box and whether there is a
+// second box at all are all drawn from /api/cloud/providers rather than
+// written here. Vultr calls its secret an API key and Cloudflare calls it an
+// API token, and using the provider's own word is the difference between
+// finding the page it is minted on and not — so the form asks the server what
+// this provider calls things, and a third provider is a package rather than
+// an edit to this file.
+templ CloudAccountForm() {
+	@card.Card() {
+		@card.Content() {
+			<form data-cloud-account-form class="space-y-5">
+				<div class="grid gap-4 sm:grid-cols-2">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "cloud-account-name"}) {
+							Name
+						}
+						@input.Input(input.Props{
+							ID:          "cloud-account-name",
+							Placeholder: "Vultr production",
+							Required:    true,
+							Attributes:  templ.Attributes{"data-account": "name", "autocomplete": "off"},
+						})
+						@field.Description() {
+							What this account is called on the registries, cluster and storage pages.
+						}
+					}
+					@ui.Field("", "cloud-account-provider", "Provider") {
+						<span class="relative flex items-center">
+							<select
+								id="cloud-account-provider"
+								data-account="provider"
+								class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"
+							>
+								<option value="vultr" selected>Vultr</option>
+							</select>
+							@ui.Chevron()
+						</span>
+					}
+				</div>
+				<div data-account-external-field hidden>
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "cloud-account-external"}) {
+							<span data-account-external-label>Account ID</span>
+						}
+						@input.Input(input.Props{
+							ID:         "cloud-account-external",
+							Class:      "font-mono",
+							Attributes: templ.Attributes{"data-account": "external_id", "autocomplete": "off"},
+						})
+						@field.Description() {
+							<span data-account-external-hint></span>
+						}
+					}
+				</div>
+				<div data-account-s3-field hidden class="grid gap-4 sm:grid-cols-2">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "cloud-account-s3-access"}) {
+							<span data-account-s3-label>S3 access key</span>
+						}
+						@input.Input(input.Props{
+							ID:         "cloud-account-s3-access",
+							Class:      "font-mono",
+							Attributes: templ.Attributes{"data-account": "s3_access_key", "autocomplete": "off"},
+						})
+						@field.Description() {
+							<span data-account-s3-hint></span>
+						}
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "cloud-account-s3-secret"}) {
+							S3 secret key
+						}
+						@input.Input(input.Props{
+							ID:         "cloud-account-s3-secret",
+							Type:       "password",
+							Class:      "font-mono",
+							Attributes: templ.Attributes{"data-account": "s3_secret_key", "autocomplete": "off"},
+						})
+						@field.Description() {
+							Proved before it is stored and sealed like the rest. This is the pair that
+							reads the objects themselves, so guard only ever reads with it.
+						}
+					}
+				</div>
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "cloud-account-key"}) {
+						<span data-account-key-label>Account API key</span>
+					}
+					@input.Input(input.Props{
+						ID:          "cloud-account-key",
+						Type:        "password",
+						Placeholder: "The provider's account API key",
+						Required:    true,
+						Class:       "font-mono",
+						Attributes:  templ.Attributes{"data-account": "api_key", "autocomplete": "off"},
+					})
+					@field.Description() {
+						Proved against the provider before it is stored, then sealed like the SSH
+						passwords. It never comes back to this page.
+						<span data-account-key-hint></span>
+					}
+				}
+				<div class="flex flex-wrap items-center gap-3 border-t border-border pt-5">
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						Add account
+					}
+					<span data-cloud-account-status class="text-sm text-muted-foreground"></span>
+				</div>
+			</form>
+		}
+	}
+}
+
+// CloudAccountList shows the stored keys — names, providers, dots — and the
+// one thing about an account that can be changed rather than re-created.
+//
+// The S3 pair is editable in place because it is a second, optional credential
+// for one feature: making somebody delete the account to add one would mean
+// unlinking every machine that points into it to gain a Browse button. The API
+// key is not editable, for the opposite reason — it is what the account is, and
+// delete-and-add is what keeps its proof unskippable.
+templ CloudAccountList() {
+	@card.Card(card.Props{Class: "gap-0 py-0"}) {
+		@table.Table() {
+			@ui.TableHead([]string{"Name", "Provider", "Key", ""})
+			@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-cloud-accounts": true}})
+		}
+	}
+	<div data-s3-form hidden>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					S3 credentials for <span data-s3-account class="font-mono"></span>
+				}
+				@card.Description() {
+					The pair that reads the objects themselves. Guard only ever reads with it —
+					browsing is read-only — and it is proved against the storage before it is
+					stored, then sealed like everything else. Leave both blank to forget it.
+				}
+			}
+			@card.Content(card.ContentProps{Class: "space-y-4"}) {
+				<div class="grid gap-4 sm:grid-cols-2">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "s3-access"}) {
+							Access key ID
+						}
+						@input.Input(input.Props{
+							ID:         "s3-access",
+							Class:      "font-mono",
+							Attributes: templ.Attributes{"data-s3": "access", "autocomplete": "off"},
+						})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "s3-secret"}) {
+							Secret access key
+						}
+						@input.Input(input.Props{
+							ID:         "s3-secret",
+							Type:       "password",
+							Class:      "font-mono",
+							Attributes: templ.Attributes{"data-s3": "secret", "autocomplete": "off"},
+						})
+					}
+				</div>
+				<div class="flex flex-wrap items-center justify-end gap-3">
+					<span data-s3-status class="mr-auto text-sm text-muted-foreground empty:hidden"></span>
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-s3-cancel": true},
+					}) {
+						Cancel
+					}
+					@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-s3-save": true}}) {
+						Save
+					}
+				</div>
+			}
+		}
+	</div>
+}
+
+// CloudImport lists the instances an account runs that no machine here is
+// watching yet, and declares one in a click.
+//
+// It is on the settings page rather than /cluster because importing is
+// declaring: the imported machine arrives paused, with an address guessed
+// from the instance's IP and no health path, which is a form to finish
+// rather than a machine to operate.
+//
+// Fetched on a press, never on the live tick. Behind this list is somebody's
+// API rate limit, not guard's SQLite.
+templ CloudImport() {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Import from a cloud account
+			}
+			@card.Description() {
+				Instances the account runs that nothing here watches yet.
+			}
+		}
+		@card.Content(card.ContentProps{Class: "space-y-4"}) {
+			<div class="flex flex-wrap items-end gap-3">
+				<label class="grid min-w-56 flex-1 gap-1.5 text-xs text-muted-foreground">
+					Account
+					<span class="relative flex items-center">
+						<select data-import-account class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"></select>
+						@ui.Chevron()
+					</span>
+				</label>
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Attributes: templ.Attributes{"data-import-refresh": true},
+				}) {
+					List instances
+				}
+			</div>
+			<div data-import-rows class="space-y-2"></div>
+			<p data-import-status class="text-sm text-muted-foreground empty:hidden"></p>
+		}
+	}
+	<template data-import-row-template>
+		<div data-import-row class="flex flex-wrap items-center gap-3 rounded-lg border border-border px-3 py-2">
+			<div class="min-w-0 flex-1">
+				<p data-import-label class="truncate text-sm font-medium"></p>
+				<p data-import-meta class="truncate font-mono text-[.65rem] text-muted-foreground"></p>
+			</div>
+			<span data-import-watched class="cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap empty:hidden"></span>
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-import-add": true},
+			}) {
+				Watch this
+			}
+		</div>
+	</template>
+}

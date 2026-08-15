@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/mirairoad/guard/internal/telemetry/model"
-	"github.com/mirairoad/guard/server/apis/contract"
-	"github.com/mirairoad/guard/server/apis/store"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/server/apis/contract"
+	"github.com/hushkey-app/guard/server/apis/store"
 	"github.com/mirairoad/howl-go/core/api"
 )
 

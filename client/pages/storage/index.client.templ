@@ -1,0 +1,41 @@
+package storage
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/alert"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
+)
+
+templ Head() {
+	<title>Storage — Guard</title>
+	<meta name="description" content="Object storage on the stored cloud accounts: endpoints, keys, and what they cost."/>
+}
+
+templ Page() {
+	<section class="space-y-8">
+		@ui.PageHeading("Infrastructure", "Storage",
+			"Object storage on every stored cloud account, read live from the provider.")
+		@components.StoragePanel()
+		@components.ConfirmDialog()
+		@alert.Alert() {
+			@alert.Title() {
+				The keys are the point, and they are logged
+			}
+			@alert.Description() {
+				Some providers return an S3 access key and secret with every read of a subscription.
+				Guard keeps them out of the listing — each card says a pair exists and draws dots —
+				and hands them over only when <strong>Reveal</strong> is pressed, through an endpoint
+				that exists for that and writes a line saying it happened. They are never stored here.
+				<strong>Rotate keys</strong> issues a new pair immediately: everything still holding the
+				old secret stops working, which is the point of pressing it.
+				A card with neither button is one whose provider mints its credentials somewhere guard
+				cannot reach — Cloudflare's R2 keys are API tokens, made on Cloudflare's own token
+				screen — and it says so rather than showing dots over a pair that is not coming.
+			}
+		}
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("storage") }
+func Unmount() { lifecycle.Unmount("storage") }

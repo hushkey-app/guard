@@ -35,6 +35,34 @@ Open <http://localhost:4318>. Guard writes telemetry to `guard.db` by default.
 The Settings page controls time and row retention. Set `GUARD_TOKEN` to require
 a bearer token on ingestion and settings mutations.
 
+## Signing in
+
+Guard is open until it is given OAuth credentials. Set Google's, Apple's, or
+both, and the dashboard goes behind a login page with a button per configured
+provider:
+
+```bash
+GUARD_GOOGLE_CLIENT_ID=…apps.googleusercontent.com
+GUARD_GOOGLE_CLIENT_SECRET=…
+GUARD_ADMIN_EMAIL=you@example.com          # always allowed, always an admin
+GUARD_AUTH_BASE_URL=https://guard.example.com
+```
+
+The redirect URI to register is `<base URL>/auth/google/callback`, and
+`<base URL>/auth/apple/callback` for Apple — whose `GUARD_APPLE_CLIENT_ID` is a
+Services ID, and whose signing key goes in `GUARD_APPLE_PRIVATE_KEY` or
+`GUARD_APPLE_PRIVATE_KEY_FILE` beside `GUARD_APPLE_TEAM_ID` and
+`GUARD_APPLE_KEY_ID`.
+
+Proving who you are is not the same as being allowed in: the guest list is
+Settings → Members, plus whatever `GUARD_ADMIN_EMAIL` names. A member reads
+everything; an admin can also change things, including the list. Sessions last
+seven days (`GUARD_AUTH_SESSION_TTL`).
+
+The OTLP endpoints stay outside all of it — an exporter holds `GUARD_TOKEN`, not
+a browser session — so switching sign-in on never stops a collector. See
+[docs/auth.md](docs/auth.md).
+
 ## Dashboard rendering
 
 Home, Logs, Metrics, Traces, and Settings are howl-go `.client.templ` routes.
@@ -78,7 +106,55 @@ volumes:
 
 Mount the directory, not only the database file, because SQLite creates
 `guard.db-wal` and `guard.db-shm` beside it. Use a local Docker volume rather
-than a network filesystem for WAL mode.
+than a network filesystem for WAL mode. The `vault` service is the same image
+with `entrypoint: guard-vault`, on the same volume — it needs the key file
+beside the database, and it refuses to start without it.
+
+## Secrets
+
+Guard also stores the environment variables your applications boot with — one
+workspace per application, its own environments inside it, key and value
+encrypted at rest — on a `/secrets` page that imports and exports whole `.env`
+files.
+
+They are served by a **second binary**, `guard-vault`, on the same database and
+key file. That is the point of it: a bad dashboard release, a restart or a
+rollback must not stop a container from booting.
+
+```bash
+guard-vault -db /data/guard.db     # :4319
+```
+
+An application holds one key, minted on the page and shown once:
+
+```bash
+GUARD_VAULT_URL=http://vault.internal:4319
+GUARD_VAULT_KEY=gsk_hushkey_production_…
+```
+
+The key carries its own workspace and environment, so there is nothing else to
+configure, a staging token cannot be pointed at production, and no
+application's key reads another's. Locally,
+`guard-vault fetch -workspace hushkey -env local > .env` skips the server.
+
+See `docs/secrets.md`.
+
+## Deploying
+
+Two static binaries and no runtime dependencies — the pages, stylesheet and wasm
+are embedded. A tag builds both for linux/amd64 and linux/arm64 in GitHub
+Actions and publishes them as a release; `deploy/guard-update` on a systemd
+timer pulls, verifies the checksum, installs and restarts, rolling back on a
+failed health check. No SSH, no registry, no build on the box.
+
+```bash
+install -m 0755 deploy/guard-update /usr/local/bin/guard-update
+install -m 0644 deploy/*.service deploy/*.timer /etc/systemd/system/
+systemctl enable --now guard guard-vault guard-update.timer
+```
+
+`/etc/guard/version` holds `latest` or a tag, and is the whole interface for
+pinning a box. See `docs/deploy.md`.
 
 ## Send OpenTelemetry
 
