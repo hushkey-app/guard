@@ -289,14 +289,14 @@ func App(title, head string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<!-- Who made it and which build is answering. The version is the\n\t\t\t\t     same string the OpenAPI document reports, so a bug report\n\t\t\t\t     naming what the sidebar says names something real. --><div class=\"mt-3 flex items-center justify-between gap-2 px-2 text-[.65rem] text-muted-foreground\"><span>Guard by <span class=\"font-medium text-foreground\">Hushkey</span></span> <span class=\"font-mono tabular-nums\">v")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<!-- Who made it and which build is answering. The version is the\n\t\t\t\t     same string the OpenAPI document reports, so a bug report\n\t\t\t\t     naming what the sidebar says names something real. --><div class=\"mt-3 flex items-center justify-between gap-2 px-2 text-[.65rem] text-muted-foreground\"><span>Guard by <span class=\"font-medium text-foreground\">Hushkey</span></span> <span class=\"font-mono tabular-nums\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(build.Version)
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(build.Tag())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 136, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 136, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {

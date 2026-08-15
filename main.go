@@ -72,7 +72,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
-		fmt.Println(build.Version)
+		fmt.Println(build.Tag())
 		return
 	}
 
@@ -247,7 +247,7 @@ func main() {
 	// replace binaries.
 	updates := &release.Watch{
 		Repo:      *updateRepo,
-		Current:   "v" + build.Version,
+		Current:   build.Tag(),
 		Interval:  *updateInterval,
 		StatePath: *updateState,
 	}
@@ -266,7 +266,7 @@ func main() {
 	// cannot describe an endpoint this binary does not serve.
 	mux.HandleFunc("GET /api/openapi.json", api.OpenAPI(api.Info{
 		Title:       "Guard",
-		Version:     build.Version,
+		Version:     build.Tag(),
 		Description: "OTLP/HTTP telemetry receiver.",
 	}, routes...))
 	mux.HandleFunc("GET /api/docs", api.Docs("/api/openapi.json"))
