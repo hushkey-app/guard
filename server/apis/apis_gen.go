@@ -21,8 +21,9 @@ import (
 	e14 "github.com/hushkey-app/guard/server/apis/secrets/values"
 	e15 "github.com/hushkey-app/guard/server/apis/settings"
 	e16 "github.com/hushkey-app/guard/server/apis/traces"
-	e17 "github.com/hushkey-app/guard/server/apis/views"
-	e18 "github.com/hushkey-app/guard/server/apis/webhooks"
+	e17 "github.com/hushkey-app/guard/server/apis/update"
+	e18 "github.com/hushkey-app/guard/server/apis/views"
+	e19 "github.com/hushkey-app/guard/server/apis/webhooks"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -105,20 +106,22 @@ func FsApiRoutes() []api.Route {
 		api.At("POST", "/api/settings/purge", e15.Purge),
 		api.At("GET", "/api/summary", Summary),
 		api.At("GET", "/api/traces/{id}", e16.ByID),
-		api.At("GET", "/api/views", e17.List),
-		api.At("POST", "/api/views", e17.Create),
-		api.At("GET", "/api/views/catalogue", e17.Catalogue),
-		api.At("GET", "/api/views/data", e17.Data),
-		api.At("POST", "/api/views/drill", e17.Drill),
-		api.At("PUT", "/api/views/order", e17.Order),
-		api.At("POST", "/api/views/preview", e17.Preview),
-		api.At("POST", "/api/views/samples", e17.Samples),
-		api.At("DELETE", "/api/views/{id}", e17.Remove),
-		api.At("PUT", "/api/views/{id}", e17.Update),
-		api.At("GET", "/api/webhooks", e18.List),
-		api.At("PUT", "/api/webhooks", e18.Save),
-		api.At("POST", "/api/webhooks/test", e18.Test),
-		api.At("DELETE", "/api/webhooks/{id}", e18.Delete),
+		api.At("GET", "/api/update", e17.State),
+		api.At("POST", "/api/update", e17.Apply),
+		api.At("GET", "/api/views", e18.List),
+		api.At("POST", "/api/views", e18.Create),
+		api.At("GET", "/api/views/catalogue", e18.Catalogue),
+		api.At("GET", "/api/views/data", e18.Data),
+		api.At("POST", "/api/views/drill", e18.Drill),
+		api.At("PUT", "/api/views/order", e18.Order),
+		api.At("POST", "/api/views/preview", e18.Preview),
+		api.At("POST", "/api/views/samples", e18.Samples),
+		api.At("DELETE", "/api/views/{id}", e18.Remove),
+		api.At("PUT", "/api/views/{id}", e18.Update),
+		api.At("GET", "/api/webhooks", e19.List),
+		api.At("PUT", "/api/webhooks", e19.Save),
+		api.At("POST", "/api/webhooks/test", e19.Test),
+		api.At("DELETE", "/api/webhooks/{id}", e19.Delete),
 		api.At("GET", "/healthz", Health),
 	}
 }

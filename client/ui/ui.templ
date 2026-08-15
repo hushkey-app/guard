@@ -223,6 +223,42 @@ templ Chevron() {
 	</svg>
 }
 
+// UpdateCard sits at the bottom of the sidebar, above the settings card, and is
+// hidden until there is something to say.
+//
+// It lives in the shell rather than on a page because it is true everywhere:
+// the sidebar is outside #outlet, so this is rendered once and stays across
+// client-side navigation, and guard.js fills it from a value the server already
+// holds. Nothing here polls GitHub — guard does that on its own timer, so a
+// dashboard open in four tabs costs one request a quarter of an hour rather
+// than four.
+//
+// Pressing Update writes a version into a file. It does not install anything
+// and it does not restart anything: a root-owned unit on a timer does that,
+// which is why the card then says "asked for" rather than pretending to be
+// finished.
+templ UpdateCard() {
+	<div data-update-card hidden class="rounded-xl border border-primary/40 bg-primary/5 p-3 text-xs leading-5">
+		<div class="flex items-baseline justify-between gap-2">
+			<span class="font-semibold text-foreground">Update available</span>
+			<a data-update-link href="#" target="_blank" rel="noreferrer noopener" class="font-mono tabular-nums text-primary hover:underline"></a>
+		</div>
+		<!-- Unmanaged instances — a container, a laptop — get the line above and
+		     this note instead of a button that cannot work. -->
+		<p data-update-note hidden class="mt-1 text-muted-foreground"></p>
+		<div data-update-actions hidden class="mt-2 flex items-center gap-2">
+			@button.Button(button.Props{
+				Size:       button.SizeSm,
+				Class:      "h-7 px-2 text-xs",
+				Attributes: templ.Attributes{"data-update-apply": true},
+			}) {
+				Update
+			}
+			<span data-update-status class="text-[.65rem] text-muted-foreground empty:hidden"></span>
+		</div>
+	</div>
+}
+
 templ IconSettings() {
 	<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
 		<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path>

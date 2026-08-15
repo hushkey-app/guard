@@ -8,9 +8,13 @@ ExecStart=/usr/local/bin/guard -db /var/lib/guard/guard.db
 User=guard
 Restart=always
 RestartSec=2
-# It writes the database, its WAL and the key file beside them.
+# It writes the database, its WAL and the key file beside them — and
+# /etc/guard/version, which is the one thing the dashboard's Update button
+# does. Installing is guard-update's job, running as root on a timer; guard
+# only writes down which version is wanted, which is why this is the whole
+# extent of what it may touch outside its own data directory.
 ProtectSystem=strict
-ReadWritePaths=/var/lib/guard
+ReadWritePaths=/var/lib/guard /etc/guard
 NoNewPrivileges=yes
 PrivateTmp=yes
 

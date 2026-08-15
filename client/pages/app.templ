@@ -69,28 +69,34 @@ templ App(title, head string) {
 						}
 					}
 				</nav>
-				<div class="mt-auto flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 text-xs leading-5 text-muted-foreground">
-					<div class="min-w-0">
-						<div class="mb-1 font-semibold text-foreground">OTLP/HTTP</div>
-						<code class="break-all font-mono">localhost:4318</code>
-					</div>
+				<!-- Both cards sit at the bottom, so the space above them belongs to
+				     one wrapper: two siblings each carrying mt-auto would split the
+				     free space between them and drift apart. -->
+				<div class="mt-auto space-y-3">
+					@ui.UpdateCard()
+					<div class="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 text-xs leading-5 text-muted-foreground">
+						<div class="min-w-0">
+							<div class="mb-1 font-semibold text-foreground">OTLP/HTTP</div>
+							<code class="break-all font-mono">localhost:4318</code>
+						</div>
 					<!-- Ghost by default, tinted by aria-current: the same reason
 					     NavLink works that way — this sits outside #outlet, so a
 					     variant chosen at render time would freeze. -->
-					@button.Button(button.Props{
-						Href:  "/settings",
-						Size:  button.SizeIconSm,
-						Variant: button.VariantGhost,
-						Class: "aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground",
-						Attributes: templ.Attributes{
-							"aria-label":    "Open settings",
-							"title":         "Settings",
-							"data-nav-link": "true",
-							"aria-current":  ui.Current(router.Current(ctx) == "/settings"),
-						},
-					}) {
-						@ui.IconSettings()
-					}
+						@button.Button(button.Props{
+							Href:    "/settings",
+							Size:    button.SizeIconSm,
+							Variant: button.VariantGhost,
+							Class:   "aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground",
+							Attributes: templ.Attributes{
+								"aria-label":    "Open settings",
+								"title":         "Settings",
+								"data-nav-link": "true",
+								"aria-current":  ui.Current(router.Current(ctx) == "/settings"),
+							},
+						}) {
+							@ui.IconSettings()
+						}
+					</div>
 				</div>
 				<!-- Who is looking, when guard has been told to ask. Absent on an
 				     instance with no sign-in configured, which is why it is a

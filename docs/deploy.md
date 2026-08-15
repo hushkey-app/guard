@@ -72,6 +72,36 @@ randomised delay so a fleet does not ask GitHub in lockstep — unauthenticated
 API calls are capped at 60 an hour per address, and four an hour per box leaves
 room for several boxes behind one NAT.
 
+### The Update button
+
+Guard polls the releases API every fifteen minutes — server-side, so a dashboard
+open in four tabs still costs one request a quarter of an hour rather than four,
+which matters against a sixty-an-hour budget shared with the updater on the same
+address. When a release differs from the running version, a card appears at the
+bottom of the sidebar, above the settings card.
+
+Pressing **Update** writes the version into `/etc/guard/version` and nothing
+else. It does not install and it does not restart: the card then says
+"requested", because the install is `guard-update` on its own timer and may be
+a quarter of an hour away — and one of the things it restarts is the page the
+button was pressed on.
+
+Guard will only write a version it has actually seen from the API, or `latest`.
+The file is read by something running as root that puts the value in a URL, so
+the set of things it may contain is the set guard has been told exists, rather
+than "a string that looks like a version" — which is a validator somebody
+eventually widens.
+
+On a box with no `/etc/guard` — a container, a laptop, `go run .` — the card
+still names the release and links to it, but offers no button, because there is
+nothing to write and no unit to act on it.
+
+| variable | default | what |
+|---|---|---|
+| `GUARD_UPDATE_REPO` | `hushkey-app/guard` | empty watches nothing at all |
+| `GUARD_UPDATE_INTERVAL` | `15m` | how often guard asks GitHub |
+| `GUARD_UPDATE_STATE` | `/etc/guard/version` | the file the updater reads |
+
 `/etc/guard/version` is the whole interface:
 
 | contents | what happens |
@@ -79,10 +109,9 @@ room for several boxes behind one NAT.
 | absent, or `latest` | the box follows the newest release |
 | `v0.2.0` | the box installs and stays on that, ignoring newer ones |
 
-So pinning a box is one line, and the dashboard's **Update** button — when it
-exists — only has to write that file. The thing that replaces binaries stays
-outside guard, under its own unit, and keeps working on the day guard does not
-start, which is the day you want it most.
+So pinning a box is one line. The thing that replaces binaries stays outside
+guard, under its own unit, and keeps working on the day guard does not start,
+which is the day you want it most.
 
 ## What the updater guarantees
 
