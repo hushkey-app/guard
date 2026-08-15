@@ -83,6 +83,16 @@ type Node struct {
 	// with the node because the settings page draws them together, and a second
 	// request per node to list two buttons is a request per node too many.
 	Actions []NodeAction `json:"actions,omitempty"`
+	// Group is the box this machine sits in — "VPC-1", "staging", "the rack in
+	// the office". Free text, because guard cannot know whether the boundary
+	// that matters to somebody is a VPC, a region, a customer or a floor, and a
+	// dropdown of the ones it could infer would be wrong for the first person
+	// whose boundary is none of them.
+	//
+	// It is not a tag. A tag is one of many labels for finding a machine again;
+	// a group is where the machine *is*, so it is single-valued and the cluster
+	// page is laid out by it. Empty is normal and lands in "Ungrouped".
+	Group string `json:"group,omitempty"`
 	// Tags are what somebody scanning twenty cards is actually looking for:
 	// "the postgres boxes", "the redis ones". Guard attaches no meaning to
 	// them — it does not know what postgres is — so they are a label and a
@@ -230,6 +240,11 @@ type NodeAction struct {
 	// that has not worked in a day is, and only the person who knows what the
 	// job is for can say where the line is.
 	StaleAfterSeconds int `json:"stale_after_seconds,omitempty"`
+	// WebhookID is where this job's staleness alert goes, or zero for whatever
+	// the instance was configured with. Per action, because "the backups have
+	// stopped" belongs in the channel the person who owns the database watches
+	// and "the cache flush has stopped" does not.
+	WebhookID int64 `json:"webhook_id,omitempty"`
 	// The last run, so a button can say what happened last time it was pressed
 	// rather than looking identical whether it has ever worked.
 	LastRunAt time.Time `json:"last_run_at,omitempty"`
@@ -244,6 +259,12 @@ type NodeAction struct {
 	// action, so a stale job is reported and then repeated occasionally rather
 	// than every time the watchdog wakes up. Cleared by the next success.
 	AlertedAt time.Time `json:"alerted_at,omitempty"`
+	// ScheduleFrom is when the expression above was last written, and it is
+	// what an action that has never run counts from. Stored rather than
+	// derived: an action saved with "@every 6h" at nine o'clock is first due at
+	// three, and it has to stay due at three across every pass of the loop and
+	// every restart in between.
+	ScheduleFrom time.Time `json:"schedule_from,omitempty"`
 	// CreatedAt anchors the staleness watch for an action that has never
 	// succeeded: without it, a job that has never worked once looks exactly
 	// like one that has nothing to report.
@@ -279,9 +300,17 @@ func (a NodeAction) NextRun(now time.Time) time.Time {
 	}
 	anchor := a.LastRunAt
 	if anchor.IsZero() {
-		// Never run: due one period from now rather than immediately. An
-		// action that fires the moment it is saved is one somebody typed a
-		// schedule into and then had to explain to a machine.
+		// Never run: measured from when the schedule was written, so the first
+		// fire is one period after somebody typed it — and, crucially, is a
+		// fixed point. Anchoring a never-run action on "now" would move its due
+		// time forward on every pass, which is a job that is always about to
+		// run and never does.
+		anchor = a.ScheduleFrom
+	}
+	if anchor.IsZero() {
+		anchor = a.CreatedAt
+	}
+	if anchor.IsZero() {
 		anchor = now
 	}
 	return schedule.Next(anchor)

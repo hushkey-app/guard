@@ -2,17 +2,20 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/hushkey-app/guard/internal/notify"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 type fakeWatchStore struct {
-	actions  []model.NodeAction
-	alerted  map[int64]time.Time
-	failMark bool
+	actions   []model.NodeAction
+	alerted   map[int64]time.Time
+	failMark  bool
+	delivered []string
 }
 
 func (f *fakeWatchStore) WatchedActions() ([]model.NodeAction, error) {
@@ -34,18 +37,33 @@ func (f *fakeWatchStore) MarkAlerted(actionID int64, at time.Time) error {
 	return nil
 }
 
-type recordingNotifier struct {
-	sent []Alert
+func (f *fakeWatchStore) DestinationFor(id int64) (notify.Destination, error) {
+	return notify.Destination{ID: id, Name: "ops", URL: "https://hooks.example.com/ops"}, nil
+}
+
+func (f *fakeWatchStore) RecordDelivery(_ int64, _ time.Time, failure string) error {
+	f.delivered = append(f.delivered, failure)
+	return nil
+}
+
+// recordingSender stands in for the delivery module: the watch is tested on
+// what it decides to say, not on whether a socket answered.
+type recordingSender struct {
+	sent []notify.Event
 	err  error
 }
 
-func (r *recordingNotifier) Notify(_ context.Context, alert Alert) error {
+func (r *recordingSender) Send(_ context.Context, _ notify.Destination, event notify.Event) error {
 	if r.err != nil {
 		return r.err
 	}
-	r.sent = append(r.sent, alert)
+	r.sent = append(r.sent, event)
 	return nil
 }
+
+// somewhere is a configured fallback destination, so the watch has a place to
+// deliver to in these tests.
+var somewhere = notify.Destination{Name: "test", URL: "https://hooks.example.com/test"}
 
 func staleAction() model.NodeAction {
 	return model.NodeAction{
@@ -62,18 +80,21 @@ func staleAction() model.NodeAction {
 
 func TestWatchdogReportsAJobThatHasNotSucceeded(t *testing.T) {
 	store := &fakeWatchStore{actions: []model.NodeAction{staleAction()}}
-	notifier := &recordingNotifier{}
-	w := &Watchdog{Store: store, Notifier: notifier, Log: quietLogger()}
+	sender := &recordingSender{}
+	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
 
 	raised := w.Round(context.Background())
-	if len(raised) != 1 || len(notifier.sent) != 1 {
-		t.Fatalf("raised %d, sent %d, want one of each", len(raised), len(notifier.sent))
+	if len(raised) != 1 || len(sender.sent) != 1 {
+		t.Fatalf("raised %d, sent %d, want one of each", len(raised), len(sender.sent))
 	}
-	alert := notifier.sent[0]
-	if alert.Node != "VPS-1" || alert.Action != "Dump to R2" {
-		t.Fatalf("alert = %+v, want the machine and the command named", alert)
+	alert := sender.sent[0]
+	if alert.Fields["node"] != "VPS-1" || alert.Fields["action"] != "Dump to R2" {
+		t.Fatalf("alert = %+v, want the machine and the command named", alert.Fields)
 	}
-	if alert.Message == "" || alert.LastOKAt.IsZero() {
+	if alert.Kind != notify.KindScheduleStale || alert.State != notify.StateFiring {
+		t.Fatalf("alert = %+v, want a firing staleness event", alert)
+	}
+	if alert.Message == "" || alert.Fields["last_ok_at"] == nil {
 		t.Fatal("an alert says when it last worked, not just that it is late")
 	}
 	if _, ok := store.alerted[1]; !ok {
@@ -85,8 +106,8 @@ func TestWatchdogStaysQuietInsideTheRepeatWindow(t *testing.T) {
 	action := staleAction()
 	action.AlertedAt = time.Now().Add(-time.Hour)
 	store := &fakeWatchStore{actions: []model.NodeAction{action}}
-	notifier := &recordingNotifier{}
-	w := &Watchdog{Store: store, Notifier: notifier, Repeat: 6 * time.Hour, Log: quietLogger()}
+	sender := &recordingSender{}
+	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Repeat: 6 * time.Hour, Log: quietLogger()}
 
 	if raised := w.Round(context.Background()); len(raised) != 0 {
 		t.Fatal("a job reported an hour ago should not be reported again yet")
@@ -104,8 +125,8 @@ func TestWatchdogLeavesAHealthyJobAlone(t *testing.T) {
 	action := staleAction()
 	action.LastOKAt = time.Now().Add(-time.Hour)
 	store := &fakeWatchStore{actions: []model.NodeAction{action}}
-	notifier := &recordingNotifier{}
-	w := &Watchdog{Store: store, Notifier: notifier, Log: quietLogger()}
+	sender := &recordingSender{}
+	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
 
 	if raised := w.Round(context.Background()); len(raised) != 0 {
 		t.Fatalf("raised %d alerts about a job that worked an hour ago", len(raised))
@@ -117,8 +138,8 @@ func TestWatchdogLeavesAHealthyJobAlone(t *testing.T) {
 
 func TestAFailedDeliveryIsRetriedNextPass(t *testing.T) {
 	store := &fakeWatchStore{actions: []model.NodeAction{staleAction()}}
-	notifier := &recordingNotifier{err: errors.New("webhook down")}
-	w := &Watchdog{Store: store, Notifier: notifier, Log: quietLogger()}
+	sender := &recordingSender{err: errors.New("webhook down")}
+	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
 
 	w.Round(context.Background())
 	if len(store.alerted) != 0 {
@@ -132,10 +153,37 @@ func TestWatchdogWatchesJobsWithNoScheduleToo(t *testing.T) {
 	action := staleAction()
 	action.Schedule = ""
 	store := &fakeWatchStore{actions: []model.NodeAction{action}}
-	notifier := &recordingNotifier{}
-	w := &Watchdog{Store: store, Notifier: notifier, Log: quietLogger()}
+	sender := &recordingSender{}
+	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
 
 	if raised := w.Round(context.Background()); len(raised) != 1 {
 		t.Fatal("an unscheduled job with a threshold is still watched")
+	}
+}
+
+func TestNeverSucceededIsNullRatherThanTheYearOne(t *testing.T) {
+	action := staleAction()
+	action.LastOKAt = time.Time{}
+	action.CreatedAt = time.Now().Add(-9 * time.Hour)
+	store := &fakeWatchStore{actions: []model.NodeAction{action}}
+	sender := &recordingSender{}
+	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
+
+	raised := w.Round(context.Background())
+	if len(raised) != 1 {
+		t.Fatalf("raised %d alerts", len(raised))
+	}
+	// The payload is read by somebody else's handler, and 0001-01-01 is not a
+	// date anybody wants to special-case.
+	body, err := json.Marshal(raised[0].Fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["last_ok_at"] != nil {
+		t.Fatalf("last_ok_at = %v, want null", payload["last_ok_at"])
 	}
 }

@@ -94,6 +94,27 @@ CREATE INDEX IF NOT EXISTS idx_views_position ON views(position, id);`
 		return fmt.Errorf("migrate views: %w", err)
 	}
 
+	// The panel watching itself: one rule per view, as columns rather than a
+	// table, because it is one row's worth of answer to "tell me when this
+	// chart goes bad" and a join would be a join per dashboard read.
+	for _, column := range []string{
+		`alert_enabled INTEGER NOT NULL DEFAULT 0`,
+		`alert_op TEXT NOT NULL DEFAULT 'above'`,
+		`alert_threshold REAL NOT NULL DEFAULT 0`,
+		`alert_for_s INTEGER NOT NULL DEFAULT 0`,
+		`alert_webhook_id INTEGER NOT NULL DEFAULT 0`,
+		`alert_firing INTEGER NOT NULL DEFAULT 0`,
+		`alert_since_ns INTEGER NOT NULL DEFAULT 0`,
+		`alert_alerted_ns INTEGER NOT NULL DEFAULT 0`,
+		`alert_value REAL NOT NULL DEFAULT 0`,
+		`alert_series TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := db.Exec(`ALTER TABLE views ADD COLUMN ` + column); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate view alerts: %w", err)
+		}
+	}
+
 	// table_xinfo, not table_info: a VIRTUAL generated column is hidden, so
 	// table_info would report it missing on every start and the ALTER below
 	// would fail with "duplicate column name" the second time guard ran.
@@ -143,8 +164,7 @@ CREATE INDEX IF NOT EXISTS idx_views_position ON views(position, id);`
 // ---------------------------------------------------------------------------
 
 func (s *Store) Views() ([]View, error) {
-	rows, err := s.db.Query(`SELECT id,name,description,panel,query_json,position,width,created_at_ns,updated_at_ns
-FROM views ORDER BY position, id`)
+	rows, err := s.db.Query(`SELECT ` + viewColumns + ` FROM views ORDER BY position, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -161,20 +181,71 @@ FROM views ORDER BY position, id`)
 }
 
 func (s *Store) View(id int64) (View, error) {
-	row := s.db.QueryRow(`SELECT id,name,description,panel,query_json,position,width,created_at_ns,updated_at_ns
-FROM views WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT `+viewColumns+` FROM views WHERE id = ?`, id)
 	return scanView(row)
+}
+
+// viewColumns is one list, read in three places, so an alert column cannot
+// arrive in the dashboard and go missing in the loop that evaluates it.
+const viewColumns = `id,name,description,panel,query_json,position,width,created_at_ns,updated_at_ns,
+alert_enabled,alert_op,alert_threshold,alert_for_s,alert_webhook_id,
+alert_firing,alert_since_ns,alert_alerted_ns,alert_value,alert_series`
+
+// WatchedViews is what the view alert loop reads: the ones carrying a rule that
+// is switched on and points somewhere.
+func (s *Store) WatchedViews() ([]View, error) {
+	rows, err := s.db.Query(`SELECT ` + viewColumns + ` FROM views
+WHERE alert_enabled = 1 AND alert_webhook_id > 0 ORDER BY position, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]View, 0)
+	for rows.Next() {
+		view, err := scanView(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, view)
+	}
+	return out, rows.Err()
+}
+
+// SaveViewAlertState records where a view's rule stands, so the judgement
+// survives a restart: a rule that forgot it had been firing would alert again
+// on every deploy.
+func (s *Store) SaveViewAlertState(viewID int64, alert model.ViewAlert) error {
+	_, err := s.db.Exec(`UPDATE views SET alert_firing=?,alert_since_ns=?,alert_alerted_ns=?,alert_value=?,alert_series=?
+WHERE id=?`, alert.Firing, unixOrZero(alert.Since), unixOrZero(alert.Alerted), alert.Value, alert.Series, viewID)
+	return err
 }
 
 func scanView(row scanner) (View, error) {
 	var view View
 	var query string
 	var created, updated int64
-	if err := row.Scan(&view.ID, &view.Name, &view.Description, &view.Panel, &query, &view.Position, &view.Width, &created, &updated); err != nil {
+	var alert model.ViewAlert
+	var since, alerted int64
+	if err := row.Scan(&view.ID, &view.Name, &view.Description, &view.Panel, &query,
+		&view.Position, &view.Width, &created, &updated,
+		&alert.Enabled, &alert.Op, &alert.Threshold, &alert.ForSeconds, &alert.WebhookID,
+		&alert.Firing, &since, &alerted, &alert.Value, &alert.Series); err != nil {
 		return view, err
 	}
 	view.CreatedAt = time.Unix(0, created).UTC()
 	view.UpdatedAt = time.Unix(0, updated).UTC()
+	if since > 0 {
+		alert.Since = time.Unix(0, since).UTC()
+	}
+	if alerted > 0 {
+		alert.Alerted = time.Unix(0, alerted).UTC()
+	}
+	// Carried only when there is one: a view with no rule should read as a view
+	// with no rule rather than as one switched off, which is a different thing
+	// somebody configured on purpose.
+	if alert.Enabled || alert.WebhookID > 0 {
+		view.Alert = &alert
+	}
 	return view, json.Unmarshal([]byte(query), &view.Query)
 }
 
@@ -199,8 +270,11 @@ func (s *Store) SaveView(view View) (View, error) {
 		if err := s.db.QueryRow(`SELECT COALESCE(MAX(position),-1)+1 FROM views`).Scan(&position); err != nil {
 			return View{}, err
 		}
-		result, err := s.db.Exec(`INSERT INTO views(name,description,panel,query_json,position,width,created_at_ns,updated_at_ns)
-VALUES(?,?,?,?,?,?,?,?)`, view.Name, view.Description, view.Panel, string(query), position, view.Width, now, now)
+		alert := alertOrZero(view)
+		result, err := s.db.Exec(`INSERT INTO views(name,description,panel,query_json,position,width,created_at_ns,updated_at_ns,
+alert_enabled,alert_op,alert_threshold,alert_for_s,alert_webhook_id)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, view.Name, view.Description, view.Panel, string(query), position, view.Width, now, now,
+			alert.Enabled, alert.Op, alert.Threshold, alert.ForSeconds, alert.WebhookID)
 		if err != nil {
 			return View{}, err
 		}
@@ -210,8 +284,19 @@ VALUES(?,?,?,?,?,?,?,?)`, view.Name, view.Description, view.Panel, string(query)
 		}
 		return s.View(id)
 	}
-	result, err := s.db.Exec(`UPDATE views SET name=?,description=?,panel=?,query_json=?,position=?,width=?,updated_at_ns=? WHERE id=?`,
-		view.Name, view.Description, view.Panel, string(query), view.Position, view.Width, now, view.ID)
+	alert := alertOrZero(view)
+	// An edited rule forgets that it has already spoken, but not that it is
+	// firing. Clearing the whole judgement would close an incident silently:
+	// whatever received the "firing" event would never be told it ended, and
+	// somebody's on-call board would keep it open forever. Keeping "firing"
+	// and dropping "alerted" means the next pass either re-fires against the
+	// new line or sends the resolved event that closes it properly.
+	result, err := s.db.Exec(`UPDATE views SET name=?,description=?,panel=?,query_json=?,position=?,width=?,updated_at_ns=?,
+alert_enabled=?,alert_op=?,alert_threshold=?,alert_for_s=?,alert_webhook_id=?,alert_alerted_ns=0
+WHERE id=?`,
+		view.Name, view.Description, view.Panel, string(query), view.Position, view.Width, now,
+		alert.Enabled, alert.Op, alert.Threshold, alert.ForSeconds, alert.WebhookID,
+		view.ID)
 	if err != nil {
 		return View{}, err
 	}
@@ -1476,9 +1561,17 @@ FROM events WHERE trace_id = ? AND signal = 'traces' ORDER BY timestamp_ns ASC, 
 // unitFor labels the axis. Duration is the one field whose unit guard knows
 // without asking; a metric carries its own unit per row, which can differ
 // within a single group, so that one is left to the panel's title.
-func unitFor(q ViewQuery) string {
-	if q.Value == "duration_ms" && q.Agg != "count" {
-		return "ms"
+func unitFor(q ViewQuery) string { return model.AlertUnit(q) }
+
+// alertOrZero is the rule as stored: a view without one writes zeroes rather
+// than needing every caller to construct an empty rule.
+func alertOrZero(view View) model.ViewAlert {
+	if view.Alert == nil {
+		return model.ViewAlert{Op: model.MonitorAbove}
 	}
-	return ""
+	alert := *view.Alert
+	if alert.Op == "" {
+		alert.Op = model.MonitorAbove
+	}
+	return alert
 }

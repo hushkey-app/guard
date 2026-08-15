@@ -109,6 +109,9 @@ CREATE INDEX IF NOT EXISTS idx_cluster_snapshots_node ON cluster_snapshots(node_
 		// and is always read with its machine — and cost a second query on the
 		// path the dashboard walks every three seconds.
 		"tags": "TEXT NOT NULL DEFAULT '[]'",
+		// Where the machine is. One value, free text, laid out by rather than
+		// searched by — the difference between a group and a tag.
+		"node_group": "TEXT NOT NULL DEFAULT ''",
 		// How often to ask the machine itself, over SSH. Its own cadence,
 		// because a sample costs a handshake where a health check costs a
 		// request on a connection that was already open.
@@ -178,9 +181,9 @@ CREATE INDEX IF NOT EXISTS idx_cluster_runs_node ON cluster_runs(node_id, ran_at
 
 	// The schedule, added after the commands existed. An action with one is run
 	// by guard on a timer; every other thing about it — the machine, the login,
-	// the audit line — is unchanged, which is why this is four columns rather
-	// than a job table.
-	actionColumns := map[string]bool{}
+	// the audit line — is unchanged, which is why this is a handful of columns
+	// rather than a job table.
+	haveColumn := map[string]bool{}
 	rows, err = db.Query(`SELECT name FROM pragma_table_xinfo('cluster_actions')`)
 	if err != nil {
 		return fmt.Errorf("read action columns: %w", err)
@@ -191,7 +194,7 @@ CREATE INDEX IF NOT EXISTS idx_cluster_runs_node ON cluster_runs(node_id, ran_at
 			rows.Close()
 			return err
 		}
-		actionColumns[name] = true
+		haveColumn[name] = true
 	}
 	if err := rows.Close(); err != nil {
 		return err
@@ -207,8 +210,16 @@ CREATE INDEX IF NOT EXISTS idx_cluster_runs_node ON cluster_runs(node_id, ran_at
 		// reported and repeated occasionally rather than every wake-up.
 		"alerted_ns": "INTEGER NOT NULL DEFAULT 0",
 		"created_ns": "INTEGER NOT NULL DEFAULT 0",
+		// When the expression was last written. An action that has never run
+		// counts its first fire from here, and it has to be a fixed point:
+		// counting from "now" would move the due time forward on every pass of
+		// the loop, which is a job that is always about to run and never does.
+		"schedule_from_ns": "INTEGER NOT NULL DEFAULT 0",
+		// Where this job's staleness alert goes. Zero means the instance-wide
+		// destination, which is what an upgrade finds every row set to.
+		"webhook_id": "INTEGER NOT NULL DEFAULT 0",
 	} {
-		if actionColumns[column] {
+		if haveColumn[column] {
 			continue
 		}
 		if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE cluster_actions ADD COLUMN %s %s`, column, definition)); err != nil {
@@ -219,7 +230,7 @@ CREATE INDEX IF NOT EXISTS idx_cluster_runs_node ON cluster_runs(node_id, ran_at
 	// anchor for one that has never succeeded. Dating them zero would make
 	// every existing action instantly stale the moment somebody set a
 	// threshold on it.
-	if !actionColumns["created_ns"] {
+	if !haveColumn["created_ns"] {
 		if _, err := db.Exec(`UPDATE cluster_actions SET created_ns = ? WHERE created_ns = 0`, time.Now().UnixNano()); err != nil {
 			return fmt.Errorf("date existing actions: %w", err)
 		}
@@ -286,7 +297,7 @@ const nodeColumns = `id,name,url,domain,internal_url,health_path,ssh_address,ssh
 LENGTH(COALESCE(ssh_password,'')) > 0,locked,enabled,interval_seconds,created_at_ns,updated_at_ns,
 LENGTH(COALESCE(icon,'')) > 0,COALESCE(tags,'[]'),
 COALESCE(provider,''),COALESCE(provider_account_id,0),COALESCE(provider_instance_id,''),
-COALESCE(stats_interval_seconds,0)`
+COALESCE(stats_interval_seconds,0),COALESCE(node_group,'')`
 
 func scanNode(scan func(...any) error) (Node, error) {
 	var node Node
@@ -295,7 +306,8 @@ func scanNode(scan func(...any) error) (Node, error) {
 	err := scan(&node.ID, &node.Name, &node.URL, &node.Domain, &node.InternalURL, &node.HealthPath,
 		&node.SSHAddress, &node.SSHFingerprint, &node.HasPassword, &node.Locked, &node.Enabled, &node.IntervalSeconds,
 		&created, &updated, &node.HasIcon, &tags,
-		&node.Provider, &node.ProviderAccountID, &node.ProviderInstanceID, &node.StatsIntervalSeconds)
+		&node.Provider, &node.ProviderAccountID, &node.ProviderInstanceID, &node.StatsIntervalSeconds,
+		&node.Group)
 	if err != nil {
 		return node, err
 	}
@@ -455,6 +467,7 @@ func boolToFloat(value bool) float64 {
 
 func (s *Store) SaveNode(node Node) (Node, error) {
 	node.Name = strings.TrimSpace(node.Name)
+	node.Group = strings.TrimSpace(node.Group)
 	node.URL = strings.TrimSpace(node.URL)
 	node.Domain = strings.TrimSpace(node.Domain)
 	node.InternalURL = strings.TrimSpace(node.InternalURL)
@@ -509,11 +522,11 @@ func (s *Store) SaveNode(node Node) (Node, error) {
 		provider, accountID, instanceID := normaliseLink(node.Provider, node.ProviderAccountID, node.ProviderInstanceID)
 		result, err := s.db.Exec(`INSERT INTO cluster_nodes
 (name,url,domain,internal_url,health_path,ssh_address,ssh_password,locked,enabled,interval_seconds,tags,
-stats_interval_seconds,provider,provider_account_id,provider_instance_id,created_at_ns,updated_at_ns)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+stats_interval_seconds,provider,provider_account_id,provider_instance_id,node_group,created_at_ns,updated_at_ns)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			node.Name, node.URL, node.Domain, node.InternalURL, node.HealthPath, node.SSHAddress, sealedPassword,
 			node.Locked, node.Enabled, node.IntervalSeconds, tags, node.StatsIntervalSeconds,
-			provider, accountID, instanceID, now, now)
+			provider, accountID, instanceID, node.Group, now, now)
 		if err != nil {
 			return Node{}, err
 		}
@@ -550,9 +563,9 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 	}
 
 	result, err := s.db.Exec(`UPDATE cluster_nodes SET name=?,url=?,domain=?,internal_url=?,health_path=?,
-ssh_address=?,locked=?,enabled=?,interval_seconds=?,stats_interval_seconds=?,tags=?,updated_at_ns=? WHERE id=?`,
+ssh_address=?,locked=?,enabled=?,interval_seconds=?,stats_interval_seconds=?,tags=?,node_group=?,updated_at_ns=? WHERE id=?`,
 		node.Name, node.URL, node.Domain, node.InternalURL, node.HealthPath, node.SSHAddress,
-		node.Locked, node.Enabled, node.IntervalSeconds, node.StatsIntervalSeconds, tags, now, node.ID)
+		node.Locked, node.Enabled, node.IntervalSeconds, node.StatsIntervalSeconds, tags, node.Group, now, node.ID)
 	if err != nil {
 		return Node{}, err
 	}
@@ -891,14 +904,14 @@ func (s *Store) actionsByNode(nodeID int64) (map[int64][]model.NodeAction, error
 
 // actionColumns is one list, read in three places, so a column added to the
 // schedule cannot arrive in the settings page and go missing in the scheduler.
-const actionColumns = `id,node_id,name,command,schedule,stale_after_s,last_run_ns,last_exit,last_error,last_ok_ns,alerted_ns,created_ns`
+const actionColumns = `id,node_id,name,command,schedule,stale_after_s,webhook_id,last_run_ns,last_exit,last_error,last_ok_ns,alerted_ns,created_ns,schedule_from_ns`
 
 func scanAction(row scanner) (model.NodeAction, error) {
 	var action model.NodeAction
-	var ran, ok, alerted, created int64
+	var ran, ok, alerted, created, from int64
 	err := row.Scan(&action.ID, &action.NodeID, &action.Name, &action.Command,
-		&action.Schedule, &action.StaleAfterSeconds,
-		&ran, &action.LastExit, &action.LastError, &ok, &alerted, &created)
+		&action.Schedule, &action.StaleAfterSeconds, &action.WebhookID,
+		&ran, &action.LastExit, &action.LastError, &ok, &alerted, &created, &from)
 	if err != nil {
 		return model.NodeAction{}, err
 	}
@@ -907,7 +920,8 @@ func scanAction(row scanner) (model.NodeAction, error) {
 	for _, pair := range []struct {
 		ns   int64
 		into *time.Time
-	}{{ran, &action.LastRunAt}, {ok, &action.LastOKAt}, {alerted, &action.AlertedAt}, {created, &action.CreatedAt}} {
+	}{{ran, &action.LastRunAt}, {ok, &action.LastOKAt}, {alerted, &action.AlertedAt},
+		{created, &action.CreatedAt}, {from, &action.ScheduleFrom}} {
 		if pair.ns > 0 {
 			*pair.into = time.Unix(0, pair.ns).UTC()
 		}
@@ -949,8 +963,16 @@ func (s *Store) SaveActions(nodeID int64, actions []model.NodeAction) ([]model.N
 	keep := make([]any, 0, len(actions))
 	for position, action := range actions {
 		if action.ID > 0 {
-			result, err := tx.Exec(`UPDATE cluster_actions SET name=?,command=?,position=?,schedule=?,stale_after_s=? WHERE id=? AND node_id=?`,
-				action.Name, action.Command, position, strings.TrimSpace(action.Schedule), action.StaleAfterSeconds, action.ID, nodeID)
+			// The schedule's anchor moves only when the expression itself
+			// changes: renaming a command must not push its next dump six
+			// hours out, and a page that saves the whole list on every edit
+			// would otherwise do exactly that.
+			result, err := tx.Exec(`UPDATE cluster_actions SET name=?,command=?,position=?,stale_after_s=?,webhook_id=?,
+schedule_from_ns = CASE WHEN schedule <> ? THEN ? ELSE schedule_from_ns END,
+schedule = ? WHERE id=? AND node_id=?`,
+				action.Name, action.Command, position, action.StaleAfterSeconds, action.WebhookID,
+				strings.TrimSpace(action.Schedule), time.Now().UnixNano(),
+				strings.TrimSpace(action.Schedule), action.ID, nodeID)
 			if err != nil {
 				return nil, err
 			}
@@ -962,8 +984,11 @@ func (s *Store) SaveActions(nodeID int64, actions []model.NodeAction) ([]model.N
 			// new rather than refused, because the alternative is a settings
 			// page that cannot be saved and does not say why.
 		}
-		result, err := tx.Exec(`INSERT INTO cluster_actions(node_id,name,command,position,schedule,stale_after_s,created_ns) VALUES(?,?,?,?,?,?,?)`,
-			nodeID, action.Name, action.Command, position, strings.TrimSpace(action.Schedule), action.StaleAfterSeconds, time.Now().UnixNano())
+		now := time.Now().UnixNano()
+		result, err := tx.Exec(`INSERT INTO cluster_actions(node_id,name,command,position,schedule,stale_after_s,webhook_id,created_ns,schedule_from_ns)
+VALUES(?,?,?,?,?,?,?,?,?)`,
+			nodeID, action.Name, action.Command, position, strings.TrimSpace(action.Schedule),
+			action.StaleAfterSeconds, action.WebhookID, now, now)
 		if err != nil {
 			return nil, err
 		}
@@ -1011,7 +1036,7 @@ func (s *Store) Action(id int64) (model.NodeAction, error) {
 // the health checks, which is the point — one pause, one meaning.
 func (s *Store) ScheduledActions() ([]model.NodeAction, error) {
 	rows, err := s.db.Query(`SELECT a.id,a.node_id,a.name,a.command,a.schedule,a.stale_after_s,
-a.last_run_ns,a.last_exit,a.last_error,a.last_ok_ns,a.alerted_ns,a.created_ns
+a.webhook_id,a.last_run_ns,a.last_exit,a.last_error,a.last_ok_ns,a.alerted_ns,a.created_ns,a.schedule_from_ns
 FROM cluster_actions a JOIN cluster_nodes n ON n.id = a.node_id
 WHERE a.schedule <> '' AND n.enabled = 1 ORDER BY a.node_id, a.position`)
 	if err != nil {
@@ -1194,6 +1219,7 @@ func (s *Store) DuplicateNode(id int64) (Node, error) {
 	}
 	copied := Node{
 		Name:        s.copyName(source.Name),
+		Group:       source.Group,
 		Domain:      source.Domain,
 		InternalURL: source.InternalURL,
 		HealthPath:  source.HealthPath,

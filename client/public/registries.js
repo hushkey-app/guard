@@ -12,6 +12,7 @@
 // as "everything was deleted", which is a terrible thing for a page with
 // delete buttons to say by accident.
 import { adminHeaders, el, muted, number, qs, qsa, relativeTime, request, text } from "./core.js";
+import { ensure, get as stored } from "./store.js";
 import { ask } from "./cluster.js";
 import { can, cloudAccounts, cloudProviders } from "./cloud.js";
 
@@ -54,18 +55,28 @@ export async function refreshRegistries(force = false) {
   if (qs("[data-registry-overview]")) await refreshExplorer(force);
 }
 
-async function fetchOverview(force) {
-  if (!force && overview.length && Date.now() - overviewAt < overviewTTL) return overview;
-  if (!overviewRequest) {
-    overviewRequest = request("/api/registries")
-      .then((rows) => {
-        overview = rows || [];
-        overviewAt = Date.now();
-        return overview;
-      })
-      .finally(() => { overviewRequest = null; });
+// The overview lives in the store rather than in a module-private cache with a
+// TTL. Same throttle — behind this is somebody's registry API, not guard's
+// SQLite — but the value now survives navigation, so coming back to the page
+// draws it before the provider has said anything.
+// The overview lives in the store rather than in a module-private cache with a
+// TTL. Same throttle — behind this is somebody's registry API, not guard's
+// SQLite — but the value now survives navigation, and the table is drawn from
+// what is known *inside* the callback rather than after the await. That is the
+// whole difference: awaiting first means the page waits on somebody else's API
+// before it draws rows it already had.
+async function fetchOverview(force, draw) {
+  const known = stored("registries.overview");
+  if (!force && known && Date.now() - overviewAt < overviewTTL) {
+    overview = known;
+    draw();
+    return overview;
   }
-  return overviewRequest;
+  return ensure("registries.overview", () => request("/api/registries"), (rows, stale) => {
+    overview = rows || [];
+    if (!stale) overviewAt = Date.now();
+    draw();
+  });
 }
 
 async function refreshExplorer(force) {
@@ -73,14 +84,15 @@ async function refreshExplorer(force) {
   // reading with rows they did not ask for; the drill refetches itself on
   // every action instead.
   if (drill.registry && !force) return;
+  const draw = () => {
+    if (!drill.registry) renderOverview();
+  };
   try {
-    await fetchOverview(force);
+    await fetchOverview(force, draw);
     status("");
   } catch (failure) {
     status(failure.message);
-    return;
   }
-  if (!drill.registry) renderOverview();
 }
 
 function status(message) {
@@ -114,29 +126,36 @@ function renderOverview() {
   if (!host) return;
   show("overview");
   const emptyNote = qs("[data-registry-empty]");
-  const cards = [];
+  const sections = [];
+  let count = 0;
   capabilities.clear();
   for (const row of overview) {
     capabilities.set(row.account.id, row.capabilities || {});
-    // A failed account still gets a card, because "this key stopped
-    // working" is a thing the page exists to say.
+    const registries = row.error ? [] : (row.registries || []);
+    count += registries.length;
+    // Grouped by the account key, because that is what a registry is *under*:
+    // two accounts on the same provider are two bills and two logins, and a
+    // flat list of eight registries makes somebody read every URN to tell
+    // which is which.
+    sections.push(accountHeading(row.account, registries.length, row.error));
+    // A failed account still gets its heading and a line saying so, because
+    // "this key stopped working" is a thing the page exists to say.
     if (row.error) {
-      const card = el("article", "col-span-1 space-y-2 rounded-xl border border-destructive/40 bg-destructive/10 p-5");
-      card.append(
-        el("p", "font-semibold", row.account.name),
-        el("p", "text-sm text-destructive", row.error),
-      );
-      cards.push(card);
+      sections.push(el("p", "rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive", row.error));
       continue;
     }
-    for (const registry of row.registries || []) {
-      cards.push(registryCard(row.account, registry, row.capabilities || {}));
+    if (!registries.length) {
+      sections.push(el("p", `px-1 text-sm ${muted}`, "No registries on this account."));
+      continue;
     }
+    const list = el("div", "divide-y divide-border overflow-hidden rounded-xl border border-border");
+    list.append(...registries.map((registry) => registryRow(row.account, registry, row.capabilities || {})));
+    sections.push(list);
   }
-  if (emptyNote) emptyNote.classList.toggle("hidden", cards.length > 0);
-  host.replaceChildren(...(emptyNote ? [emptyNote] : []), ...cards);
+  if (emptyNote) emptyNote.classList.toggle("hidden", sections.length > 0);
+  host.replaceChildren(...(emptyNote ? [emptyNote] : []), ...sections);
 
-  const count = cards.length - (overview.filter((row) => row.error).length);
+
   const summary = qs("[data-registry-summary]");
   if (summary) {
     summary.textContent = count
@@ -153,52 +172,82 @@ function renderOverview() {
   }
 }
 
-function registryCard(account, registry, capable) {
-  // The card is one big button, so the delete control cannot live inside it —
-  // a button in a button is not markup a browser agrees to. It sits in a
-  // wrapper beside it instead, over the card's bottom-right corner.
-  const wrapper = el("div", "relative");
-  const card = el("button", "flex h-full w-full flex-col gap-3 rounded-xl border border-border bg-card p-5 text-left text-card-foreground transition-colors hover:border-primary/50");
-  card.type = "button";
-  card.dataset.registryOpen = registry.id;
-  card.dataset.registryAccount = account.id;
-  card.dataset.registryName = registry.name;
+// One line per account: whose key these came from, and how many registries it
+// answered for. The same heading the cluster page puts over a group.
+function accountHeading(account, total, failed) {
+  const row = el("div", "flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-2");
+  row.append(el("h2", "text-sm font-semibold tracking-tight", account.name || "Account"));
+  row.append(el("span", `text-xs ${muted}`, account.provider || ""));
+  if (failed) row.append(el("span", "text-xs text-destructive", "key not answering"));
+  else row.append(el("span", `text-xs ${muted}`, `${total} registr${total === 1 ? "y" : "ies"}`));
+  return row;
+}
 
-  const head = el("div", "flex w-full items-start justify-between gap-3");
-  const names = el("div", "min-w-0");
-  names.append(
-    el("p", "truncate text-lg font-semibold tracking-tight", registry.name),
-    el("p", `truncate font-mono text-xs ${muted}`, registry.urn),
+// A row, not a card. The whole line opens the registry — so the delete control
+// cannot be nested in a button, which is why the row is a div the click
+// handler reads rather than a <button> wrapping everything.
+function registryRow(account, registry, capable) {
+  const row = el("div", "flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 bg-card px-4 py-3 text-card-foreground hover:bg-muted/30");
+  row.dataset.registryOpen = registry.id;
+  row.dataset.registryAccount = account.id;
+  row.dataset.registryName = registry.name;
+  row.tabIndex = 0;
+  row.setAttribute("role", "button");
+
+  const names = el("div", "flex min-w-0 flex-1 flex-col gap-0.5");
+  const title = el("div", "flex min-w-0 items-center gap-2");
+  title.append(
+    el("p", "truncate font-medium", registry.name),
+    el("span", "cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center whitespace-nowrap uppercase", registry.region || account.provider),
   );
-  const badge = el("span", "cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center whitespace-nowrap uppercase", registry.region || account.provider);
-  head.append(names, badge);
+  if (registry.public) {
+    title.append(el("span", "cn-badge cn-badge-variant-outline inline-flex w-fit shrink-0 items-center whitespace-nowrap", "public"));
+  }
+  names.append(title, el("p", `truncate font-mono text-xs ${muted}`, registry.urn));
 
   const used = registry.storage_used_bytes || 0;
   const allowed = registry.storage_allowed_bytes || 0;
   const share = allowed ? Math.min(1, used / allowed) : 0;
-  const meter = el("div", "h-1.5 w-full overflow-hidden rounded-full bg-muted");
+
+  // The figures in fixed columns, so they line up down the list — the whole
+  // reason this is a list. The meter sits where the cluster row's check strip
+  // does, and turns at ninety per cent because that is the row somebody opened
+  // the page for.
+  const storage = figure("Storage");
+  storage.append(
+    el("p", "font-mono text-sm tabular-nums", allowed ? bytes(used) : "—"),
+    el("p", `text-[.6rem] ${muted}`, allowed ? `of ${bytes(allowed)}` : "no quota reported"),
+  );
+  const meter = el("div", "hidden h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-muted xl:flex");
   const fill = el("div", "h-full rounded-full");
-  // Inline on purpose: a width assembled from a variable is a class
-  // Tailwind never emits, and the fill colour turns with the level.
+  // Inline on purpose: a width assembled from a variable is a class Tailwind
+  // never emits, and the fill colour turns with the level.
   fill.style.width = `${Math.round(share * 100)}%`;
   fill.style.background = share > 0.9 ? "var(--destructive)" : "var(--primary)";
   meter.appendChild(fill);
 
-  const figures = el("p", `text-xs ${muted}`,
-    `${bytes(used)} of ${bytes(allowed)} used · ${registry.public ? "public" : "private"}${account.name ? ` · ${account.name}` : ""}`);
+  const since = figure("Added");
+  since.append(el("p", "text-sm", registry.created ? new Date(registry.created).toLocaleDateString() : "—"));
 
-  const foot = el("p", `text-xs ${muted}`, registry.created ? `since ${new Date(registry.created).toLocaleDateString()}` : "");
-  card.append(head, meter, figures, foot);
-  wrapper.append(card);
+  row.append(names, storage, meter, since);
   if (capable.registry_maker) {
-    const remove = el("button", "absolute bottom-3 right-3 cn-btn cn-btn-variant-ghost cn-btn-size-sm text-muted-foreground hover:text-destructive", "Delete");
+    const remove = el("button", "cn-btn cn-btn-variant-ghost cn-btn-size-sm shrink-0 text-muted-foreground hover:text-destructive", "Delete");
     remove.type = "button";
     remove.dataset.registryDelete = registry.id;
     remove.dataset.registryDeleteAccount = account.id;
     remove.dataset.registryDeleteName = registry.name;
-    wrapper.append(remove);
+    row.append(remove);
   }
-  return wrapper;
+  return row;
+}
+
+// figure is one fixed column of the row — the same width the cluster list
+// uses, because the two pages are read the same way.
+function figure(label) {
+  const box = el("div", "hidden w-24 shrink-0 flex-col md:flex");
+  box.title = label;
+  box.append(el("p", `text-[.6rem] uppercase tracking-[.14em] ${muted}`, label));
+  return box;
 }
 
 async function openRegistry(accountID, registryID, name) {
@@ -717,8 +766,16 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-repo-open]")) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  if (event.target.matches("[data-repo-open]")) {
     event.preventDefault();
     openRepo(event.target.dataset.repoOpen, event.target.dataset.repoImage);
+    return;
+  }
+  // The registry rows are divs the click handler reads, so they are only
+  // reachable from the keyboard if the keyboard opens them too.
+  if (event.target.matches("[data-registry-open]")) {
+    event.preventDefault();
+    openRegistry(event.target.dataset.registryAccount, event.target.dataset.registryOpen, event.target.dataset.registryName);
   }
 });

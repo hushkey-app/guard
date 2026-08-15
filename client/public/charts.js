@@ -91,6 +91,12 @@ function label(x, y, value, anchor = "middle", extra = "") {
   return node;
 }
 
+// How a frame's numbers are written on an axis: durations as durations, and
+// everything else compacted. One function so a renderer cannot forget.
+function axisFormat(frame) {
+  return frame?.unit === "ms" ? duration : compact;
+}
+
 function yAxis(area, scale, format = compact) {
   const nodes = [];
   const ticks = Math.round((scale.max - scale.min) / scale.step);
@@ -252,7 +258,7 @@ function renderTimeseries(host, frame, options = {}) {
   const x = (value) => (maxX === minX ? area.left + area.width / 2 : area.left + ((value - minX) / (maxX - minX)) * area.width);
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale), ...xTimeAxis(area, minX, maxX));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)), ...xTimeAxis(area, minX, maxX));
   for (const item of series) {
     if (!item.points.length) continue;
     area.root.appendChild(svg("polyline", {
@@ -304,7 +310,7 @@ function renderBarTimeseries(host, frame, options = {}) {
   const barWidth = Math.max(1, (slot * 0.8) / series.length);
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale), ...xTimeAxis(area, buckets[0], buckets.at(-1)));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)), ...xTimeAxis(area, buckets[0], buckets.at(-1)));
   series.forEach((item, index) => {
     for (const point of item.points) {
       const slotIndex = buckets.indexOf(point.x);
@@ -510,7 +516,7 @@ function renderHistogram(host, frame, options = {}) {
   const slot = area.width / rows.length;
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)));
   rows.forEach(([start, end, count], index) => {
     const x = area.left + index * slot;
     area.root.appendChild(svg("rect", {
@@ -521,7 +527,7 @@ function renderHistogram(host, frame, options = {}) {
     area.root.appendChild(mark(svg("rect", {
       x: x + 1, y: area.top, width: Math.max(1, slot - 2), height: area.height, fill: "transparent",
     }), {
-      title: `${compact(start)} – ${compact(end)}${frame.unit ? ` ${frame.unit}` : ""}`,
+      title: `${withUnit(start, frame.unit)} – ${withUnit(end, frame.unit)}`,
       rows: [["events", number.format(count)], ["of total", `${((count / total) * 100).toFixed(1)}%`]],
       selection: count ? { min: start, max: end } : null,
     }, options));
@@ -531,7 +537,7 @@ function renderHistogram(host, frame, options = {}) {
     }
   });
   const last = rows.at(-1);
-  area.root.appendChild(label(area.right, area.bottom + 18, `${compact(last[1])}${frame.unit ? ` ${frame.unit}` : ""}`, "end"));
+  area.root.appendChild(label(area.right, area.bottom + 18, withUnit(last[1], frame.unit), "end"));
   return [];
 }
 
@@ -563,7 +569,7 @@ function renderHeatmap(host, frame, options = {}) {
       // with three hundred.
       opacity: 0.12 + 0.88 * Math.sqrt(count / max),
     }), {
-      title: `${compact(start)} – ${compact(end)}${frame.unit ? ` ${frame.unit}` : ""}`,
+      title: `${withUnit(start, frame.unit)} – ${withUnit(end, frame.unit)}`,
       rows: [["events", number.format(count)], ["at", new Date(time).toLocaleString()]],
       selection: { ...bucketSelection(new Date(time).getTime(), stepOf(times)), min: start, max: end },
     }, options));
@@ -597,7 +603,7 @@ function renderScatter(host, frame, options = {}, connect = false) {
   const x = (value) => (maxX === minX ? area.left + area.width / 2 : area.left + ((value - minX) / (maxX - minX)) * area.width);
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)));
   if (timeAxis) {
     area.root.append(...xTimeAxis(area, minX, maxX));
   } else {
@@ -654,7 +660,7 @@ function renderOHLC(host, frame, options = {}, box) {
   const bodyWidth = Math.max(2, Math.min(26, slot * 0.6));
   const y = (value) => area.bottom - ((value - scale.min) / (scale.max - scale.min)) * area.height;
 
-  area.root.append(...yAxis(area, scale), ...xTimeAxis(area, times[0], times.at(-1)));
+  area.root.append(...yAxis(area, scale, axisFormat(frame)), ...xTimeAxis(area, times[0], times.at(-1)));
   rows.forEach(([time, a, b, c, d], index) => {
     const centre = area.left + index * slot + slot / 2;
     const [low, high] = box ? [a, d] : [c, b];
@@ -704,7 +710,7 @@ export function fillSingle(body, frame, options = {}) {
   const query = view.query || {};
   const unit = frame.unit;
   const valueNode = body.querySelector("[data-stat-value]");
-  if (valueNode) valueNode.textContent = unit === "ms" ? duration(value) : withUnit(value, unit);
+  if (valueNode) valueNode.textContent = withUnit(value, unit);
 
   // The caption says what the number is being read against — not what the
   // number is. The panel subtitle already says that, and repeating it here

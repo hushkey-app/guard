@@ -20,6 +20,55 @@ is part of a service, and the same `/api/health` should follow it from
 is a way in, never a check target — a service behind a load balancer answers on
 a name that belongs to no single box.
 
+## Groups
+
+A machine carries a **group** — "VPC-1", "staging", "the rack in the office" —
+and `/cluster` lays itself out by it: one heading per group, with how many
+machines are in it and how many are down, then the rows. Empty is normal and
+lands under **Ungrouped**, which sorts last.
+
+It is free text, and typed rather than chosen, because guard cannot know
+whether the boundary that matters to somebody is a VPC, a region, a customer or
+a floor — and a dropdown of the ones it could infer would be wrong for the first
+person whose boundary is none of them. The groups already in use are offered as
+suggestions, which is what stops "VPC-1" and "vpc-1" becoming two groups.
+
+A group is not a tag. A tag is one of many labels for *finding* a machine again;
+a group is where the machine *is*, so there is exactly one, and it is what the
+page is arranged by. Duplicating a machine copies its group — five boxes in one
+VPC is the case duplicate exists for.
+
+## What a row shows
+
+`/cluster` is a **list**, one line per machine, grouped. It was a grid of cards
+and cards were the wrong shape: two to a line, mostly whitespace, and nothing
+lined up — so finding the machine that was unlike the others meant reading all
+of them. Twenty machines are now twenty lines you can run an eye down.
+
+The head is everything needed to *find* a machine, in fixed columns:
+
+| | |
+|---|---|
+| left | status dot, favicon, name, state badge, tags, address |
+| middle | response time · when last checked, 24h uptime · how many checks |
+| right | CPU, memory, disk as percentages, the check strip |
+
+Those columns are the design. A percentage three rows apart is a comparison;
+"7.7 GB / 29 GB" is a sentence you have to read. The full figures are one click
+away and are the tooltip meanwhile, and a machine at ninety per cent of anything
+turns that number red — the only colour on the row, because it is the reason
+somebody opened the page.
+
+The three machine figures are **absent** where guard has no login, rather than
+dashed: the column holding open would say a gap means nothing, and here a gap
+means something.
+
+Opening a row shows what is needed to *act* on it — the meters with their bars,
+the load and containers, **Running here** (the services whose telemetry says this
+machine served them), the cloud strip, and the commands with their schedules and
+**History**. Shut is the default and open is what is remembered, so a machine
+added later lengthens the list by a line rather than by a screenful.
+
 ## The address is dialled from the server
 
 Guard runs inside the network. The browser reading the dashboard is usually
@@ -79,6 +128,125 @@ on it anyway.
 
 Bounds: two minutes per command (`GUARD_SSH_TIMEOUT`), ten seconds to connect,
 256 KB of output kept and the rest marked truncated.
+
+## Schedules
+
+An action can carry a **schedule**, and then guard runs it — the same stored
+command, on the same machine, through the same login, with the same audit
+line. The only thing a schedule changes is who pressed the button.
+
+It is written as five cron fields **in UTC** (`0 */6 * * *`), as `@every 6h`,
+or as `@daily`, `@hourly`, `@weekly`. UTC because a server's timezone is
+invisible from this dashboard, and a backup landing at the wrong hour is how
+you would otherwise find out what it was. Empty — which is the normal case —
+means the command only runs when somebody presses it.
+
+Five rules make this a scheduler rather than a job queue:
+
+- **The five fields and the period mean different things.** A cron expression
+  is a calendar: `0 */6 * * *` is midnight, six, noon, six, whatever happened
+  in between. `@every 6h` is a period from the *last run*, so a dump that took
+  forty minutes still waits six hours after it finished.
+- **A schedule never overlaps itself.** If the last run is still going when
+  the next is due, the new one is **skipped** and the skip is recorded as a
+  run with that outcome. Two `pg_dump`s racing into one bucket is worse than a
+  late backup, and a job that has outgrown its interval should be visible as a
+  row of skips rather than as a backup that quietly halved its frequency.
+- **A paused machine runs nothing.** The same switch that stops the health
+  checks stops the schedules, because a box somebody is rebuilding is the last
+  one that should have a backup job opening sessions into it.
+- **The clock survives a restart.** The anchor is the last run, in SQLite —
+  so a guard that was down over a window runs the missed job once when it comes
+  back, rather than waiting out a fresh interval or firing for every window it
+  missed. An action that has never run counts from when its schedule was
+  written, which is why editing a command's *name* does not push its next dump
+  six hours out.
+- **A scheduled run gets longer than a pressed one.** Half an hour
+  (`GUARD_SCHEDULE_TIMEOUT`) against two minutes, because the jobs people put
+  on a timer are dumps and syncs, and a backup killed at two minutes is a
+  backup that has never once worked.
+
+## What ran, and what stopped running
+
+Every run — scheduled or pressed — is a row in `cluster_runs`: when, how long,
+the exit code, the outcome (`ok`, `failed`, `skipped`), who triggered it, and
+the tail of its output. Fifty rows per command, read from **History** on the
+card, and gone when the command is.
+
+The other half is the **staleness alert**, which is the part worth being
+careful about. An action can carry a budget — "alert if no success in 420
+minutes" — and a separate loop checks it every five minutes
+(`GUARD_ALERT_INTERVAL`).
+
+Separate on purpose, and this is the whole design:
+
+- **The check does not live inside the job.** A check that runs as part of the
+  dump only ever fires on a day the dump ran, so the one failure it exists to
+  catch — nothing ran at all — is the one it cannot see. This loop reads the
+  database, so it still speaks when the scheduler is wedged, dead, or was never
+  started.
+- **It reads the last *success*, not the last run.** A job failing on the dot
+  every six hours has a very recent last run, which is exactly what makes it
+  easy to miss.
+- **The threshold is not derived from the schedule.** A six-hourly dump that
+  is six hours and one minute late is not news; one that has not worked since
+  yesterday is. Only the person who knows what the job is for can say where
+  that line is.
+- **It survives a restart**, because the last success is a column rather than
+  a variable — a redeploy that reset the clock would silence the alarm at
+  precisely the moment it was due to fire.
+- **Delivery does not travel over the thing being reported on.** The alert is
+  always a line in guard's log, and additionally a JSON `POST` to
+  `GUARD_ALERT_WEBHOOK` if one is set — its own HTTP client, not the SSH
+  runner whose jobs are failing. A stale job is reported once and then repeated
+  every six hours (`GUARD_ALERT_REPEAT`) until it succeeds; a success clears
+  the flag, so the next failure is announced afresh.
+- **A delivery that failed is not a delivery.** Anything but a 2xx leaves the
+  flag unset, so the next pass tries again — an alert swallowed by a 401 would
+  otherwise be an outage nobody hears about twice.
+
+### The webhook
+
+One `POST`, `Content-Type: application/json`, carrying the alert's fields plus
+a `text` beside them — so the same URL works for a chat hook that renders
+`text` and for something that reads the fields:
+
+```json
+{
+  "at": "2026-08-15T02:00:00Z",
+  "node_id": 4, "node": "DB-1",
+  "action_id": 7, "action": "Dump to R2",
+  "schedule": "0 */6 * * *",
+  "last_ok_at": "2026-08-14T17:00:00Z",
+  "stale_for": "9h0m0s", "threshold": "7h0m0s",
+  "message": "Dump to R2 on DB-1 last succeeded 9h0m0s ago (2026-08-14T17:00:00Z), past its 7h0m0s threshold",
+  "text": "Dump to R2 on DB-1 last succeeded 9h0m0s ago …"
+}
+```
+
+Some receivers need a credential and some do not — a Slack or Discord incoming
+webhook has none, because the URL *is* the secret. `GUARD_ALERT_TOKEN` is for
+the ones that do:
+
+| Receiver | Configuration |
+|---|---|
+| Slack / Discord incoming webhook | `GUARD_ALERT_WEBHOOK` only |
+| Your own endpoint / a paging service | `+ GUARD_ALERT_TOKEN=xxx` → `Authorization: Bearer xxx` |
+| Something naming its own scheme | `GUARD_ALERT_TOKEN="Bot xxx"` → sent as written |
+| Something with its own header | `+ GUARD_ALERT_HEADER=X-Api-Key` → the token verbatim, there |
+
+A bare token becomes a Bearer credential; one that already contains a space is
+sent unchanged, because `Bearer Bot xxx` is what nothing wants. With a custom
+header the token is never rewritten.
+
+Guard does not speak any messaging app's API and deliberately does not: the
+thing between "a backup is late" and a phone is a relay somebody already has —
+a Slack hook, an n8n flow, a small handler that reads `message` and forwards
+it. What guard owes that relay is one authenticated `POST` with the facts in
+it.
+
+A budget with no schedule is a normal thing to set: a job run by CI or by a
+person every morning is exactly as capable of quietly stopping.
 
 ## The password
 
@@ -244,6 +412,14 @@ taken of, because the provider's snapshot does not record where it came from.
 last run ended. Existing machines are migrated by parsing their old single URL
 back into a domain and a health path, so they open the new form already filled
 in rather than looking unconfigured.
+
+The unattended half is five more columns on the same row rather than a job
+table, because what runs on a timer is the command that was already there:
+`schedule`, `schedule_from_ns` (when the expression was written, which is what
+an action that has never run counts from), `stale_after_s`, `last_ok_ns` and
+`alerted_ns`. `cluster_runs` is the history — one row per run, fifty kept per
+command, carrying the outcome, the trigger and the last 8 KB of output. It is
+deleted with its command and with its machine.
 
 ## Confirmations
 

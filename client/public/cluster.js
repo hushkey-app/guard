@@ -6,6 +6,7 @@
 // second near-identical template drifts the first time a column is added.
 
 import { adminHeaders, el, number, qs, qsa, relativeTime, request, text } from "./core.js";
+import { ensure as swr, forget, set as remember } from "./store.js";
 // The cloud half of a machine — the provider strip, the link, the snapshots.
 // It imports `ask` back from here, which is a cycle ES modules are fine with
 // so long as nothing is called while the modules are still evaluating: both
@@ -51,19 +52,24 @@ const TAG_COLOURS = {
 
 const tagColour = (name) => TAG_COLOURS[name] || TAG_COLOURS.slate;
 
-// Whose command list is folded away, remembered across navigations: the
-// state of a machine is why its card is on screen, and the buttons under it
-// are what turns twenty machines into a page that scrolls. Shut is what gets
-// stored, so a machine added later arrives open — a card that hid its own
-// commands because of a set it was never in would be a machine whose buttons
-// nobody finds.
-const collapsed = new Set(JSON.parse(localStorage.getItem("guard.cluster.commands") || "[]"));
+// Which machines are opened out, remembered across navigations.
+//
+// Open is what gets stored, and shut is the default: the page is a list, and a
+// list is for finding the machine you want among twenty. Everything needed to
+// find one is in the row — state, name, tags, address, five numbers — and
+// everything needed to act on it is one click away. Storing the *open* ones
+// also means a machine added later arrives shut, which is the right way round:
+// a new row should lengthen the list by one line, not by a screenful.
+const opened = new Set(JSON.parse(localStorage.getItem("guard.cluster.open") || "[]"));
 
-function rememberCollapsed() {
-  localStorage.setItem("guard.cluster.commands", JSON.stringify([...collapsed]));
+function rememberOpened() {
+  localStorage.setItem("guard.cluster.open", JSON.stringify([...opened]));
 }
 
 let nodes = [];
+// What the telemetry says runs on each machine, keyed by node id. Read with the
+// cluster on the operational page and empty everywhere else.
+let instancesByNode = new Map();
 let nodesAt = 0;
 let nodesRequest = null;
 
@@ -104,8 +110,37 @@ export async function refreshCluster() {
     return;
   }
   if (!qs("[data-cluster-rows]") && !qs("[data-cluster-cards]")) return;
-  nodes = await request("/api/cluster");
-  render();
+  if (qs("[data-cluster-cards]")) {
+    // Two reads for the operational page: the machines, and what the telemetry
+    // says runs on each. Together, because the question a card answers is "is
+    // this box fine and is the thing on it still reporting" — and the second
+    // half of that used to live on a different page.
+    //
+    // Through swr, so walking back to this page draws the fleet from the last
+    // visit in the same frame as the navigation and then corrects it. The
+    // status dots are the one thing that must not be trusted stale, which is
+    // why the live pass follows immediately rather than on the next tick.
+    await swr("cluster.fleet", async () => {
+      const [list, topology] = await Promise.all([
+        request("/api/cluster"),
+        request("/api/cluster/topology").catch(() => ({ groups: [] })),
+      ]);
+      return { list, groups: topology.groups || [] };
+    }, ({ list, groups }, cached) => {
+      nodes = list;
+      instancesByNode = new Map(groups
+        .filter((group) => group.node)
+        .map((group) => [group.node.id, group.instances || []]));
+      render();
+      const summary = qs("[data-cluster-summary]");
+      if (summary && cached) summary.textContent = "from your last visit — checking…";
+    });
+    return;
+  }
+  nodes = await swr("cluster.nodes", () => request("/api/cluster"), (list) => {
+    nodes = list;
+    render();
+  });
 }
 
 // What runs where. Each machine heads a group of the services whose telemetry
@@ -342,7 +377,7 @@ function row(node) {
   // twenty thousand are the same number and not the same claim.
   qs("[data-node-checks]", item).textContent = node.checks
     ? `over ${number.format(node.checks)} check${node.checks === 1 ? "" : "s"}`
-    : "24h uptime";
+    : "not checked yet";
 
   const interval = qs("[data-node-interval]", item);
   if (interval) interval.value = node.interval_seconds || 3;
@@ -373,6 +408,7 @@ function detail(item, node) {
   // its old internal address; showing that is better than showing an empty box
   // next to a machine that is plainly being checked.
   field("domain").value = node.domain || node.internal_url || "";
+  field("group").value = node.group || "";
   field("health_path").value = node.health_path || "";
   field("ssh_address").value = node.ssh_address || "";
   field("stats_interval").value = node.stats_interval_seconds ?? 0;
@@ -520,16 +556,28 @@ function actionRow(template, action, locked) {
   row.dataset.actionId = action.id || 0;
   const name = qs('[data-action-field="name"]', row);
   const command = qs('[data-action-field="command"]', row);
+  const schedule = qs('[data-action-field="schedule"]', row);
+  const stale = qs('[data-action-field="stale"]', row);
   name.value = action.name || "";
   command.value = action.command || "";
+  schedule.value = action.schedule || "";
+  // Stored in seconds and typed in minutes: seven hours is 420, and a field
+  // measured in seconds is one people put 7 in.
+  stale.value = action.stale_after_seconds ? Math.round(action.stale_after_seconds / 60) : "";
   // On a locked machine the list is closed: read-only, and the remove button
   // is taken away rather than left there to be refused.
   if (locked) {
     name.readOnly = true;
     command.readOnly = true;
+    schedule.readOnly = true;
+    stale.readOnly = true;
     name.title = command.title = "Locked. This command cannot be changed or removed — only run.";
     qs("[data-action-remove]", row)?.remove();
   }
+  // When it is next due, and — the part worth reading — when it last worked,
+  // which is a different question from when it last ran.
+  const next = qs("[data-action-next]", row);
+  if (next) next.textContent = scheduleLine(action);
   // Go's zero time serialises as year one rather than as nothing, and an
   // action that has never run would otherwise claim to have run some seventeen
   // million hours ago.
@@ -551,6 +599,49 @@ function actionRow(template, action, locked) {
     run.title = "Save this action before running it";
   }
   return row;
+}
+
+// Go's zero time serialises as year one rather than as nothing, so every
+// timestamp on this page passes through here first: an action that has never
+// run must not claim to have run seventeen million hours ago.
+function realStamp(value) {
+  return value && !value.startsWith("0001") ? value : "";
+}
+
+// relativeTime only looks backwards, and the entire point of a next run is
+// that it has not happened yet.
+function untilTime(value) {
+  const seconds = Math.max(0, Math.round((new Date(value).getTime() - Date.now()) / 1000));
+  if (seconds < 60) return `in ${seconds}s`;
+  if (seconds < 3600) return `in ${Math.floor(seconds / 60)}m`;
+  return `in ${Math.floor(seconds / 3600)}h`;
+}
+
+// What a command says about itself when nobody is pressing it: the cadence, the
+// next fire, and when it last *worked* — which is a different question from
+// when it last ran, and the one a backup is judged on.
+function scheduleLine(action) {
+  const parts = [];
+  if (action.schedule) {
+    parts.push(action.schedule);
+    const next = realStamp(action.next_run_at);
+    if (next) parts.push(`next ${untilTime(next)}`);
+  }
+  if (action.stale_after_seconds) {
+    const ok = realStamp(action.last_ok_at);
+    parts.push(ok ? `last ok ${relativeTime(ok)}` : "never succeeded");
+  }
+  return parts.join(" · ");
+}
+
+// Whether the staleness budget somebody set on this command has been blown.
+// Computed here rather than sent, because the answer changes every minute and
+// the page is redrawn every three seconds anyway.
+function isStale(action) {
+  if (!action.stale_after_seconds) return false;
+  const since = realStamp(action.last_ok_at) || realStamp(action.created_at);
+  if (!since) return false;
+  return (Date.now() - new Date(since).getTime()) / 1000 > action.stale_after_seconds;
 }
 
 // One tag, drawn. The three tones come from one hex with an alpha suffix
@@ -588,6 +679,33 @@ function fillTags(item, tags) {
   host.replaceChildren(...(tags || []).map((tag) => tagChip(tag)));
 }
 
+// What is running on this machine, as chips: the service, and how much it has
+// sent. Derived from the telemetry — a span naming this host was served by it —
+// so a machine nothing has reported from shows nothing rather than an empty
+// promise.
+function fillCardInstances(item, node) {
+  const wrap = qs("[data-card-instances-wrap]", item);
+  const host = qs("[data-card-instances]", item);
+  if (!wrap || !host) return;
+  const instances = instancesByNode.get(node.id) || [];
+  wrap.hidden = instances.length === 0;
+  if (!instances.length) return;
+  qs("[data-card-instances-count]", item).textContent =
+    `${instances.length} service${instances.length === 1 ? "" : "s"}`;
+  host.replaceChildren(...instances.map((instance) => {
+    const chip = el("span",
+      "cn-badge cn-badge-variant-secondary inline-flex w-fit items-center gap-1 whitespace-nowrap",
+      instance.service);
+    const counts = [
+      instance.spans ? `${number.format(instance.spans)} spans` : "",
+      instance.logs ? `${number.format(instance.logs)} logs` : "",
+      instance.metrics ? `${number.format(instance.metrics)} metrics` : "",
+    ].filter(Boolean).join(" · ");
+    chip.title = [instance.instance || "default", counts].filter(Boolean).join(" — ");
+    return chip;
+  }));
+}
+
 // The /cluster page: one card per machine, the stored commands laid out to
 // run. The status fields reuse the row's data attributes, so the writers
 // below serve both surfaces; what a card does not have is any input, which
@@ -596,9 +714,73 @@ function renderCards() {
   const host = qs("[data-cluster-cards]");
   const template = qs("[data-cluster-card-template]");
   if (!host || !template) return;
-  host.replaceChildren(...nodes.map((node) => cardFor(template, node)));
+
+  // Laid out by group, because that is how somebody holds a fleet in their
+  // head: "the VPC-1 boxes", not "the twenty machines". A wall of cards in id
+  // order is a wall you have to read to navigate; the same wall under three
+  // headings is one you can skip past.
+  const sections = [];
+  for (const [group, members] of groupNodes(nodes)) {
+    sections.push(groupHeading(group, members));
+    // One list per group, full width: rows divided by a line, so twenty
+    // machines are twenty lines rather than ten cards and a scroll.
+    const list = el("div", "divide-y divide-border overflow-hidden rounded-xl border border-border");
+    list.append(...members.map((node) => cardFor(template, node)));
+    sections.push(list);
+  }
+  host.replaceChildren(...sections);
   const empty = qs("[data-cluster-cards-empty]");
   if (empty) empty.hidden = nodes.length > 0;
+  fillGroupSuggestions();
+}
+
+// Grouped, named groups first and alphabetically, "Ungrouped" last — a machine
+// nobody has filed yet belongs at the bottom rather than jumping the queue on
+// an empty string.
+function groupNodes(list) {
+  const groups = new Map();
+  for (const node of list) {
+    const key = (node.group || "").trim();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(node);
+  }
+  return [...groups.entries()].sort(([a], [b]) => {
+    if (!a) return 1;
+    if (!b) return -1;
+    return a.localeCompare(b);
+  });
+}
+
+// One line per group: what it is, how many machines, and how they are doing.
+// The count of what is *wrong* leads, because a heading that says "6 machines"
+// and a heading that says "6 machines · 1 down" are read differently from
+// across a room.
+function groupHeading(group, members) {
+  const row = el("div", "flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-2");
+  const down = members.filter((node) => node.enabled && node.status === "down").length;
+  const paused = members.filter((node) => !node.enabled).length;
+  row.append(el("h2", "text-sm font-semibold tracking-tight", group || "Ungrouped"));
+  row.append(el("span", "text-xs text-muted-foreground",
+    `${members.length} machine${members.length === 1 ? "" : "s"}`));
+  if (down) row.append(el("span", "text-xs font-medium text-destructive", `${down} down`));
+  if (paused) row.append(el("span", "text-xs text-warning", `${paused} paused`));
+  if (!down && !paused) row.append(el("span", "text-xs text-muted-foreground", "all up"));
+  return row;
+}
+
+// The groups that already exist, offered to the group boxes on the settings
+// page. Typed rather than chosen — guard cannot know whether somebody's
+// boundary is a VPC, a region or a floor — but suggesting the ones in use is
+// what stops "VPC-1" and "vpc-1" from becoming two groups.
+function fillGroupSuggestions() {
+  const list = qs("#cluster-groups");
+  if (!list) return;
+  const names = [...new Set(nodes.map((node) => (node.group || "").trim()).filter(Boolean))].sort();
+  list.replaceChildren(...names.map((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    return option;
+  }));
 }
 
 function cardFor(template, node) {
@@ -646,16 +828,12 @@ function cardFor(template, node) {
     : "—";
   qs("[data-node-checks]", item).textContent = node.checks
     ? `over ${number.format(node.checks)} check${node.checks === 1 ? "" : "s"}`
-    : "24h uptime";
+    : "not checked yet";
   fillTags(item, node.tags);
   strip(qs("[data-node-strip]", item), node.history || []);
 
   const actions = node.actions || [];
-  // The count is on the header because the header is all that is left when
-  // the list is folded: "Commands" alone cannot say whether folding it hid
-  // four buttons or none.
-  qs("[data-commands-count]", item).textContent = actions.length ? `· ${actions.length}` : "";
-  showCommands(item, !collapsed.has(node.id));
+  showBody(item, opened.has(node.id));
   const actionsHost = qs("[data-card-actions]", item);
   const actionTemplate = qs("[data-card-action-template]");
   actionsHost.replaceChildren(...actions.map((action) => {
@@ -663,13 +841,23 @@ function cardFor(template, node) {
     chip.dataset.actionId = action.id;
     qs("[data-card-action-name]", chip).textContent = action.name || "unnamed";
     qs("[data-card-action-command]", chip).textContent = action.command || "";
-    const ranAt = action.last_run_at && !action.last_run_at.startsWith("0001") ? action.last_run_at : "";
+    const ranAt = realStamp(action.last_run_at);
     const last = qs("[data-card-action-last]", chip);
     if (ranAt) {
       last.textContent = action.last_error ? `${relativeTime(ranAt)} · failed` : `${relativeTime(ranAt)} · ok`;
       last.className = action.last_error
         ? "shrink-0 text-[.65rem] text-destructive empty:hidden"
         : "shrink-0 text-[.65rem] text-muted-foreground empty:hidden";
+    }
+    // The unattended half, on the card that gets scanned: the cadence, the
+    // next fire, and — in the destructive tone, because it is the thing this
+    // whole feature exists to surface — a budget that has been blown.
+    const schedule = qs("[data-card-action-schedule]", chip);
+    if (schedule) {
+      schedule.textContent = scheduleLine(action);
+      schedule.className = isStale(action)
+        ? "truncate text-[.65rem] text-destructive empty:hidden"
+        : "truncate text-[.65rem] text-muted-foreground empty:hidden";
     }
     // A machine without a stored login has nothing to run as. The commands
     // still show — they are part of what this machine *is* — but the button
@@ -683,6 +871,7 @@ function cardFor(template, node) {
   }));
   qs("[data-card-actions-empty]", item).hidden = actions.length > 0;
 
+  fillCardInstances(item, node);
   fillHost(item, node);
   fillCloudCard(item, node);
 
@@ -707,7 +896,18 @@ function cardFor(template, node) {
 function fillHost(item, node) {
   const host = qs("[data-host]", item);
   if (!host) return;
-  if (!node.stats_interval_seconds) { host.hidden = true; return; }
+  // The three meters live in the card's one metric grid and hide themselves;
+  // this block is what is left — the load line, the hour of CPU, the
+  // containers — and it goes when nothing is being sampled.
+  // A machine with no login cannot answer CPU, memory or disk at all, so its
+  // tiles go rather than standing empty — the same rule the monitors follow,
+  // where unmeasurable is silence and not zero. A machine that has a login but
+  // has not been sampled yet keeps them and shows a dash: guard is about to
+  // fill them in.
+  const sampled = !!node.stats_interval_seconds && !!node.ssh_address && !!node.has_password;
+  for (const tile of qsa("[data-host-tile]", item)) tile.hidden = !sampled;
+  for (const cell of qsa("[data-head-stat]", item)) cell.classList.toggle("lg:flex", sampled);
+  if (!sampled) { host.hidden = true; return; }
   host.hidden = false;
 
   const stats = node.stats;
@@ -731,6 +931,17 @@ function fillHost(item, node) {
   meter(item, "disk", percent(stats?.disk_used_kb, stats?.disk_total_kb),
     stats?.disk_total_kb ? `${kb(stats.disk_used_kb)} / ${kb(stats.disk_total_kb)}` : "—");
 
+  // The row head says the same three numbers as percentages, because a list is
+  // scanned down a column: "94" three rows apart is a comparison, and "7.7 GB /
+  // 29 GB" is a sentence you have to read. The full figure is one click away,
+  // and is the title here.
+  headStat(item, "cpu", stats?.has_cpu ? stats.cpu_percent : null,
+    stats?.has_cpu ? `${Math.round(stats.cpu_percent)}% of ${stats.cpu_count || "?"} vCPU` : "not measured yet");
+  headStat(item, "mem", percent(stats?.mem_used_kb, stats?.mem_total_kb),
+    stats?.mem_total_kb ? `${kb(stats.mem_used_kb)} / ${kb(stats.mem_total_kb)}` : "no reading");
+  headStat(item, "disk", percent(stats?.disk_used_kb, stats?.disk_total_kb),
+    stats?.disk_total_kb ? `${kb(stats.disk_used_kb)} / ${kb(stats.disk_total_kb)}` : "no reading");
+
   cpuStrip(qs("[data-host-strip]", item), node.cpu_history || []);
 
   const containers = qs("[data-host-containers]", item);
@@ -744,6 +955,26 @@ function fillHost(item, node) {
   // "No docker here" and "this login cannot reach the socket" are different
   // sentences, and the second one is a thing to go and fix.
   note.textContent = stats && !stats.error && !stats.containers?.length ? stats.docker_error || "" : "";
+}
+
+// One of the three machine figures in the row head. A machine that cannot
+// answer loses the column rather than showing a dash: the whole point of the
+// alignment is that a gap means something.
+function headStat(item, key, value, detail) {
+  const cell = qs(`[data-head-stat="${key}"]`, item);
+  if (!cell) return;
+  const node = qs(`[data-head-value="${key}"]`, cell);
+  if (value === null || value === undefined) {
+    node.textContent = "—";
+  } else {
+    node.textContent = `${Math.round(value)}%`;
+    // The one colour on the row: at nine tenths of anything, the number is the
+    // reason somebody opened this page.
+    node.className = value >= 90
+      ? "font-mono text-sm tabular-nums text-destructive"
+      : "font-mono text-sm tabular-nums";
+  }
+  cell.title = detail || "";
 }
 
 function percent(used, total) {
@@ -823,12 +1054,17 @@ async function sampleNow(card, nodeID) {
 // Open or shut one card's command list. Only that: the status, the address,
 // the uptime and the tags are why the card is on screen, and folding them
 // away would leave a row of names.
-function showCommands(item, open) {
-  const body = qs("[data-commands-body]", item);
+// Open or shut one row. The chevron turns, and the state is on the button for
+// anything reading the page rather than looking at it.
+function showBody(item, open) {
+  const body = qs("[data-card-body]", item);
   if (body) body.hidden = !open;
-  const chevron = qs("[data-node-chevron]", item);
-  if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
-  qs("[data-commands-toggle]", item)?.setAttribute("aria-expanded", open ? "true" : "false");
+  const toggle = qs("[data-card-toggle]", item);
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    const chevron = qs("svg", toggle);
+    if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
+  }
 }
 
 // The last sixty checks, oldest first. A single "up" badge cannot show a node
@@ -914,12 +1150,18 @@ async function updateNode(id, changes) {
       enabled: node.enabled,
       locked: node.locked,
       interval_seconds: node.interval_seconds,
-      // Always sent, because the store writes the tag column on every save:
-      // left out, pausing a machine would quietly strip its labels.
+      // Always sent, because the store writes both columns on every save:
+      // left out, pausing a machine would quietly strip its labels and drop it
+      // out of its group.
       tags: node.tags || [],
+      group: node.group || "",
       ...changes,
     }),
   });
+  // The fleet just changed, so what is stored is wrong: dropped rather than
+  // drawn for a frame before the refetch corrects it.
+  forget("cluster.fleet");
+  forget("cluster.nodes");
   await refreshCluster();
 }
 
@@ -936,6 +1178,7 @@ async function saveDetail(panel) {
     // now, and a leftover internal address would go on being probed instead.
     internal_url: "",
     health_path: field("health_path"),
+    group: field("group"),
     ssh_address: field("ssh_address"),
     // A number, and zero means off — so it is read as one rather than sent as
     // the string an <input> hands over, which the API would reject.
@@ -960,6 +1203,10 @@ async function saveActions(panel) {
     id: Number(row.dataset.actionId) || 0,
     name: qs('[data-action-field="name"]', row).value.trim(),
     command: qs('[data-action-field="command"]', row).value.trim(),
+    schedule: qs('[data-action-field="schedule"]', row).value.trim(),
+    // Typed in minutes, stored in seconds. Empty is not zero-with-a-meaning:
+    // it is nobody watching this command, which is the default.
+    stale_after_seconds: Math.round(Number(qs('[data-action-field="stale"]', row).value || 0) * 60),
   })).filter((action) => action.name || action.command);
   dirty.delete(id);
   const saved = await request("/api/cluster/actions", {
@@ -1000,6 +1247,35 @@ async function run(panel, body, path, label) {
   } catch (failure) {
     show(panel, id, `${label} — ${failure.message}`, "");
   }
+}
+
+// What has run on this machine lately — scheduled or pressed — on the same
+// pane a run's output lands on. The tracker is a list, not a dashboard: a
+// scheduled command that has been failing since Tuesday says so in the fifth
+// column of five lines, which is the whole thing anybody needs from it.
+async function runHistory(card, id) {
+  show(card, id, "History — loading…", "");
+  const runs = await request(`/api/cluster/runs?node=${id}&limit=25`, { headers: adminHeaders() });
+  if (!runs.length) {
+    show(card, id, "History — nothing has run on this machine yet", "");
+    return;
+  }
+  const lines = runs.map((entry) => {
+    const when = new Date(entry.ran_at).toLocaleString();
+    const outcome = entry.outcome || (entry.error || entry.exit_code ? "failed" : "ok");
+    // A skip took no time, and a run that never connected took none worth
+    // printing: "0 ms" reads as a command that finished instantly.
+    const took = entry.duration_ms ? `${number.format(Math.round(entry.duration_ms))} ms` : "—";
+    const why = entry.error ? ` · ${entry.error}` : "";
+    return [
+      when,
+      entry.action_name || "(removed command)",
+      entry.trigger || "manual",
+      outcome,
+      took,
+    ].join("  ") + why;
+  });
+  show(card, id, `History — the last ${runs.length} run${runs.length === 1 ? "" : "s"}`, lines.join("\n"));
 }
 
 function show(panel, id, head, body) {
@@ -1134,15 +1410,25 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  // Folding one card's command list. The whole header line is the target,
-  // chevron included — it is a 28-pixel arrow otherwise.
-  const commandsHead = event.target.closest("[data-commands-head]");
-  if (commandsHead) {
-    const card = commandsHead.closest("[data-node-id]");
+  // What has run on this machine lately.
+  const historyButton = event.target.closest("[data-card-history]");
+  if (historyButton) {
+    const card = historyButton.closest("[data-node-id]");
+    runHistory(card, Number(card.dataset.nodeId)).catch(reportOn(historyButton));
+    return;
+  }
+
+  // Opening one row. The whole head line is the target, chevron included — a
+  // 28-pixel arrow is a small thing to ask somebody to hit twenty times — but
+  // not the controls inside it, or opening a machine and pressing a button on
+  // it would be the same gesture.
+  const cardHead = event.target.closest("[data-card-head]");
+  if (cardHead && !event.target.closest("a, input, select, label, button:not([data-card-toggle])")) {
+    const card = cardHead.closest("[data-node-id]");
     const id = Number(card.dataset.nodeId);
-    const open = collapsed.delete(id) ? true : (collapsed.add(id), false);
-    rememberCollapsed();
-    showCommands(card, open);
+    const open = opened.delete(id) ? false : (opened.add(id), true);
+    rememberOpened();
+    showBody(card, open);
     return;
   }
 

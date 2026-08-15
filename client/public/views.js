@@ -5,7 +5,8 @@
 // division is the same one the server makes — a view is a stored query, and
 // this file is the only place that knows what a query looks like as a form.
 
-import { adminHeaders, el, qs, qsa, request, text } from "./core.js";
+import { adminHeaders, duration, el, qs, qsa, request, text } from "./core.js";
+import { get as recall, set as remember } from "./store.js";
 import { bodyKind, describe, draw, fieldLabel } from "./charts.js";
 
 // The catalogue is the running binary's own answer to "what can be built" —
@@ -44,9 +45,22 @@ export async function refreshViews() {
   // it was, a moment after it was moved — so the revision it started under is
   // checked against the one in force when it lands.
   const revision = layoutRevision;
+  // The panel *chrome* comes from the last visit so the dashboard's shape is
+  // on screen in the same frame as the navigation — the titles, the widths,
+  // the order. The numbers inside never come from a cache: every panel runs
+  // its query below, and a chart drawn from a remembered frame would be a
+  // chart quietly showing yesterday.
+  const cached = revision === layoutRevision ? recall("views.list") : undefined;
+  if (cached && !renderedSignature) {
+    views = cached;
+    qs("[data-view-empty]")?.toggleAttribute("hidden", views.length > 0);
+    renderedSignature = signatureOf(views);
+    grid.replaceChildren(...views.map((view) => buildPanel(qs("[data-panel-template]"), view)));
+  }
   const fetched = await request("/api/views");
   if (revision !== layoutRevision) return;
   views = fetched;
+  remember("views.list", views);
   qs("[data-view-empty]")?.toggleAttribute("hidden", views.length > 0);
 
   // The panels are rebuilt only when the set of them changes. A live tick
@@ -98,6 +112,8 @@ async function loadPanel(view) {
   try {
     const frame = await request(`/api/views/data?${params}`);
     error.textContent = "";
+    frameUnit = frame.unit || "";
+    applyAlertUnit();
     notes.textContent = (frame.notes || []).join(" ");
     const body = qs("[data-panel-body]", node).firstElementChild || qs("[data-panel-body]", node);
     // The drill has to be against the window that was drawn, not the one that
@@ -185,6 +201,7 @@ async function openBuilder(id) {
   const filters = qs("[data-filters]");
   filters.replaceChildren(...(query.filters || []).map(addFilterRow));
 
+  await fillAlert(editing);
   applyNeeds();
   preview();
 }
@@ -260,6 +277,7 @@ function applyNeeds() {
     node.toggleAttribute("hidden", !wanted);
   }
   qs("[data-builder-hint]").textContent = spec?.hint || "";
+  applyAlertShape();
 }
 
 function addFilterRow(condition = {}) {
@@ -311,13 +329,114 @@ function collect() {
     query.trace_id = readValue("trace_id") || undefined;
     query.order = readValue("trace_pick");
   }
-  return {
+  const view = {
     id: editing?.id || 0,
     name: readValue("name"),
     panel,
     width: Number(readValue("width")) || 6,
     query,
   };
+  // The alert rides on the view because it is the view's own question. A panel
+  // that cannot produce a reading sends none at all rather than an enabled rule
+  // that could never fire.
+  if (alertable(panel)) {
+    const enabled = qs('[data-builder="alert_enabled"]')?.checked || false;
+    const webhook = Number(readValue("alert_webhook")) || 0;
+    if (enabled || webhook) {
+      view.alert = {
+        enabled: enabled && webhook > 0,
+        op: readValue("alert_op") || "above",
+        threshold: Number(readValue("alert_threshold")) || 0,
+        // Typed in minutes, stored in seconds, like every other hold in guard.
+        for_seconds: Math.round(Number(readValue("alert_for") || 0) * 60),
+        webhook_id: webhook,
+      };
+    }
+  }
+  return view;
+}
+
+// Which panels produce a number a rule could watch. The same three shapes the
+// server will accept — a waterfall or a heatmap has no single reading, and
+// offering a threshold box for one would be offering a rule that never fires.
+// A scatter is in the list: the number a person reads off one dot per event is
+// the worst dot — the slowest request in the window — which is the whole reason
+// to have that panel on a dashboard at all.
+const ALERTABLE_SHAPES = ["timeseries", "categorical", "single", "scatter"];
+
+function alertable(panel) {
+  return ALERTABLE_SHAPES.includes(panelSpec(panel)?.shape);
+}
+
+// The unit the panel currently draws in, learned from the preview frame — the
+// alert threshold is typed in it, and says what it means in words underneath.
+let frameUnit = "";
+
+// A threshold in milliseconds is a threshold people mistype. 15000 is fifteen
+// seconds, and the form should say so rather than leaving it to be worked out
+// during the incident that follows.
+function applyAlertUnit() {
+  const unit = qs("[data-alert-unit]");
+  if (unit) unit.textContent = frameUnit;
+  const hint = qs("[data-alert-threshold-hint]");
+  if (!hint) return;
+  const typed = Number(readValue("alert_threshold"));
+  hint.textContent = frameUnit === "ms" && Number.isFinite(typed) && typed >= 1000
+    ? `= ${duration(typed)}`
+    : "";
+}
+
+// The destinations come from the same list the machine rules use, so a channel
+// is typed once and pointed at from anywhere.
+let destinations = null;
+
+async function fillAlert(view) {
+  const alert = view?.alert || {};
+  if (destinations === null) {
+    try {
+      destinations = await request("/api/webhooks", { headers: adminHeaders() });
+    } catch {
+      // Not an admin, or nothing configured. The section still renders — it
+      // says there is nowhere to send instead of vanishing, which is the
+      // difference between "not for you" and "broken".
+      destinations = [];
+    }
+  }
+  const select = qs('[data-builder="alert_webhook"]');
+  if (select) {
+    fillSelect(select, destinations.length
+      ? destinations.map((hook) => [String(hook.id), hook.name])
+      : [["", "no destinations yet — add one in Settings → Alerts"]]);
+  }
+  const box = qs('[data-builder="alert_enabled"]');
+  if (box) box.checked = !!alert.enabled;
+  setValue("alert_op", alert.op || "above");
+  setValue("alert_threshold", alert.threshold ?? "");
+  setValue("alert_for", alert.for_seconds ? Math.round(alert.for_seconds / 60) : "");
+  if (select && alert.webhook_id) select.value = String(alert.webhook_id);
+
+  const state = qs("[data-alert-state]");
+  applyAlertUnit();
+  if (state) {
+    state.textContent = alert.firing
+      ? `firing since ${new Date(alert.since).toLocaleString()} · last read ${alert.value}${alert.series ? ` (${alert.series})` : ""}`
+      : (view?.alert ? `ok · last read ${alert.value ?? "—"}` : "");
+    state.className = alert.firing
+      ? "text-xs text-destructive empty:hidden"
+      : "text-xs text-muted-foreground empty:hidden";
+  }
+  applyAlertShape();
+}
+
+// The threshold controls appear only when the box is ticked, and the whole
+// section only for panels that can be read as a number.
+function applyAlertShape() {
+  const panel = readValue("panel");
+  const usable = alertable(panel);
+  qs("[data-alert-section]")?.toggleAttribute("hidden", !usable);
+  qs("[data-alert-unavailable]")?.toggleAttribute("hidden", usable);
+  const enabled = qs('[data-builder="alert_enabled"]')?.checked;
+  qs("[data-alert-fields]")?.toggleAttribute("hidden", !enabled);
 }
 
 // The preview is the whole point of the builder: the panel on screen is drawn
@@ -342,6 +461,8 @@ async function preview() {
     // A slower earlier preview must not overwrite a faster later one.
     if (token !== previewToken) return;
     error.textContent = "";
+    frameUnit = frame.unit || "";
+    applyAlertUnit();
     notes.textContent = (frame.notes || []).join(" ");
     status.textContent = `${frame.rows.length} row${frame.rows.length === 1 ? "" : "s"}`;
     // The preview is clickable too: checking that a bar contains what you
@@ -466,6 +587,16 @@ document.addEventListener("change", (event) => {
   }
   if (!event.target.closest("[data-builder-form]")) return;
   if (event.target.matches('[data-builder="panel"]') || event.target.matches('[data-builder="agg"]')) applyNeeds();
+  // Ticking the alert box opens its fields. It changes nothing about the
+  // query, so it does not re-run the preview.
+  if (event.target.matches('[data-builder="alert_enabled"]')) {
+    applyAlertShape();
+    return;
+  }
+  if (event.target.id?.startsWith("builder-alert")) {
+    applyAlertUnit();
+    return;
+  }
   if (event.target.matches("[data-builder]")) schedulePreview();
 });
 

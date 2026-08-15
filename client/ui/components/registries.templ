@@ -40,8 +40,13 @@ templ RegistryExplorer() {
 			</div>
 		</div>
 		@registryCreate()
-		<section data-registry-overview class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-			<p data-registry-empty class="col-span-full hidden">
+		<!-- A list, not a wall of cards — the same shape the cluster page
+		     settled on, and for the same reason: a registry is a line, and the
+		     figures line up down the column so the one that is nearly full is
+		     found by running an eye down rather than by reading each card. The
+		     rows are grouped by the account key they came from. -->
+		<section data-registry-overview class="space-y-8">
+			<p data-registry-empty class="hidden">
 				@ui.Empty("No registries yet. Add a provider API key under Settings → Cloud accounts.")
 			</p>
 		</section>

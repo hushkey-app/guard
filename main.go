@@ -18,8 +18,10 @@ import (
 	"github.com/hushkey-app/guard/internal/build"
 	"github.com/hushkey-app/guard/internal/cluster"
 	"github.com/hushkey-app/guard/internal/ingest"
+	"github.com/hushkey-app/guard/internal/notify"
 	"github.com/hushkey-app/guard/internal/remote"
 	"github.com/hushkey-app/guard/internal/telemetry"
+	"github.com/hushkey-app/guard/internal/viewalerts"
 	"github.com/hushkey-app/guard/server/apis"
 	apicollector "github.com/hushkey-app/guard/server/apis/collector"
 	apiprober "github.com/hushkey-app/guard/server/apis/prober"
@@ -52,8 +54,12 @@ func main() {
 	// pressed button gets is a backup that has never once worked.
 	scheduleTimeout := flag.Duration("schedule-timeout", envDuration("GUARD_SCHEDULE_TIMEOUT", cluster.DefaultScheduleTimeout), "how long a scheduled command may take")
 	alertWebhook := flag.String("alert-webhook", env("GUARD_ALERT_WEBHOOK", ""), "URL to POST staleness alerts to; alerts are logged either way")
+	alertToken := flag.String("alert-token", env("GUARD_ALERT_TOKEN", ""), "credential for the alert webhook; sent as a Bearer token unless it names its own scheme")
+	alertHeader := flag.String("alert-header", env("GUARD_ALERT_HEADER", ""), "header the alert token goes in (default Authorization)")
 	alertInterval := flag.Duration("alert-interval", envDuration("GUARD_ALERT_INTERVAL", 5*time.Minute), "how often to check that scheduled jobs are still succeeding")
 	alertRepeat := flag.Duration("alert-repeat", envDuration("GUARD_ALERT_REPEAT", 6*time.Hour), "how long a stale job stays quiet after it has been reported")
+	monitorInterval := flag.Duration("monitor-interval", envDuration("GUARD_MONITOR_INTERVAL", 30*time.Second), "how often the machine rules are evaluated")
+	viewAlertInterval := flag.Duration("view-alert-interval", envDuration("GUARD_VIEW_ALERT_INTERVAL", time.Minute), "how often the saved views carrying a rule are run")
 	flag.Parse()
 
 	// Tinted columns in a terminal, JSON into a pipe or a log file — which is
@@ -178,15 +184,48 @@ func main() {
 	// the scheduler, so it still speaks when the scheduler is wedged or was
 	// never started, and it reaches out through its own client rather than the
 	// SSH runner it is reporting on.
+	//
+	// One sender for every watcher: internal/notify owns the POST, the token
+	// format and the timeout, so a second thing that needs to tell somebody
+	// something is a caller rather than a copy.
+	sender := &notify.Webhook{}
 	watch := &cluster.Watchdog{
 		Store:    store,
+		Sender:   sender,
 		Interval: *alertInterval,
 		Repeat:   *alertRepeat,
-	}
-	if *alertWebhook != "" {
-		watch.Notifier = &cluster.Webhook{URL: *alertWebhook}
+		// The environment's destination, used by any job that names no stored
+		// one. It predates the named destinations and still works, because an
+		// instance configured with it should not go quiet on an upgrade.
+		Fallback: notify.Destination{
+			Name:   "GUARD_ALERT_WEBHOOK",
+			URL:    *alertWebhook,
+			Token:  *alertToken,
+			Header: *alertHeader,
+		},
 	}
 	go watch.Run(proberCtx)
+	// And the rules over what the cluster page already measures — the health
+	// check, the uptime share, and what each machine says about its own CPU,
+	// memory and disk. Same delivery module, same destinations, its own faster
+	// loop: a rule about a machine being down is worth evaluating in seconds,
+	// where a rule about a six-hourly backup is not.
+	monitors := &cluster.Monitors{
+		Store:    store,
+		Sender:   sender,
+		Interval: *monitorInterval,
+		Repeat:   *alertRepeat,
+	}
+	go monitors.Run(proberCtx)
+	// And the panels that watch themselves: a saved view with a line drawn
+	// across it, run on its own slower loop because each pass is somebody's
+	// compiled query against the same table the dashboard is reading.
+	go (&viewalerts.Watcher{
+		Store:    store,
+		Sender:   sender,
+		Interval: *viewAlertInterval,
+		Repeat:   *alertRepeat,
+	}).Run(proberCtx)
 	// What the members endpoints need to know that only the environment can
 	// answer: whether sign-in is on, and which admins came from it.
 	apisignin.Use(sessions)

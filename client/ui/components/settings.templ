@@ -18,6 +18,7 @@ templ SettingsNav(current string) {
 			@settingsLink("/settings", "▤", "Data storage", "Retention and cleanup", current)
 			@settingsLink("/settings/cluster", "◈", "Cluster", "Machines to watch", current)
 			@settingsLink("/settings/cloud", "▣", "Cloud accounts", "One key: registries, machines, storage", current)
+			@settingsLink("/settings/alerts", "◔", "Alerts", "Where events go, and when", current)
 			@settingsLink("/settings/members", "◉", "Members", "Who may sign in", current)
 			@item.Item(item.Props{Size: item.SizeSm, Class: "opacity-50", Attributes: templ.Attributes{"aria-disabled": "true"}}) {
 				@item.Media(item.MediaProps{Variant: item.MediaVariantIcon}) {

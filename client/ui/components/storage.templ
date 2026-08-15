@@ -37,7 +37,11 @@ templ StoragePanel() {
 				}
 			</div>
 		</div>
-		<section data-storage-rows class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"></section>
+		<!-- A list, grouped by the account key the buckets came from — the same
+		     shape the cluster page settled on. A bucket is a line; what it is
+		     and where it answers are in the head, and the credentials and the
+		     buttons are behind the fold. -->
+		<section data-storage-rows class="space-y-8"></section>
 		<div data-storage-empty hidden>
 			@ui.Empty("No object storage on any stored account. Add one with New storage, or add an account key under Settings → Cloud.")
 		</div>
@@ -171,93 +175,118 @@ templ storageCreate() {
 
 // storageCardTemplate is one subscription: what it is, where it is, and the
 // credentials behind dots until somebody asks for them.
+//
+// A row rather than a card, like the cluster list: the head is what a bucket is
+// *found* by — its name, its state, the endpoint and the two figures — and
+// everything that acts on it is behind the fold, which is also where the keys
+// live. A wall of cards put five buttons and a pair of credentials on screen
+// for every bucket at once; almost none of that is what somebody came to read.
 templ storageCardTemplate() {
 	<template data-storage-card-template>
-		<article data-storage-id class="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 text-card-foreground">
-			<div class="flex items-start justify-between gap-3">
-				<div class="min-w-0">
-					<p data-storage-name class="truncate text-lg font-semibold tracking-tight"></p>
-					<p data-storage-account-name class="truncate text-xs text-muted-foreground"></p>
-				</div>
-				<span data-storage-state class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
-			</div>
-			<div class="space-y-1">
-				<p class="text-[.6rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Endpoint</p>
-				<p data-storage-host class="truncate font-mono text-xs text-muted-foreground"></p>
-			</div>
-			// What the storage is holding, for the providers that report it.
-			// Absent rather than zero where they do not: "0 B" and "the
-			// provider does not say" are different sentences.
-			<div data-storage-usage-field class="space-y-1" hidden>
-				<p class="text-[.6rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Holding</p>
-				<p data-storage-usage class="text-xs text-muted-foreground"></p>
-			</div>
-			<div data-storage-credentials class="space-y-1.5">
-				<p class="text-[.6rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Credentials</p>
-				<div class="flex items-center gap-2">
-					<code data-storage-access class="min-w-0 flex-1 truncate rounded bg-muted/60 px-2 py-1 font-mono text-[.65rem]"></code>
-					@button.Button(button.Props{
-						Variant:    button.VariantGhost,
-						Size:       button.SizeIconSm,
-						Class:      "shrink-0 text-muted-foreground",
-						Attributes: templ.Attributes{"data-storage-copy": "access", "aria-label": "Copy the access key"},
-					}) {
-						@iconCopy()
-					}
-				</div>
-				<div class="flex items-center gap-2">
-					<code data-storage-secret class="min-w-0 flex-1 truncate rounded bg-muted/60 px-2 py-1 font-mono text-[.65rem] tracking-widest"></code>
-					@button.Button(button.Props{
-						Variant:    button.VariantGhost,
-						Size:       button.SizeIconSm,
-						Class:      "shrink-0 text-muted-foreground",
-						Attributes: templ.Attributes{"data-storage-copy": "secret", "aria-label": "Copy the secret key"},
-					}) {
-						@iconCopy()
-					}
-				</div>
-			</div>
-			// A provider that cannot hand out an S3 pair says where they do
-			// come from, rather than showing dots over something that is
-			// never going to arrive.
-			<p data-storage-keys-note class="text-xs text-muted-foreground" hidden></p>
-			<div class="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-storage-browse": true, "title": "Look inside — read-only"},
-				}) {
-					Browse
-				}
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-storage-reveal": true, "title": "Read the keys from the provider — this is logged"},
-				}) {
-					Reveal
-				}
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-storage-rename": true},
-				}) {
-					Rename
-				}
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-storage-regenerate": true, "title": "Issue a new pair — everything holding the old secret stops working"},
-				}) {
-					Rotate keys
-				}
+		<article data-storage-id class="bg-card text-card-foreground">
+			<div data-card-head class="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-muted/30">
 				@button.Button(button.Props{
 					Variant:    button.VariantGhost,
-					Size:       button.SizeSm,
-					Class:      "ml-auto text-muted-foreground hover:text-destructive",
-					Attributes: templ.Attributes{"data-storage-delete": true},
+					Size:       button.SizeIconSm,
+					Class:      "shrink-0 text-muted-foreground",
+					Attributes: templ.Attributes{"data-card-toggle": true, "aria-label": "Show this storage"},
 				}) {
-					Delete
+					@chevronDisclosure()
 				}
+				<div class="flex min-w-0 flex-1 flex-col gap-0.5">
+					<div class="flex min-w-0 items-center gap-2">
+						<p data-storage-name class="truncate font-medium"></p>
+						<span data-storage-state class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+					</div>
+					<p data-storage-host class="truncate font-mono text-xs text-muted-foreground"></p>
+				</div>
+				<!-- The figures in fixed columns, so they line up down the list.
+				     What the storage is holding is absent rather than zero where
+				     the provider does not report it: "0 B" and "the provider
+				     does not say" are different sentences. -->
+				@headFigure("Region") {
+					@headLabel("Region")
+					<p data-storage-region class="truncate text-sm"></p>
+					<p data-storage-since class="text-[.6rem] text-muted-foreground"></p>
+				}
+				@headFigure("Holding") {
+					@headLabel("Holding")
+					<p data-storage-usage class="font-mono text-sm tabular-nums"></p>
+					<p data-storage-objects class="text-[.6rem] text-muted-foreground"></p>
+				}
+				@headFigure("Keys") {
+					@headLabel("Keys")
+					<p data-storage-keys-state class="truncate text-sm"></p>
+				}
+			</div>
+			<div data-card-body hidden class="space-y-4 border-t border-border bg-background/40 px-4 py-4">
+				<div data-storage-credentials class="space-y-1.5">
+					<p class="text-[.6rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Credentials</p>
+					<div class="flex items-center gap-2">
+						<code data-storage-access class="min-w-0 flex-1 truncate rounded bg-muted/60 px-2 py-1 font-mono text-[.65rem]"></code>
+						@button.Button(button.Props{
+							Variant:    button.VariantGhost,
+							Size:       button.SizeIconSm,
+							Class:      "shrink-0 text-muted-foreground",
+							Attributes: templ.Attributes{"data-storage-copy": "access", "aria-label": "Copy the access key"},
+						}) {
+							@iconCopy()
+						}
+					</div>
+					<div class="flex items-center gap-2">
+						<code data-storage-secret class="min-w-0 flex-1 truncate rounded bg-muted/60 px-2 py-1 font-mono text-[.65rem] tracking-widest"></code>
+						@button.Button(button.Props{
+							Variant:    button.VariantGhost,
+							Size:       button.SizeIconSm,
+							Class:      "shrink-0 text-muted-foreground",
+							Attributes: templ.Attributes{"data-storage-copy": "secret", "aria-label": "Copy the secret key"},
+						}) {
+							@iconCopy()
+						}
+					</div>
+				</div>
+				// A provider that cannot hand out an S3 pair says where they do
+				// come from, rather than showing dots over something that is
+				// never going to arrive.
+				<p data-storage-keys-note class="text-xs text-muted-foreground" hidden></p>
+				<div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-storage-browse": true, "title": "Look inside — read-only"},
+					}) {
+						Browse
+					}
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-storage-reveal": true, "title": "Read the keys from the provider — this is logged"},
+					}) {
+						Reveal
+					}
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-storage-rename": true},
+					}) {
+						Rename
+					}
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-storage-regenerate": true, "title": "Issue a new pair — everything holding the old secret stops working"},
+					}) {
+						Rotate keys
+					}
+					@button.Button(button.Props{
+						Variant:    button.VariantGhost,
+						Size:       button.SizeSm,
+						Class:      "ml-auto text-muted-foreground hover:text-destructive",
+						Attributes: templ.Attributes{"data-storage-delete": true},
+					}) {
+						Delete
+					}
+				</div>
 			</div>
 		</article>
 	</template>

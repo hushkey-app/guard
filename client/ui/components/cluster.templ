@@ -58,6 +58,16 @@ templ ClusterForm() {
 						})
 					}
 					@field.Field() {
+						@field.Label(field.LabelProps{For: "node-group"}) {
+							Group
+						}
+						@input.Input(input.Props{
+							ID:          "node-group",
+							Placeholder: "VPC-1 (optional)",
+							Attributes:  templ.Attributes{"data-node": "group", "maxlength": "60", "autocomplete": "off", "list": "cluster-groups"},
+						})
+					}
+					@field.Field() {
 						@field.Label(field.LabelProps{For: "node-health"}) {
 							Health path
 						}
@@ -285,7 +295,15 @@ templ clusterDetail() {
 					Health path
 					<input data-node-field="health_path" spellcheck="false" autocomplete="off" placeholder="/api/health" class="cn-input h-9 font-mono text-xs"/>
 				</label>
+				<!-- Where the machine *is*, which the cluster page lays itself
+				     out by. Free text: guard cannot know whether the boundary
+				     somebody cares about is a VPC, a region or a floor. -->
+				<label class="grid gap-1.5 text-xs text-muted-foreground sm:col-span-2">
+					Group
+					<input data-node-field="group" list="cluster-groups" maxlength="60" autocomplete="off" placeholder="VPC-1 — empty means Ungrouped" class="cn-input h-9 text-xs"/>
+				</label>
 			</div>
+			<datalist id="cluster-groups"></datalist>
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<p class="max-w-lg text-xs text-muted-foreground">
 					Guard fetches this from the server, so it can be an address only the server can reach.
@@ -518,7 +536,7 @@ templ clusterActionRow() {
 						step="1"
 						placeholder="420"
 						title="Minutes. Empty means nobody is watching this command."
-						class="cn-input h-8 w-20 text-xs"
+						class="cn-input h-8 w-24 text-xs"
 					/>
 					min
 				</label>
@@ -689,7 +707,10 @@ templ ClusterOps() {
 				Check all now
 			}
 		</div>
-		<div data-cluster-cards class="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
+		<!-- A column of groups, each with its own grid inside: the layout is by
+		     group because that is how a fleet is held in somebody's head. -->
+		<div data-cluster-cards class="space-y-8"></div>
+		<datalist id="cluster-groups"></datalist>
 		<div data-cluster-cards-empty hidden>
 			@ui.Empty("No machines watched yet. Declare one under Settings → Cluster and it appears here.")
 		</div>
@@ -701,44 +722,57 @@ templ ClusterOps() {
 // fills both surfaces with one set of writers.
 templ ClusterOpsCard() {
 	<template data-cluster-card-template>
-		<article data-node-id class="flex flex-col rounded-xl border border-border bg-card text-card-foreground">
-			<div class="flex flex-col gap-2 p-5 pb-0">
-				<div class="flex items-start justify-between gap-3">
-					<div class="flex min-w-0 items-center gap-2.5">
-						<span data-node-dot class="size-2.5 shrink-0 rounded-full" title="status"></span>
-						<img data-node-icon hidden alt="" width="16" height="16" class="size-4 shrink-0 rounded-sm"/>
-						<p data-node-name class="truncate text-lg font-semibold tracking-tight"></p>
+		<!-- A row, not a card. Cards were two to a line and mostly whitespace;
+		     a machine is a line, and twenty machines should be twenty lines you
+		     can run an eye down. Everything needed to *find* the one you want
+		     is in the head — state, name, tags, address, and the five numbers —
+		     and everything needed to *act* on it is behind the fold. -->
+		<article data-node-id class="bg-card text-card-foreground">
+			<div data-card-head class="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-muted/30">
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Size:       button.SizeIconSm,
+					Class:      "shrink-0 text-muted-foreground",
+					Attributes: templ.Attributes{"data-card-toggle": true, "aria-label": "Show this machine"},
+				}) {
+					@chevronDisclosure()
+				}
+				<span data-node-dot class="size-2.5 shrink-0 rounded-full" title="status"></span>
+				<img data-node-icon hidden alt="" width="16" height="16" class="size-4 shrink-0 rounded-sm"/>
+				<div class="flex min-w-0 flex-1 flex-col gap-0.5">
+					<div class="flex min-w-0 items-center gap-2">
+						<p data-node-name class="truncate font-medium"></p>
+						<span data-node-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
 						<span data-node-lock-badge hidden class="cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+						<div data-node-tags class="flex min-w-0 flex-wrap items-center gap-1.5 empty:hidden"></div>
 					</div>
-					<span data-node-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+					<div class="flex min-w-0 items-center gap-2">
+						<a data-node-url target="_blank" rel="noreferrer noopener" class="truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"></a>
+						<span data-node-internal class="truncate font-mono text-xs text-muted-foreground empty:hidden" title="Checked by guard from the server — your browser cannot open this"></span>
+						<p data-node-error class="truncate text-xs text-destructive empty:hidden"></p>
+					</div>
 				</div>
-				<div data-node-tags class="flex flex-wrap items-center gap-1.5 empty:hidden"></div>
+				<!-- The five numbers, in fixed columns so they line up down the
+				     list: that alignment is the whole reason a list beats a wall
+				     of cards for finding the machine that is unlike the others. -->
+				@headFigure("Response") {
+					<p data-node-latency class="font-mono text-sm tabular-nums"></p>
+					<p data-node-checked class="text-[.6rem] text-muted-foreground"></p>
+				}
+				@headFigure("Uptime") {
+					<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
+					<p data-node-checks class="text-[.6rem] text-muted-foreground"></p>
+				}
+				@headStat("cpu", "CPU")
+				@headStat("mem", "Mem")
+				@headStat("disk", "Disk")
+				<div data-node-strip class="hidden h-7 w-20 shrink-0 items-end gap-px xl:flex" title="the last sixty checks"></div>
 			</div>
-			<div class="flex flex-col gap-4 p-5">
-				<div class="min-w-0">
-					<a data-node-url target="_blank" rel="noreferrer noopener" class="block truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"></a>
-					<span data-node-internal class="block truncate font-mono text-xs text-muted-foreground empty:hidden" title="Checked by guard from the server — your browser cannot open this"></span>
-					<p data-node-error class="mt-0.5 truncate text-xs text-destructive empty:hidden"></p>
-				</div>
-				<div class="flex items-end justify-between gap-3">
-					<div class="flex gap-6">
-						<div>
-							<p data-node-latency class="font-mono text-sm tabular-nums"></p>
-							<p data-node-checked class="text-[.65rem] text-muted-foreground"></p>
-						</div>
-						<div>
-							<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
-							<p data-node-checks class="text-[.65rem] text-muted-foreground">24h uptime</p>
-						</div>
-					</div>
-					<div data-node-strip class="flex h-6 w-24 items-end gap-px" title="the last sixty checks"></div>
-				</div>
-				<!-- What the machine says about itself, over SSH. It sits above
-				     the provider strip because it is the closer answer: the
-				     health path belongs to whatever is serving it — often a
-				     container — and "the app replied" and "the host has 40 MB
-				     of memory left" are routinely both true. -->
-				<div data-host hidden class="space-y-3 border-t border-border pt-4">
+			<div data-card-body hidden class="space-y-4 border-t border-border bg-background/40 px-4 py-4">
+				<!-- The machine's own numbers, with their bars. The head carries
+				     the same figures as text; here they are drawn, because a bar
+				     answers "how close to full" faster than a percentage does. -->
+				<div data-host hidden class="space-y-3">
 					<div class="flex items-center justify-between gap-3">
 						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Machine</p>
 						<div class="flex items-center gap-2">
@@ -753,7 +787,7 @@ templ ClusterOpsCard() {
 							}
 						</div>
 					</div>
-					<div class="grid gap-2 sm:grid-cols-3">
+					<div class="grid gap-3 sm:grid-cols-3">
 						@hostMeter("cpu", "CPU")
 						@hostMeter("mem", "Memory")
 						@hostMeter("disk", "Disk /")
@@ -766,79 +800,19 @@ templ ClusterOpsCard() {
 					<p data-host-note class="text-xs text-muted-foreground empty:hidden"></p>
 					<p data-host-error class="text-xs text-destructive empty:hidden"></p>
 				</div>
-				<!-- What the provider says, for a machine that has one. It sits
-				     above the commands because it answers a question the
-				     commands cannot: a box that is powered off does not fail
-				     an SSH command, it fails to have one run at all. -->
-				<div data-cloud hidden class="space-y-3 border-t border-border pt-4">
-					<div class="flex items-center justify-between gap-3">
-						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Cloud</p>
-						<span data-cloud-state class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+				<!-- What is actually running on this machine, from the telemetry
+				     rather than from anything declared. -->
+				<div data-card-instances-wrap hidden class="space-y-2 border-t border-border pt-4">
+					<div class="flex items-baseline justify-between gap-3">
+						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Running here</p>
+						<span data-card-instances-count class="text-[.65rem] text-muted-foreground"></span>
 					</div>
-					<p data-cloud-meta class="truncate font-mono text-[.65rem] text-muted-foreground empty:hidden"></p>
-					<div data-cloud-transfer-wrap class="space-y-1">
-						<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-							<div data-cloud-transfer-bar class="h-full rounded-full bg-primary" style="width:0%"></div>
-						</div>
-						<p data-cloud-transfer class="text-[.65rem] text-muted-foreground empty:hidden"></p>
-					</div>
-					<div class="flex flex-wrap items-center gap-2">
-						@button.Button(button.Props{
-							Variant:    button.VariantOutline,
-							Size:       button.SizeSm,
-							Attributes: templ.Attributes{"data-cloud-power": "start", "title": "Power the instance on"},
-						}) {
-							Start
-						}
-						@button.Button(button.Props{
-							Variant:    button.VariantOutline,
-							Size:       button.SizeSm,
-							Attributes: templ.Attributes{"data-cloud-power": "reboot", "title": "Power-cycle the instance — not the same as a reboot over SSH"},
-						}) {
-							Reboot
-						}
-						@button.Button(button.Props{
-							Variant:    button.VariantOutline,
-							Size:       button.SizeSm,
-							Attributes: templ.Attributes{"data-cloud-power": "halt", "title": "Stop the instance. It keeps its disk, its address and its bill."},
-						}) {
-							Halt
-						}
-						@button.Button(button.Props{
-							Variant:    button.VariantOutline,
-							Size:       button.SizeSm,
-							Class:      "ml-auto",
-							Attributes: templ.Attributes{"data-cloud-snapshot": true, "title": "Take an image of this machine's disk"},
-						}) {
-							Snapshot
-						}
-						@button.Button(button.Props{
-							Variant:    button.VariantGhost,
-							Size:       button.SizeIconSm,
-							Class:      "shrink-0 text-muted-foreground",
-							Attributes: templ.Attributes{"data-cloud-snapshots-toggle": true, "aria-label": "Show this machine's snapshots"},
-						}) {
-							@chevronDisclosure()
-						}
-					</div>
-					<div data-cloud-snapshots hidden class="space-y-1.5"></div>
-					<p data-cloud-error class="text-xs text-destructive empty:hidden"></p>
+					<div data-card-instances class="flex flex-wrap items-center gap-1.5"></div>
 				</div>
-				<!-- The commands are what folds. Everything above is the state
-				     of the machine and is why the card is on screen at all; a
-				     list of buttons is the part that turns a wall of machines
-				     into a wall of scrolling. -->
+				@cloudStrip()
 				<div class="space-y-2 border-t border-border pt-4">
-					<div data-commands-head class="flex cursor-pointer items-center justify-between gap-3">
-						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">
-							Commands
-							<span data-commands-count class="ml-1 font-normal tracking-normal normal-case"></span>
-						</p>
-					<div class="flex items-center gap-1">
-						<!-- What actually ran here lately, scheduled or pressed.
-						     One button per machine rather than per command: the
-						     question somebody standing in front of a card has is
-						     "what has been running on this box". -->
+					<div class="flex items-center justify-between gap-3">
+						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Commands</p>
 						@button.Button(button.Props{
 							Variant:    button.VariantGhost,
 							Size:       button.SizeSm,
@@ -847,66 +821,25 @@ templ ClusterOpsCard() {
 						}) {
 							History
 						}
-						@button.Button(button.Props{
-							Variant:    button.VariantGhost,
-							Size:       button.SizeIconSm,
-							Class:      "shrink-0 text-muted-foreground",
-							Attributes: templ.Attributes{"data-commands-toggle": true, "aria-label": "Show this machine's commands"},
-						}) {
-							@chevronDisclosure()
-						}
 					</div>
-					</div>
-					<div data-commands-body class="space-y-2">
-						<div data-card-actions class="space-y-1.5"></div>
-						<p data-card-actions-empty hidden class="text-xs text-muted-foreground">
-							Nothing saved for this machine — commands are kept under
-							<a href="/settings/cluster" class="underline underline-offset-2 hover:text-foreground">Settings → Cluster</a>.
-						</p>
-						<div data-node-output hidden class="space-y-1">
-							<p data-node-output-head class="font-mono text-[.65rem] text-muted-foreground"></p>
-							<pre data-node-output-body class="max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap"></pre>
-						</div>
+					<div data-card-actions class="space-y-1.5"></div>
+					<p data-card-actions-empty hidden class="text-xs text-muted-foreground">
+						Nothing saved for this machine — commands are kept under
+						<a href="/settings/cluster" class="underline underline-offset-2 hover:text-foreground">Settings → Cluster</a>.
+					</p>
+					<div data-node-output hidden class="space-y-1">
+						<p data-node-output-head class="font-mono text-[.65rem] text-muted-foreground"></p>
+						<pre data-node-output-body class="max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap"></pre>
 					</div>
 				</div>
 			</div>
 		</article>
-	</template>
-	<!-- One snapshot. "ours" is the ones guard took of this machine — the
-	     provider's snapshot carries no instance, so nothing but guard's own
-	     record can say where an image came from. The rest of the account is
-	     listed too, greyer: a snapshot taken in the provider's console an
-	     hour before a bad deploy is exactly the one somebody will want. -->
-	<template data-cloud-snapshot-template>
-		<div data-snapshot class="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
-			<div class="min-w-0 flex-1">
-				<p data-snapshot-name class="truncate text-xs font-medium"></p>
-				<p data-snapshot-meta class="truncate font-mono text-[.6rem] text-muted-foreground"></p>
-			</div>
-			@button.Button(button.Props{
-				Variant:    button.VariantGhost,
-				Size:       button.SizeSm,
-				Class:      "shrink-0 text-muted-foreground hover:text-destructive",
-				Attributes: templ.Attributes{"data-snapshot-delete": true, "aria-label": "Delete this snapshot"},
-			}) {
-				Delete
-			}
-			@button.Button(button.Props{
-				Variant:    button.VariantOutline,
-				Size:       button.SizeSm,
-				Attributes: templ.Attributes{"data-snapshot-restore": true, "title": "Write this image back over the machine's disk"},
-			}) {
-				Restore
-			}
-		</div>
 	</template>
 	<template data-card-action-template>
 		<div data-card-action class="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
 			<div class="min-w-0 flex-1">
 				<p data-card-action-name class="truncate text-sm font-medium"></p>
 				<p data-card-action-command class="truncate font-mono text-[.65rem] text-muted-foreground"></p>
-				<!-- What a scheduled command says about itself when nobody is
-				     pressing it: the cadence, and when it is next due. -->
 				<p data-card-action-schedule class="truncate text-[.65rem] text-muted-foreground empty:hidden"></p>
 			</div>
 			<span data-card-action-last class="shrink-0 text-[.65rem] text-muted-foreground empty:hidden"></span>
@@ -921,19 +854,112 @@ templ ClusterOpsCard() {
 	</template>
 }
 
-// hostMeter is one of the three bars: a label, a number, and a bar that turns
-// the number into something readable across a wall of cards. Three, because
-// CPU, memory and disk are the three ways a machine ruins somebody's evening,
-// and a fourth would make the card a table.
-templ hostMeter(key, label string) {
-	<div class="space-y-1">
-		<div class="flex items-baseline justify-between gap-2">
-			<span class="text-[.6rem] uppercase tracking-[.14em] text-muted-foreground">{ label }</span>
-			<span data-host-value={ key } class="font-mono text-xs tabular-nums"></span>
+// cloudStrip is what the provider says about a machine that has one. It sits
+// above the commands because it answers a question the commands cannot: a box
+// that is powered off does not fail an SSH command, it fails to have one run at
+// all.
+templ cloudStrip() {
+	<!-- What the provider says, for a machine that has one. It sits
+	     above the commands because it answers a question the
+	     commands cannot: a box that is powered off does not fail
+	     an SSH command, it fails to have one run at all. -->
+	<div data-cloud hidden class="space-y-3 border-t border-border pt-4">
+		<div class="flex items-center justify-between gap-3">
+			<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Cloud</p>
+			<span data-cloud-state class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
 		</div>
+		<p data-cloud-meta class="truncate font-mono text-[.65rem] text-muted-foreground empty:hidden"></p>
+		<div data-cloud-transfer-wrap class="space-y-1">
+			<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+				<div data-cloud-transfer-bar class="h-full rounded-full bg-primary" style="width:0%"></div>
+			</div>
+			<p data-cloud-transfer class="text-[.65rem] text-muted-foreground empty:hidden"></p>
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-cloud-power": "start", "title": "Power the instance on"},
+			}) {
+				Start
+			}
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-cloud-power": "reboot", "title": "Power-cycle the instance — not the same as a reboot over SSH"},
+			}) {
+				Reboot
+			}
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Attributes: templ.Attributes{"data-cloud-power": "halt", "title": "Stop the instance. It keeps its disk, its address and its bill."},
+			}) {
+				Halt
+			}
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Class:      "ml-auto",
+				Attributes: templ.Attributes{"data-cloud-snapshot": true, "title": "Take an image of this machine's disk"},
+			}) {
+				Snapshot
+			}
+			@button.Button(button.Props{
+				Variant:    button.VariantGhost,
+				Size:       button.SizeIconSm,
+				Class:      "shrink-0 text-muted-foreground",
+				Attributes: templ.Attributes{"data-cloud-snapshots-toggle": true, "aria-label": "Show this machine's snapshots"},
+			}) {
+				@chevronDisclosure()
+			}
+		</div>
+		<div data-cloud-snapshots hidden class="space-y-1.5"></div>
+		<p data-cloud-error class="text-xs text-destructive empty:hidden"></p>
+	</div>
+}
+
+// headFigure is one of the two health numbers in the row head: the value, and
+// the line of context under it. Fixed width so the column holds down the list.
+templ headFigure(label string) {
+	<div class="hidden w-24 shrink-0 flex-col md:flex" title={ label }>
+		{ children... }
+	</div>
+}
+
+// headLabel names a column of a list row. The cluster's own figures are named
+// by their tooltip alone — a response time and an uptime are read from their
+// shape — but a column reading "stored" or "eu-central" is not, so the pages
+// that need the word have one.
+templ headLabel(label string) {
+	<p class="text-[.6rem] uppercase tracking-[.14em] text-muted-foreground">{ label }</p>
+}
+
+// headStat is one of the machine's own numbers, as text. The bar version lives
+// in the fold; a list needs the figure, not the drawing.
+templ headStat(key, label string) {
+	<div data-head-stat={ key } class="hidden w-16 shrink-0 flex-col lg:flex">
+		<p class="text-[.6rem] uppercase tracking-[.14em] text-muted-foreground">{ label }</p>
+		<p data-head-value={ key } class="font-mono text-sm tabular-nums"></p>
+	</div>
+}
+
+templ hostMeter(key, label string) {
+	<div data-host-tile class="space-y-1">
+		<p class="text-[.6rem] uppercase tracking-[.14em] text-muted-foreground">{ label }</p>
+		<p data-host-value={ key } class="font-mono text-sm tabular-nums"></p>
 		<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
 			<div data-host-bar={ key } class="h-full rounded-full bg-primary" style="width:0%"></div>
 		</div>
+	</div>
+}
+
+// cardMetric is a health tile: the label above, the number under it, and a line
+// of context under that.
+templ cardMetric(label string) {
+	<div class="space-y-1">
+		<p class="text-[.6rem] uppercase tracking-[.14em] text-muted-foreground">{ label }</p>
+		{ children... }
 	</div>
 }
 

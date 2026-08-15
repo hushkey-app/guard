@@ -12,6 +12,7 @@
 // reason to have this page at all, and a page that only ever showed dots would
 // just mean the provider's console stays open in another tab.
 import { adminHeaders, el, muted, qs, qsa, request, svg } from "./core.js";
+import { ensure } from "./store.js";
 import { ask } from "./cluster.js";
 import { can, cloudAccounts, cloudProviders } from "./cloud.js";
 
@@ -30,6 +31,11 @@ let options = new Map(); // accountID -> {regions, tiers, classes}
 // re-fetched on a redraw, gone when the page is.
 const revealed = new Map(); // storageID -> {access, secret}
 
+// Which rows are opened out. Kept here rather than in the DOM because a reveal
+// redraws every row, and a fold that closed itself when the keys arrived would
+// hide the thing that was just asked for.
+const opened = new Set(); // storageID
+
 const states = {
   active: "cn-badge-variant-default",
   pending: "cn-badge-variant-secondary",
@@ -42,18 +48,25 @@ export async function refreshStorage() {
   // somebody reading a folder. The browser refetches itself on its own.
   if (browsing()) return;
   try {
-    const answer = await request("/api/cloud/storage");
-    answered = answer || [];
-    rows = [];
-    for (const account of answered) {
-      if (account.error) status(`${account.account.name}: ${account.error}`);
-      // The capabilities come down with the row: what a card may offer is
-      // the provider's answer, not this file's opinion.
-      for (const storage of account.storage || []) {
-        rows.push({ account: account.account, capabilities: account.capabilities || {}, storage });
+    // Through the store: behind this is somebody's provider API, so coming
+    // back to this page must not mean waiting on it again. What was there
+    // last time is drawn in the navigation's own frame, the provider is asked
+    // in the background, and the rows are rebuilt only if the answer moved.
+    await ensure("cloud.storage", () => request("/api/cloud/storage"), (answer, stale) => {
+      answered = answer || [];
+      rows = [];
+      for (const account of answered) {
+        if (account.error) status(`${account.account.name}: ${account.error}`);
+        // The capabilities come down with the row: what a card may offer is
+        // the provider's answer, not this file's opinion.
+        for (const storage of account.storage || []) {
+          rows.push({ account: account.account, capabilities: account.capabilities || {}, storage });
+        }
       }
-    }
-    render();
+      render();
+      if (stale) status("from your last visit — asking the provider…");
+      else if (!answered.some((account) => account.error)) status("");
+    });
   } catch (failure) {
     status(failure.message);
   }
@@ -70,7 +83,20 @@ function render() {
   const host = qs("[data-storage-rows]");
   const template = qs("[data-storage-card-template]");
   if (!host || !template) return;
-  host.replaceChildren(...rows.map((row) => card(template, row)));
+  // Grouped by the account key the buckets came from, the way the cluster page
+  // groups machines: two accounts on the same provider are two bills and two
+  // logins, and a flat list makes somebody read every endpoint to tell which
+  // is which.
+  const sections = [];
+  for (const account of answered) {
+    const mine = rows.filter((row) => row.account.id === account.account.id);
+    sections.push(accountHeading(account.account, mine.length, account.error));
+    if (!mine.length) continue;
+    const list = el("div", "divide-y divide-border overflow-hidden rounded-xl border border-border");
+    list.append(...mine.map((row) => card(template, row)));
+    sections.push(list);
+  }
+  host.replaceChildren(...sections);
   qs("[data-storage-empty]").hidden = rows.length > 0;
   const summary = qs("[data-storage-summary]");
   if (summary) {
@@ -89,16 +115,26 @@ function bytes(value) {
   return `${Number(size.toFixed(size >= 100 || unit === 0 ? 0 : 1))} ${units[unit]}`;
 }
 
+// One line per account: whose key these buckets came from, and how many it
+// answered for. The same heading the cluster page puts over a group.
+function accountHeading(account, total, failed) {
+  const row = el("div", "flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-2");
+  row.append(el("h2", "text-sm font-semibold tracking-tight", account.name || "Account"));
+  row.append(el("span", `text-xs ${muted}`, account.provider || ""));
+  if (failed) row.append(el("span", "text-xs text-destructive", failed));
+  else row.append(el("span", `text-xs ${muted}`, `${total} bucket${total === 1 ? "" : "s"}`));
+  return row;
+}
+
 function card(template, { account, capabilities, storage }) {
   const item = template.content.firstElementChild.cloneNode(true);
   item.dataset.storageId = storage.id;
   item.dataset.account = String(account.id);
   qs("[data-storage-name]", item).textContent = storage.label || storage.id;
-  qs("[data-storage-account-name]", item).textContent = [
-    account.name,
-    storage.region,
-    storage.created ? `since ${new Date(storage.created).toLocaleDateString()}` : "",
-  ].filter(Boolean).join(" · ");
+  qs("[data-storage-region]", item).textContent = storage.region || "—";
+  qs("[data-storage-since]", item).textContent = storage.created
+    ? `since ${new Date(storage.created).toLocaleDateString()}`
+    : "";
 
   // The badge says whatever the provider actually reports. Vultr gives a
   // provisioning state; R2 has none and gives a storage class instead. With
@@ -112,15 +148,15 @@ function card(template, { account, capabilities, storage }) {
 
   qs("[data-storage-host]", item).textContent = storage.s3_hostname || "—";
 
-  // Usage, where the provider reports it. Cloudflare does; Vultr does not,
-  // and an empty line is more honest than a zero.
-  const usageField = qs("[data-storage-usage-field]", item);
+  // Usage, where the provider reports it. Cloudflare does; Vultr does not, and
+  // a dash with "not reported" under it is more honest than a zero — the
+  // column stays either way, because a column that disappears on some rows is
+  // a list that no longer lines up.
   const reported = storage.used_bytes || storage.objects;
-  usageField.hidden = !reported;
-  if (reported) {
-    qs("[data-storage-usage]", item).textContent =
-      `${bytes(storage.used_bytes)} · ${storage.objects || 0} object${storage.objects === 1 ? "" : "s"}`;
-  }
+  qs("[data-storage-usage]", item).textContent = reported ? bytes(storage.used_bytes) : "—";
+  qs("[data-storage-objects]", item).textContent = reported
+    ? `${storage.objects || 0} object${storage.objects === 1 ? "" : "s"}`
+    : "not reported";
 
   // A provider that cannot hand out an S3 pair gets no credentials block and
   // no buttons for one. Drawing dots over keys that will never arrive, or a
@@ -155,7 +191,31 @@ function card(template, { account, capabilities, storage }) {
     for (const control of qsa("[data-storage-copy]", item)) control.disabled = !pair;
     qs("[data-storage-reveal]", item).disabled = !storage.has_keys;
   }
+
+  // The head says whether there is a pair at all; the pair itself is in the
+  // fold, where somebody had to ask for it.
+  qs("[data-storage-keys-state]", item).textContent = !keys
+    ? "provider's own"
+    : revealed.has(storage.id)
+    ? "revealed"
+    : storage.has_keys
+    ? "stored"
+    : "none yet";
+
+  showBody(item, opened.has(storage.id));
   return item;
+}
+
+// Open or shut one row, chevron and all — the same fold the cluster list has.
+function showBody(item, open) {
+  const body = qs("[data-card-body]", item);
+  if (body) body.hidden = !open;
+  const toggle = qs("[data-card-toggle]", item);
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    const chevron = qs("svg", toggle);
+    if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
+  }
 }
 
 // ---- what is inside a bucket ----
@@ -650,6 +710,17 @@ document.addEventListener("click", (event) => {
   const item = event.target.closest("[data-storage-id]");
   if (!item) return;
   const target = { account_id: Number(item.dataset.account), storage_id: item.dataset.storageId };
+
+  // Opening one row. The whole head line is the target, chevron included — a
+  // 28-pixel arrow is a small thing to ask somebody to hit — but not the
+  // controls inside it, or opening a bucket and pressing a button on it would
+  // be the same gesture.
+  const head = event.target.closest("[data-card-head]");
+  if (head && !event.target.closest("a, input, select, label, button:not([data-card-toggle])")) {
+    const open = opened.delete(target.storage_id) ? false : (opened.add(target.storage_id), true);
+    showBody(item, open);
+    return;
+  }
 
   if (event.target.closest("[data-storage-browse]")) { openBrowser(target, item); return; }
   if (event.target.closest("[data-storage-reveal]")) { reveal(target, item); return; }

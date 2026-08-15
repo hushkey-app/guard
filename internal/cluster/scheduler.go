@@ -137,7 +137,8 @@ func (s *Scheduler) Round(ctx context.Context) time.Duration {
 	now := time.Now()
 	next := scheduleIdle
 	for _, action := range actions {
-		if _, err := model.ParseSchedule(action.Schedule); err != nil {
+		schedule, err := model.ParseSchedule(action.Schedule)
+		if err != nil {
 			// Stored expressions are validated on save, so this is a row that
 			// predates a rule or was written by hand. Skipped and said out
 			// loud, because a schedule that silently never fires is the worst
@@ -155,6 +156,12 @@ func (s *Scheduler) Round(ctx context.Context) time.Duration {
 			continue
 		}
 		s.start(ctx, action)
+		// And come back for this action's *next* fire rather than sleeping the
+		// idle minute: an "@every 30s" job would otherwise run every sixty
+		// seconds, which is a schedule quietly rewritten by its own loop.
+		if following := schedule.Next(now); !following.IsZero() {
+			next = min(next, time.Until(following))
+		}
 	}
 	return max(next, time.Second)
 }

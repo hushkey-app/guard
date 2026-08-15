@@ -11,6 +11,7 @@
 // server refuses both as well — this is the half of the rule that is visible,
 // not the half that enforces it.
 import { adminHeaders, el, muted, qs, relativeTime, request } from "./core.js";
+import { ensure, forget } from "./store.js";
 import { ask } from "./cluster.js";
 
 const cellBase = "cn-table-cell cn-table-cell-aria";
@@ -69,7 +70,9 @@ export async function refreshMembers() {
   const body = qs("[data-member-rows]");
   if (!body) return;
   try {
-    const roster = await request("/api/members", { headers: adminHeaders() });
+    // Through the store, like every other page: the list is small, but the
+    // point is that walking back to it never shows an empty table.
+    await ensure("members", () => request("/api/members", { headers: adminHeaders() }), (roster) => {
     const disabled = qs("[data-members-disabled]");
     if (disabled) disabled.hidden = roster.enabled;
     const you = roster.you?.email || "";
@@ -88,6 +91,7 @@ export async function refreshMembers() {
       );
       return line;
     }));
+    });
   } catch (failure) {
     body.replaceChildren(notice(failure.message));
   }
@@ -110,6 +114,7 @@ async function addMember(form) {
     });
     status(`${member.email} can sign in${member.role === "admin" ? " as an admin" : ""}.`);
     qs('[data-member="email"]', form).value = "";
+    forget("members");
     await refreshMembers();
   } catch (failure) {
     status(failure.message);
@@ -128,6 +133,7 @@ async function removeMember(email) {
     status(removed.sessions > 0
       ? `${email} removed, and ${removed.sessions} open session${removed.sessions === 1 ? "" : "s"} ended.`
       : `${email} removed.`);
+    forget("members");
     await refreshMembers();
   } catch (failure) {
     status(failure.message);

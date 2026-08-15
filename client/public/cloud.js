@@ -12,6 +12,7 @@
 // own SQLite, and a power state twenty seconds old has never been what made
 // an outage worse.
 import { adminHeaders, el, muted, qs, qsa, relativeTime, request } from "./core.js";
+import { ensure, forget, get as stored } from "./store.js";
 import { ask } from "./cluster.js";
 
 // What the provider last said about one machine, and when. Kept per node so a
@@ -61,15 +62,28 @@ function bytes(value) {
   return `${size >= 10 || unit === 0 ? Math.round(size) : size.toFixed(1)} ${units[unit]}`;
 }
 
+// The stored accounts, held in the session's store rather than in a variable
+// this module owns: three pages read them, and walking between those pages
+// should not re-ask. `force` is what a save uses — the answer changed, and the
+// store should hear about it now rather than on somebody's next navigation.
 export async function cloudAccounts(force = false) {
-  if (accounts && !force) return accounts;
-  if (!accountsRequest) {
-    accountsRequest = request("/api/cloud/accounts")
-      .then((list) => { accounts = list || []; return accounts; })
-      .catch(() => { accounts = []; return accounts; })
-      .finally(() => { accountsRequest = null; });
+  if (!force) {
+    const known = stored("cloud.accounts");
+    if (known) {
+      accounts = known;
+      // Answer from the store and confirm behind the caller's back, so the
+      // next page to ask has a current list without this one having waited.
+      // Nothing is redrawn here: the caller already drew, and the store only
+      // wakes anybody if the answer actually moved.
+      ensure("cloud.accounts", () => request("/api/cloud/accounts").catch(() => []), (list) => {
+        accounts = list || [];
+      }).catch(() => {});
+      return accounts;
+    }
   }
-  return accountsRequest;
+  return ensure("cloud.accounts", () => request("/api/cloud/accounts").catch(() => []), (list) => {
+    accounts = list || [];
+  });
 }
 
 export async function cloudProviders() {
@@ -376,7 +390,10 @@ export async function refreshCloud(force = false) {
   if (qs("[data-cloud-accounts]")) work.push(refreshAccountRows());
   if (qs("[data-import-rows]")) work.push(refreshImport(false));
   await Promise.allSettled(work);
-  if (force) accounts = null;
+  if (force) {
+    accounts = null;
+    forget("cloud.accounts");
+  }
 }
 
 // fillProviderOptions draws the add-account form from what the server says

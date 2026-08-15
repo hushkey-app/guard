@@ -24,6 +24,10 @@ export const text = (value) => document.createTextNode(value ?? "");
 export const qs = (selector, root = document) => root.querySelector(selector);
 export const qsa = (selector, root = document) => [...root.querySelectorAll(selector)];
 
+// The session's state lives in store.js — outside the outlet, so it survives
+// navigation. It is imported from there rather than re-exported here: a
+// renderer that reads the store should say so in its import line.
+
 export async function request(path, options = {}) {
   const response = await fetch(path, { headers: { Accept: "application/json", ...(options.headers || {}) }, ...options });
   // The session ended — expired, signed out in another tab, or removed from the
@@ -104,7 +108,14 @@ function trim(value) {
   return String(Number(value.toFixed(2)));
 }
 
+// A measurement, in the unit it was measured in — and durations are read as
+// durations. "15,000 ms" is a number somebody has to convert in their head
+// before it means anything; 15s is the thing itself. The stat panel already did
+// this; every other renderer went through here and did not, so a p95 that
+// crossed a second read as four digits and a latency axis was unreadable
+// exactly where it mattered.
 export function withUnit(value, unit) {
+  if (unit === "ms") return duration(value);
   return unit ? `${compact(value)} ${unit}` : compact(value);
 }
 

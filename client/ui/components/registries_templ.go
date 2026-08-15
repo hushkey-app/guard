@@ -110,7 +110,7 @@ func RegistryExplorer() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section data-registry-overview class=\"grid gap-4 md:grid-cols-2 xl:grid-cols-3\"><p data-registry-empty class=\"col-span-full hidden\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<!-- A list, not a wall of cards — the same shape the cluster page\n\t\t     settled on, and for the same reason: a registry is a line, and the\n\t\t     figures line up down the column so the one that is nearly full is\n\t\t     found by running an eye down rather than by reading each card. The\n\t\t     rows are grouped by the account key they came from. --><section data-registry-overview class=\"space-y-8\"><p data-registry-empty class=\"hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -655,7 +655,7 @@ func selectableHead(scope, label string, columns []string) templ.Component {
 					var templ_7745c5c3_Var24 string
 					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(scope)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/registries.templ`, Line: 199, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/registries.templ`, Line: 204, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 					if templ_7745c5c3_Err != nil {
@@ -668,7 +668,7 @@ func selectableHead(scope, label string, columns []string) templ.Component {
 					var templ_7745c5c3_Var25 string
 					templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/registries.templ`, Line: 199, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/registries.templ`, Line: 204, Col: 71}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 					if templ_7745c5c3_Err != nil {
@@ -700,7 +700,7 @@ func selectableHead(scope, label string, columns []string) templ.Component {
 						var templ_7745c5c3_Var27 string
 						templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(column)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/registries.templ`, Line: 203, Col: 13}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/registries.templ`, Line: 208, Col: 13}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 						if templ_7745c5c3_Err != nil {

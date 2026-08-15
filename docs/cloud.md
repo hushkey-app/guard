@@ -49,7 +49,7 @@ it where the two could disagree:
 `GET /api/cloud/providers` answers that table, and the dashboard draws itself
 from it: the provider select, the word above the secret box, whether the form
 asks for an account id, which accounts the machine link offers, and which
-buttons a card gets. A button guard cannot honour is never drawn, and an
+buttons a row gets. A button guard cannot honour is never drawn, and an
 endpoint asked anyway answers in words — *"Cloudflare cannot hand out S3
 credentials for its storage"* — rather than failing somewhere lower down.
 
@@ -75,7 +75,7 @@ one per account, addressed by account id — and it speaks the same OCI protocol
 guard already uses for tags and manifests. Reaching it needs a Workers Paid
 plan; without one the credentials call answers *"you do not have access to
 Cloudflare Containers"*. So the half is not implemented, the account draws no
-registry card, and adding it later means implementing `cloud.Registries` on that
+registry row, and adding it later means implementing `cloud.Registries` on that
 one type. Nothing above it changes.
 
 ## Linking a machine
@@ -160,6 +160,22 @@ The same three the stored commands keep, for the same reasons:
   action, outcome. "Who power-cycled the database box" is a question asked after
   the fact, and the browser tab it was pressed in does not outlive the line.
 
+## Both pages are lists
+
+`/registries` and `/storage` are laid out the way `/cluster` is, and for the
+same reason it was changed: a wall of cards is two to a line and mostly
+whitespace, and finding the registry that is nearly full or the bucket on the
+wrong endpoint means reading every card. A registry is a line and a bucket is a
+line, grouped under the account key they came from — which is what they are
+*under*, since two accounts on one provider are two bills and two logins.
+
+The figures sit in fixed columns so they line up down the list, which is the
+whole point of it. A registry row opens its repositories; a storage row folds
+open, because what acts on a bucket — the credentials, Browse, Reveal, Rotate,
+Delete — is not what somebody scanning the page came to read. An account whose
+key stopped answering keeps its heading and says so there, rather than
+disappearing from a page that would then look like it had no buckets.
+
 ## Registries, created and cancelled
 
 `/registries` reads live and now also **orders**. **New registry** takes a name,
@@ -168,7 +184,7 @@ opened, never baked in — and bills from the moment the provider accepts it,
 which the dialog says in those words. **Public** means anybody can pull from it
 without a credential; it is asked plainly rather than defaulted out of sight.
 
-**Delete** on a registry card is the largest delete on these pages: every
+**Delete** on a registry row is the largest delete on these pages: every
 repository, every tag, every artifact, and the subscription behind them. It asks
 for the registry's name to be typed, the same confirmation locking a machine
 takes, and it is logged whatever happens.
@@ -191,7 +207,7 @@ nudges it — a storage class, and per-bucket usage, which guard shows because
 Cloudflare reports it. A bucket cannot be renamed, because it *is* its name.
 And there are no keys to reveal: R2's S3 credentials are API tokens hashed into
 an access key, minted on Cloudflare's own token screen, and an account token
-cannot mint another. So those cards carry no dots and no buttons — they say
+cannot mint another. So those rows carry no dots and no buttons — they say
 where the credentials come from instead, which is true, unlike dots over a pair
 that is never arriving.
 
@@ -202,7 +218,7 @@ everything else in guard. Vultr returns the access key and the secret with
 - they live in unexported fields inside `internal/vultr` and come out only
   through `cloud.StorageKeys`, the one interface in the vocabulary that returns
   a secret — no listing type has a field one could land in;
-- the listing carries neither: each card says a pair exists and draws dots;
+- the listing carries neither: each row says a pair exists and draws dots;
 - **Reveal** is its own endpoint, `admin`, which returns the pair once and
   writes a line saying it happened. Nothing is persisted.
 
@@ -245,7 +261,7 @@ every read, so nothing is stored: the pair is fetched at the moment it is used.
 R2's pair cannot be minted by an account token, so guard stores one — sealed,
 proved before it is stored by listing buckets over S3, optional. An R2 account
 without one lists buckets, creates them and deletes them perfectly well, and
-its cards say why they cannot be opened.
+its rows say why they cannot be opened.
 
 The pair is the one part of a stored account that is **edited in place**, from
 **Add S3 keys** on the account row. Everything else about an account is
