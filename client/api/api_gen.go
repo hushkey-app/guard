@@ -13,10 +13,14 @@ import (
 	"github.com/hushkey-app/guard/server/apis/cloud/accounts"
 	"github.com/hushkey-app/guard/server/apis/cloud/storage"
 	"github.com/hushkey-app/guard/server/apis/cluster"
+	"github.com/hushkey-app/guard/server/apis/cluster/monitors"
 	"github.com/hushkey-app/guard/server/apis/cluster/provider"
 	"github.com/hushkey-app/guard/server/apis/contract"
 	"github.com/hushkey-app/guard/server/apis/members"
 	"github.com/hushkey-app/guard/server/apis/registries"
+	"github.com/hushkey-app/guard/server/apis/secrets"
+	"github.com/hushkey-app/guard/server/apis/secrets/values"
+	"github.com/hushkey-app/guard/server/apis/webhooks"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -76,6 +80,11 @@ func (c *Client) Cluster(ctx context.Context) ([]model.Node, error) {
 	return api.Call[[]model.Node](ctx, c.Transport, "GET", "/api/cluster", nil, nil)
 }
 
+// ClusterMonitors calls GET /api/cluster/monitors.
+func (c *Client) ClusterMonitors(ctx context.Context) (monitors.Catalogue, error) {
+	return api.Call[monitors.Catalogue](ctx, c.Transport, "GET", "/api/cluster/monitors", nil, nil)
+}
+
 // ClusterRuns calls GET /api/cluster/runs.
 func (c *Client) ClusterRuns(ctx context.Context, query cluster.RunQuery) ([]model.Run, error) {
 	return api.Call[[]model.Run](ctx, c.Transport, "GET", "/api/cluster/runs", query, nil)
@@ -101,9 +110,26 @@ func (c *Client) CreateSamplePanels(ctx context.Context) ([]model.View, error) {
 	return api.Call[[]model.View](ctx, c.Transport, "POST", "/api/views/samples", nil, nil)
 }
 
+// CreateSecretKey calls POST /api/secrets/keys.
+func (c *Client) CreateSecretKey(ctx context.Context, body model.APIKey) (model.APIKey, error) {
+	return api.Call[model.APIKey](ctx, c.Transport, "POST", "/api/secrets/keys", nil, body)
+}
+
 // CreateView calls POST /api/views.
 func (c *Client) CreateView(ctx context.Context, body model.View) (model.View, error) {
 	return api.Call[model.View](ctx, c.Transport, "POST", "/api/views", nil, body)
+}
+
+// DeleteClusterMonitor calls DELETE /api/cluster/monitors/{id}.
+func (c *Client) DeleteClusterMonitor(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/cluster/monitors/{id}", id), nil, nil)
+	return err
+}
+
+// DeleteEventDestination calls DELETE /api/webhooks/{id}.
+func (c *Client) DeleteEventDestination(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/webhooks/{id}", id), nil, nil)
+	return err
 }
 
 // DeleteMachineSnapshot calls DELETE /api/cluster/provider/snapshots.
@@ -136,6 +162,18 @@ func (c *Client) DeleteRegistryTag(ctx context.Context, query registries.TagDele
 	return err
 }
 
+// DeleteSecret calls DELETE /api/secrets/values/{id}.
+func (c *Client) DeleteSecret(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/secrets/values/{id}", id), nil, nil)
+	return err
+}
+
+// DeleteSecretEnvironment calls DELETE /api/secrets/{id}.
+func (c *Client) DeleteSecretEnvironment(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/secrets/{id}", id), nil, nil)
+	return err
+}
+
 // DeleteView calls DELETE /api/views/{id}.
 func (c *Client) DeleteView(ctx context.Context, id string) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/views/{id}", id), nil, nil)
@@ -157,9 +195,19 @@ func (c *Client) Event(ctx context.Context, id string) (model.Event, error) {
 	return api.Call[model.Event](ctx, c.Transport, "GET", api.Path("/api/events/{id}", id), nil, nil)
 }
 
+// EventDestinations calls GET /api/webhooks.
+func (c *Client) EventDestinations(ctx context.Context) ([]model.Webhook, error) {
+	return api.Call[[]model.Webhook](ctx, c.Transport, "GET", "/api/webhooks", nil, nil)
+}
+
 // Events calls GET /api/events.
 func (c *Client) Events(ctx context.Context, query model.Filter) ([]model.Event, error) {
 	return api.Call[[]model.Event](ctx, c.Transport, "GET", "/api/events", query, nil)
+}
+
+// ExportSecrets calls GET /api/secrets/export.
+func (c *Client) ExportSecrets(ctx context.Context, query secrets.EnvQuery) (secrets.Export, error) {
+	return api.Call[secrets.Export](ctx, c.Transport, "GET", "/api/secrets/export", query, nil)
 }
 
 // Facets calls GET /api/facets.
@@ -175,6 +223,11 @@ func (c *Client) Health(ctx context.Context) (contract.Health, error) {
 // ImportCloudInstance calls POST /api/cluster/provider/import.
 func (c *Client) ImportCloudInstance(ctx context.Context, body provider.ImportRequest) (model.Node, error) {
 	return api.Call[model.Node](ctx, c.Transport, "POST", "/api/cluster/provider/import", nil, body)
+}
+
+// ImportSecrets calls POST /api/secrets/import.
+func (c *Client) ImportSecrets(ctx context.Context, body model.Import) (model.ImportResult, error) {
+	return api.Call[model.ImportResult](ctx, c.Transport, "POST", "/api/secrets/import", nil, body)
 }
 
 // LinkMachineToCloud calls PUT /api/cluster/provider/link.
@@ -302,6 +355,12 @@ func (c *Client) RevealObjectStorageKeys(ctx context.Context, body storage.Targe
 	return api.Call[storage.Credentials](ctx, c.Transport, "POST", "/api/cloud/storage/keys", nil, body)
 }
 
+// RevokeSecretKey calls DELETE /api/secrets/keys/{id}.
+func (c *Client) RevokeSecretKey(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/secrets/keys/{id}", id), nil, nil)
+	return err
+}
+
 // RunClusterAction calls POST /api/cluster/run.
 func (c *Client) RunClusterAction(ctx context.Context, body contract.RunRequest) (model.Run, error) {
 	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/run", nil, body)
@@ -315,6 +374,41 @@ func (c *Client) SampleMachine(ctx context.Context, body contract.NodeRequest) (
 // SaveClusterActions calls PUT /api/cluster/actions.
 func (c *Client) SaveClusterActions(ctx context.Context, body contract.ActionList) ([]model.NodeAction, error) {
 	return api.Call[[]model.NodeAction](ctx, c.Transport, "PUT", "/api/cluster/actions", nil, body)
+}
+
+// SaveClusterMonitor calls PUT /api/cluster/monitors.
+func (c *Client) SaveClusterMonitor(ctx context.Context, body model.Monitor) (model.Monitor, error) {
+	return api.Call[model.Monitor](ctx, c.Transport, "PUT", "/api/cluster/monitors", nil, body)
+}
+
+// SaveEventDestination calls PUT /api/webhooks.
+func (c *Client) SaveEventDestination(ctx context.Context, body model.Webhook) (model.Webhook, error) {
+	return api.Call[model.Webhook](ctx, c.Transport, "PUT", "/api/webhooks", nil, body)
+}
+
+// SaveSecret calls PUT /api/secrets/values.
+func (c *Client) SaveSecret(ctx context.Context, body model.Secret) (model.Secret, error) {
+	return api.Call[model.Secret](ctx, c.Transport, "PUT", "/api/secrets/values", nil, body)
+}
+
+// SaveSecretEnvironment calls POST /api/secrets.
+func (c *Client) SaveSecretEnvironment(ctx context.Context, body model.Env) (model.Env, error) {
+	return api.Call[model.Env](ctx, c.Transport, "POST", "/api/secrets", nil, body)
+}
+
+// SecretEnvironments calls GET /api/secrets.
+func (c *Client) SecretEnvironments(ctx context.Context) ([]model.Env, error) {
+	return api.Call[[]model.Env](ctx, c.Transport, "GET", "/api/secrets", nil, nil)
+}
+
+// SecretKeys calls GET /api/secrets/keys.
+func (c *Client) SecretKeys(ctx context.Context) ([]model.APIKey, error) {
+	return api.Call[[]model.APIKey](ctx, c.Transport, "GET", "/api/secrets/keys", nil, nil)
+}
+
+// Secrets calls GET /api/secrets/values.
+func (c *Client) Secrets(ctx context.Context, query values.Query) ([]model.Secret, error) {
+	return api.Call[[]model.Secret](ctx, c.Transport, "GET", "/api/secrets/values", query, nil)
 }
 
 // SetAccountS3Keys calls PUT /api/cloud/accounts/s3.
@@ -341,6 +435,11 @@ func (c *Client) Summary(ctx context.Context) (model.Summary, error) {
 // TakeMachineSnapshot calls POST /api/cluster/provider/snapshots.
 func (c *Client) TakeMachineSnapshot(ctx context.Context, body provider.SnapshotRequest) (vultr.Snapshot, error) {
 	return api.Call[vultr.Snapshot](ctx, c.Transport, "POST", "/api/cluster/provider/snapshots", nil, body)
+}
+
+// TestEventDestination calls POST /api/webhooks/test.
+func (c *Client) TestEventDestination(ctx context.Context, body webhooks.TestRequest) (webhooks.TestResult, error) {
+	return api.Call[webhooks.TestResult](ctx, c.Transport, "POST", "/api/webhooks/test", nil, body)
 }
 
 // Trace calls GET /api/traces/{id}.

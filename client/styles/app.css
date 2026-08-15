@@ -156,11 +156,15 @@
   transform: none;
 }
 
-/* The confirmation modal. A native <dialog> centres itself with margin:auto
- * against its inset:0 box — but the base stylesheet gives block elements a
- * bottom margin, which wins on specificity and leaves the modal pinned to the
- * top-left corner. One rule here rather than a utility class that loses. */
-dialog[data-confirm] {
+/* Every modal. A native <dialog> centres itself with margin:auto against its
+ * inset:0 box — but the base stylesheet gives block elements a bottom margin,
+ * which wins on specificity and leaves the modal pinned to the top-left
+ * corner. One rule here rather than a utility class that loses.
+ *
+ * On the element rather than on [data-confirm]: this named one dialog until
+ * the .env import became a second one, and a selector that has to be extended
+ * for every modal is a selector the next modal is drawn without. */
+dialog {
   margin: auto;
 }
 

@@ -9,7 +9,7 @@ import "github.com/mirairoad/howl-go/core/router"
 var navOrder = [][]string{
 	{"/", "/views"},
 	{"/logs", "/traces", "/metrics"},
-	{"/cluster", "/registries", "/storage"},
+	{"/cluster", "/registries", "/storage", "/secrets"},
 }
 
 // navHidden lists routes that reach the sidebar some other way. /settings is

@@ -12,6 +12,9 @@ import { refreshRegistries } from "./registries.js";
 import { refreshCloud } from "./cloud.js";
 import { refreshStorage } from "./storage.js";
 import { refreshMembers } from "./members.js";
+import { refreshAlerts } from "./alerts.js";
+import { refreshSecrets } from "./secrets.js";
+import { screenCleared } from "./store.js";
 
 // Which machines the signal pages are scoped to. Shared across logs, traces and
 // metrics, and remembered: "I am looking at the two web boxes" is a stance you
@@ -518,9 +521,19 @@ async function refreshPage({ facets = false } = {}) {
   // than when telemetry arrives — so it is read on a mount and after a change,
   // not on the tick.
   if (facets && qs("[data-member-rows]")) work.push(refreshMembers());
+  // The alert rules and their destinations: guard's own SQLite, but read on a
+  // mount and after a change rather than on the tick. Nothing here moves
+  // except when somebody edits it — and a row being redrawn under a cursor
+  // mid-edit is the one thing this page must not do.
+  if (facets && qs("[data-webhooks]")) work.push(refreshAlerts());
   // The storage page reads the provider, so it refreshes on a mount or an
   // explicit press — never on the three-second tick.
   if (facets && qs("[data-storage-rows]")) work.push(refreshStorage());
+  // The secrets page is guard's own SQLite and moves only when somebody edits
+  // it — and a value being redrawn under a cursor mid-edit is the one thing
+  // this page must not do. So: on a mount and after a change, never on the
+  // tick.
+  if (facets && qs("[data-secret-envs]")) work.push(refreshSecrets());
   if (facets) work.push(refreshFacets(), renderClusterFilter());
   await Promise.allSettled(work);
 }
@@ -547,13 +560,23 @@ globalThis.guardPageMount = (page) => {
   if (page === initializedPage && initialRefresh) {
     const pending = initialRefresh;
     initialRefresh = null;
-    return pending;
+    // That eager pass started when guard.js was evaluated — before the WASM
+    // had rendered anything — so every branch of refreshPage that asks "is
+    // this page's markup here?" answered no, and pages like /storage and
+    // /settings/alerts never fetched at all. Their first paint said "Loading…"
+    // and stayed there. So the page's own pass runs here as well; the store
+    // shares in-flight loads by key, so this is not a second round of
+    // requests, and everything it does put in the store is already drawn.
+    return Promise.allSettled([pending, refreshPage({ facets: true })]);
   }
   initializedPage = page;
   if (page === "views") return mountViews();
   return refreshPage({ facets: true });
 };
 globalThis.guardPageUnmount = () => {
+  // The outlet is about to throw this page's DOM away. The store keeps track of
+  // what is on screen so it can skip redundant redraws; from here, nothing is.
+  screenCleared();
   clearTimeout(filterTimer);
   filterTimer = undefined;
   for (const signal of signalRequests.keys()) signalRequests.set(signal, signalRequests.get(signal) + 1);

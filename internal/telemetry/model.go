@@ -217,6 +217,10 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	if err := migrateProviders(s.db); err != nil {
 		return err
 	}
+	// Where events go, and the rules that send them there.
+	if err := migrateNotify(s.db); err != nil {
+		return err
+	}
 	// Who may look at any of it, when guard has been given OAuth credentials:
 	// the sessions it has issued and the sign-ins in flight.
 	if err := migrateAuth(s.db); err != nil {
@@ -224,6 +228,13 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	}
 	// And who those sessions may belong to: the members list is the allowlist.
 	if err := migrateMembers(s.db); err != nil {
+		return err
+	}
+	// The secrets an application is given at boot, and the keys that read them.
+	// Guard owns this schema even though a second binary serves it — one
+	// migration, in the process that has the dashboard people change things
+	// from.
+	if err := migrateVault(s.db); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO settings(id, retention_hours, max_events) VALUES(1, ?, ?)`, defaults.RetentionHours, defaults.MaxEvents); err != nil {

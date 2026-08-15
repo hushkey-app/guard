@@ -106,7 +106,36 @@ volumes:
 
 Mount the directory, not only the database file, because SQLite creates
 `guard.db-wal` and `guard.db-shm` beside it. Use a local Docker volume rather
-than a network filesystem for WAL mode.
+than a network filesystem for WAL mode. The `vault` service is the same image
+with `entrypoint: guard-vault`, on the same volume — it needs the key file
+beside the database, and it refuses to start without it.
+
+## Secrets
+
+Guard also stores the environment variables your applications boot with —
+key and value, per environment, encrypted at rest — on a `/secrets` page that
+imports and exports whole `.env` files.
+
+They are served by a **second binary**, `guard-vault`, on the same database and
+key file. That is the point of it: a bad dashboard release, a restart or a
+rollback must not stop a container from booting.
+
+```bash
+guard-vault -db /data/guard.db     # :4319
+```
+
+An application holds one key, minted on the page and shown once:
+
+```bash
+GUARD_VAULT_URL=http://vault.internal:4319
+GUARD_VAULT_KEY=gsk_production_…
+```
+
+The key carries its own environment, so there is nothing else to configure and
+a staging token cannot be pointed at production. Locally,
+`guard-vault fetch -env local > .env` skips the server entirely.
+
+See `docs/secrets.md`.
 
 ## Send OpenTelemetry
 
