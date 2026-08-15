@@ -60,7 +60,7 @@ func serve(args []string) error {
 	// without opening the database — a binary should be able to say what it is
 	// even when the thing it reads is missing.
 	if *showVersion {
-		fmt.Println(build.Version)
+		fmt.Println(build.Tag())
 		return nil
 	}
 	// Tagged, because in development this shares a terminal with guard: two

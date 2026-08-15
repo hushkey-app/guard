@@ -133,7 +133,7 @@ templ App(title, head string) {
 				     naming what the sidebar says names something real. -->
 				<div class="mt-3 flex items-center justify-between gap-2 px-2 text-[.65rem] text-muted-foreground">
 					<span>Guard by <span class="font-medium text-foreground">Hushkey</span></span>
-					<span class="font-mono tabular-nums">v{ build.Version }</span>
+					<span class="font-mono tabular-nums">{ build.Tag() }</span>
 				</div>
 			</aside>
 			<div class="flex min-h-screen flex-col lg:pl-64">
