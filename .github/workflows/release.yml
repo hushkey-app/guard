@@ -19,6 +19,13 @@ on:
 permissions:
   contents: write
 
+env:
+  # Which howl-go to build against. guard's go.mod replaces the framework with
+  # ../howl-go, and the published v0.1.0 predates core/api, core/state,
+  # core/console and core/mw — so this ref must be one that actually contains
+  # them, or the build fails with "no required module provides package".
+  HOWL_REF: main
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -32,13 +39,14 @@ jobs:
       # packages guard imports — so the replace is load-bearing rather than
       # stale, and CI resolves it by checking the framework out beside guard.
       #
-      # Pinned to a ref rather than tracking main: the same guard tag must build
-      # the same bytes next month. When howl-go publishes a tag with core/api in
-      # it, delete this step and the replace together.
+      # Pin HOWL_REF to a tag or a commit rather than a branch once the
+      # framework settles: the same guard tag should build the same bytes next
+      # month. When howl-go publishes a tag with core/api in it, delete this
+      # step and the replace together.
       - uses: actions/checkout@v4
         with:
           repository: mirairoad/howl-go
-          ref: main
+          ref: ${{ env.HOWL_REF }}
           path: howl-go
 
       - uses: actions/setup-go@v5

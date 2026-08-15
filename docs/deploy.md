@@ -10,11 +10,12 @@ host needs the files and nothing else:
 /var/lib/guard/guard.db       the database, its WAL, and guard.db.key beside it
 ```
 
-Binaries rather than containers, deliberately. The container runtime stops being
-a boot dependency of the most boot-dependent service you have, SQLite sees the
-real filesystem instead of an overlay, and recovery is an exec rather than an
-image pull. There is nothing to build on the box: pure Go, `CGO_ENABLED=0`, so
-one runner cross-compiles for every architecture in about a minute.
+Binaries rather than containers, deliberately — there is no Dockerfile here and
+no compose file. The container runtime stops being a boot dependency of the most
+boot-dependent service you have, SQLite sees the real filesystem instead of an
+overlay, and recovery is an exec rather than an image pull. There is nothing to
+build on the box: pure Go, `CGO_ENABLED=0`, so one runner cross-compiles for
+every architecture in about a minute.
 
 ## The pipeline
 
@@ -51,10 +52,15 @@ that is not stale: the published `v0.1.0` of the framework predates `core/api`,
 `core/state`, `core/console` and `core/mw`, which guard imports. So the workflow
 checks howl-go out beside guard and the replace resolves.
 
+**The ref must contain them.** `main` did not when this was written — the four
+packages live on a branch — and a workflow pointed at a tree without them fails
+with "no required module provides package", which is what it looks like when
+the framework's code has not left somebody's laptop. `HOWL_REF` at the top of
+the workflow is the one line to change.
+
 When howl-go publishes a tag containing those packages, delete the second
-checkout and the replace together — that also unblocks `docker build` and
-`go install github.com/hushkey-app/guard@latest`, both of which the replace
-currently refuses.
+checkout and the replace together — that also unblocks
+`go install github.com/hushkey-app/guard@latest`, which the replace refuses.
 
 ## On the box
 

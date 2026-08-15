@@ -26,7 +26,7 @@ WebAssembly. Filter controls stay native, because `guard.js` drives them.
 One stylesheet, `client/public/app.css`, holds Tailwind, the shadcn base and the
 `style-nova` component style. It is committed; rebuild it with `make css` after
 using a Tailwind class no source used before. That target is the only thing in
-Guard that needs Node, and `make`, `make dev` and `docker build` never run it.
+Guard that needs Node, and `make`, `make dev` and `go test` never run it.
 
 Agents should read `docs/shadcn-templ.md` for the offline API and integration
 digest before changing the UI.
@@ -86,29 +86,16 @@ Configuration is available as flags or environment variables:
 | `-max-events` | `GUARD_MAX_EVENTS` | `1000000` |
 | `-addr` | — | `:4318` |
 
-## Docker and persistent storage
+## Where the data lives
 
-The included Compose file stores SQLite, its WAL, and shared-memory files on one
-named volume:
+Guard keeps everything in one SQLite database — by default `guard.db` beside the
+binary, or wherever `GUARD_DB_PATH` points. Back up the **directory**, not only
+the file: SQLite writes `guard.db-wal` and `guard.db-shm` next to it, and
+`guard.db.key` — which seals the SSH passwords and the stored secrets — lives
+there too. A database restored without that key hands out nothing.
 
-```bash
-docker compose up --build
-```
-
-The essential configuration is:
-
-```yaml
-environment:
-  GUARD_DB_PATH: /data/guard.db
-volumes:
-  - guard-data:/data
-```
-
-Mount the directory, not only the database file, because SQLite creates
-`guard.db-wal` and `guard.db-shm` beside it. Use a local Docker volume rather
-than a network filesystem for WAL mode. The `vault` service is the same image
-with `entrypoint: guard-vault`, on the same volume — it needs the key file
-beside the database, and it refuses to start without it.
+Keep it on a local disk rather than a network filesystem; WAL mode wants real
+POSIX locks.
 
 ## Secrets
 
@@ -216,5 +203,5 @@ go test ./internal/ingest -run '^$' -bench 'BenchmarkOTLPLogs' -benchmem
 ```
 
 `BenchmarkOTLPLogsSQLiteParallel100` exercises the persistent WAL/batch path;
-the other benchmarks use isolated in-memory SQLite databases. Docker volume
+the other benchmarks use isolated in-memory SQLite databases. Volume
 latency should still be measured on the deployment host.

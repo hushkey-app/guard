@@ -198,9 +198,8 @@ override. `GUARD_VAULT_TOUCH` (1m) is how often one key's use is recorded.
 build leaves the running vault alone, the same bargain howl dev makes. Set
 `GUARD_VAULT_ADDR=` to leave it out.
 
-In compose it is the same image with `entrypoint: guard-vault`, mounting the
-same volume, with no published port and `restart: always` — it is somebody's
-boot dependency.
+In production it is its own systemd unit, bound to the VPC address, with
+`Restart=always` — it is somebody's boot dependency.
 
 ### As a plain binary, which is the better default
 
@@ -251,10 +250,10 @@ the key file is `0600`, and a uid mismatch shows up as the vault refusing to
 start. Same host, local disk, either way: two processes on one SQLite file is
 only safe when both see the same inode and real file locks.
 
-Guard owns the schema. On a brand new volume the vault has nothing to read until
+Guard owns the schema. On a brand new host the vault has nothing to read until
 guard has opened the database once, and it says so and exits rather than
-starting empty; compose starts it second and the dev watcher retries, so that is
-a non-event rather than a failure.
+starting empty; `Restart=always` and the dev watcher both retry, so that is a
+few seconds of noise on first boot rather than a failure.
 
 ## Backups
 

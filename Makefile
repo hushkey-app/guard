@@ -64,7 +64,7 @@ dev:
 # compiling client/styles/app.css into the committed client/public/app.css.
 # Run it BEFORE `make`, not after: the binary embeds client/public, so a css
 # rebuild that follows the go build is a stylesheet the server does not serve.
-# `make`, `make dev`, `go test` and `docker build` all read the committed
+# `make`, `make dev` and `go test` all read the committed
 # bundle, so run this only after using a Tailwind class no source used before.
 # The generated sources file carries the module-cache path of the pinned
 # shadcn-templ, which differs per machine and is therefore not committed.
