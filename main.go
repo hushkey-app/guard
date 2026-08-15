@@ -20,6 +20,7 @@ import (
 	"github.com/hushkey-app/guard/internal/cluster"
 	"github.com/hushkey-app/guard/internal/ingest"
 	"github.com/hushkey-app/guard/internal/notify"
+	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/remote"
 	"github.com/hushkey-app/guard/internal/telemetry"
 	"github.com/hushkey-app/guard/internal/viewalerts"
@@ -30,6 +31,7 @@ import (
 	apischeduler "github.com/hushkey-app/guard/server/apis/scheduler"
 	apisignin "github.com/hushkey-app/guard/server/apis/signin"
 	apistore "github.com/hushkey-app/guard/server/apis/store"
+	apiupdate "github.com/hushkey-app/guard/server/apis/update"
 	"github.com/mirairoad/howl-go/core/api"
 	"github.com/mirairoad/howl-go/core/app"
 	"github.com/mirairoad/howl-go/core/console"
@@ -61,6 +63,9 @@ func main() {
 	alertRepeat := flag.Duration("alert-repeat", envDuration("GUARD_ALERT_REPEAT", 6*time.Hour), "how long a stale job stays quiet after it has been reported")
 	monitorInterval := flag.Duration("monitor-interval", envDuration("GUARD_MONITOR_INTERVAL", 30*time.Second), "how often the machine rules are evaluated")
 	viewAlertInterval := flag.Duration("view-alert-interval", envDuration("GUARD_VIEW_ALERT_INTERVAL", time.Minute), "how often the saved views carrying a rule are run")
+	updateRepo := flag.String("update-repo", env("GUARD_UPDATE_REPO", release.DefaultRepo), "the GitHub repository to watch for releases; empty watches nothing")
+	updateInterval := flag.Duration("update-interval", envDuration("GUARD_UPDATE_INTERVAL", 15*time.Minute), "how often to ask GitHub for the newest release")
+	updateState := flag.String("update-state", env("GUARD_UPDATE_STATE", release.DefaultStatePath), "the file deploy/guard-update reads to know which version this box should be on")
 	// What this binary is, without starting it. The updater on the box asks the
 	// file on disk rather than keeping its own note of what it installed, which
 	// is the note that goes stale the one time somebody copies a binary by hand.
@@ -235,6 +240,19 @@ func main() {
 		Interval: *viewAlertInterval,
 		Repeat:   *alertRepeat,
 	}).Run(proberCtx)
+	// Whether a newer guard exists. Its own slow loop, and the only thing it
+	// can do about the answer is write a version into a file — installing is
+	// deploy/guard-update, a root-owned unit on a timer, because the process
+	// holding every application's secrets should not also be the one that can
+	// replace binaries.
+	updates := &release.Watch{
+		Repo:      *updateRepo,
+		Current:   "v" + build.Version,
+		Interval:  *updateInterval,
+		StatePath: *updateState,
+	}
+	go updates.Run(proberCtx)
+	apiupdate.Use(updates)
 	// What the members endpoints need to know that only the environment can
 	// answer: whether sign-in is on, and which admins came from it.
 	apisignin.Use(sessions)

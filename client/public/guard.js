@@ -551,11 +551,101 @@ async function liveTick() {
   liveTimer = setTimeout(liveTick, 3000);
 }
 
+// ---------------------------------------------------------------------------
+// Is there a newer guard?
+//
+// The sidebar lives outside the outlet, so this is set up once and survives
+// every navigation. It reads guard's own cached answer — the server asks GitHub
+// on a fifteen-minute timer, so this can be cheap and frequent without spending
+// the sixty requests an hour an unauthenticated address gets.
+// ---------------------------------------------------------------------------
+
+let updateState = null;
+
+async function refreshUpdate() {
+  const card = qs("[data-update-card]");
+  if (!card) return;
+  try {
+    updateState = await request("/api/update");
+  } catch {
+    // A dashboard that cannot ask about updates is a dashboard that says
+    // nothing about them, which is what the card already does.
+    return;
+  }
+  renderUpdate();
+}
+
+function renderUpdate() {
+  const card = qs("[data-update-card]");
+  if (!card || !updateState) return;
+  const state = updateState;
+  card.hidden = !state.available;
+  if (!state.available) return;
+
+  const link = qs("[data-update-link]", card);
+  link.textContent = state.latest || "";
+  link.href = state.url || "#";
+
+  const actions = qs("[data-update-actions]", card);
+  const note = qs("[data-update-note]", card);
+  const status = qs("[data-update-status]", card);
+
+  // Already asked for: the file names the new release and the updater has it
+  // from here. Saying "installing" would be a claim about another process on
+  // another timer; "asked for" is what guard actually knows.
+  if (state.wanted && state.wanted === state.latest) {
+    actions.hidden = true;
+    note.hidden = false;
+    note.textContent = `${state.latest} requested — the updater installs it within 15 minutes.`;
+    return;
+  }
+  // No /etc/guard on this box, so there is nothing to write and no unit to act
+  // on it. The release is still worth naming, with a link to it.
+  if (!state.managed) {
+    actions.hidden = true;
+    note.hidden = false;
+    note.textContent = "This instance updates itself elsewhere — see the release.";
+    return;
+  }
+  note.hidden = true;
+  actions.hidden = false;
+  status.textContent = "";
+}
+
+async function applyUpdate() {
+  const card = qs("[data-update-card]");
+  const status = qs("[data-update-status]", card);
+  const button = qs("[data-update-apply]", card);
+  if (!updateState?.latest) return;
+  button.disabled = true;
+  status.textContent = "asking…";
+  try {
+    updateState = await request("/api/update", {
+      method: "POST", headers: adminHeaders(),
+      body: JSON.stringify({ version: updateState.latest }),
+    });
+    renderUpdate();
+  } catch (failure) {
+    status.textContent = failure.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-update-apply]")) applyUpdate();
+});
+
+// On a mount, and then rarely: the answer changes when somebody publishes a
+// release, which is not something a page needs to learn about in seconds.
+setInterval(refreshUpdate, 5 * 60_000);
+
 globalThis.guardPageMount = (page) => {
   // The cold document can start fetching as soon as guard.js executes, without
   // waiting for the WASM binary. Its later Mount consumes that same promise;
   // AOT navigations start a fresh page-specific load here.
   updatePageTitle();
+  refreshUpdate();
   renderGeneration++;
   if (page === initializedPage && initialRefresh) {
     const pending = initialRefresh;

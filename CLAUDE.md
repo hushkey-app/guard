@@ -471,6 +471,12 @@ restarts. `/etc/guard/version` pins a box (`latest`, or a tag).
   cannot be written over, so installing is a rename too.
 - `-version` on both binaries is what the updater asks — never a state file
   that can drift from what is actually installed.
+- **The sidebar's Update card** (`internal/release`, `ui.UpdateCard`) polls the
+  releases API server-side every 15m and writes `/etc/guard/version` when
+  pressed — it installs nothing, which is why the card says "requested" rather
+  than claiming to be finished. Guard writes only a version it has actually
+  seen from the API, because that file is read by something running as root
+  that puts the value in a URL. No `/etc/guard` means a link and no button.
 
 ## Local dependency
 

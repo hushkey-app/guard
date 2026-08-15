@@ -8,6 +8,7 @@ package apiclient
 import (
 	"context"
 	"github.com/hushkey-app/guard/internal/cloud"
+	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vultr"
 	"github.com/hushkey-app/guard/server/apis/cloud/accounts"
@@ -21,6 +22,7 @@ import (
 	"github.com/hushkey-app/guard/server/apis/secrets"
 	"github.com/hushkey-app/guard/server/apis/secrets/envs"
 	"github.com/hushkey-app/guard/server/apis/secrets/values"
+	"github.com/hushkey-app/guard/server/apis/update"
 	"github.com/hushkey-app/guard/server/apis/webhooks"
 	"github.com/mirairoad/howl-go/core/api"
 )
@@ -351,6 +353,11 @@ func (c *Client) ReorderViews(ctx context.Context, body contract.ViewOrder) ([]m
 	return api.Call[[]model.View](ctx, c.Transport, "PUT", "/api/views/order", nil, body)
 }
 
+// RequestUpdate calls POST /api/update.
+func (c *Client) RequestUpdate(ctx context.Context, body update.Request) (release.State, error) {
+	return api.Call[release.State](ctx, c.Transport, "POST", "/api/update", nil, body)
+}
+
 // RestoreMachineSnapshot calls POST /api/cluster/provider/restore.
 func (c *Client) RestoreMachineSnapshot(ctx context.Context, body provider.RestoreRequest) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "POST", "/api/cluster/provider/restore", nil, body)
@@ -472,6 +479,11 @@ func (c *Client) UpdateClusterNode(ctx context.Context, id string, body model.No
 // UpdateSettings calls PUT /api/settings.
 func (c *Client) UpdateSettings(ctx context.Context, body model.Settings) (model.Settings, error) {
 	return api.Call[model.Settings](ctx, c.Transport, "PUT", "/api/settings", nil, body)
+}
+
+// UpdateState calls GET /api/update.
+func (c *Client) UpdateState(ctx context.Context) (release.State, error) {
+	return api.Call[release.State](ctx, c.Transport, "GET", "/api/update", nil, nil)
 }
 
 // UpdateView calls PUT /api/views/{id}.
