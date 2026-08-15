@@ -62,7 +62,24 @@ When howl-go publishes a tag containing those packages, delete the second
 checkout and the replace together — that also unblocks
 `go install github.com/hushkey-app/guard@latest`, which the replace refuses.
 
-## On the box
+## A new box
+
+`deploy/cloud-init.yaml` is the whole provisioning: paste it as user-data, boot,
+and the box comes up running both services. It installs no toolchain and builds
+nothing — it writes the units, fetches `guard-update`, and then runs it, so the
+first install goes down exactly the same path as every later one. A first-boot
+special case is a code path that stops being exercised the moment it works.
+
+Two knobs at the top: which version to follow or pin, and where the vault
+listens — `127.0.0.1` serves that box alone, the private address serves the
+VPC, and `0.0.0.0` serves the internet, which is not what this is for.
+
+It cannot do two things for you. The **key**: guard generates
+`/var/lib/guard/guard.db.key` on first start, and joining a box to an existing
+database means putting that key there first. And the **door**: guard listens on
+:4318 for the dashboard and for OTLP, and what fronts that is your decision.
+
+## By hand
 
 Install the units and the updater once:
 
