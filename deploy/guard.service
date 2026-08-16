@@ -4,6 +4,12 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# GUARD_OTEL_SECRET, GUARD_TOKEN, the OAuth credentials — everything that is a
+# credential rather than a path. The leading dash makes it optional, so a box
+# with no secrets to set still starts. systemd reads it as root before dropping
+# to the guard user, which is why the file is root-owned 0600 and readable by
+# nothing else, even though /etc/guard is otherwise the guard user's to write.
+EnvironmentFile=-/etc/guard/guard.env
 ExecStart=/usr/local/bin/guard -db /var/lib/guard/guard.db
 User=guard
 Restart=always

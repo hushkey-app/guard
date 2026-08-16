@@ -433,7 +433,14 @@ a setup where they only run when somebody remembered to start them never
 exercises it.
 
 `GUARD_DB_PATH`, `GUARD_RETENTION_HOURS`, `GUARD_MAX_EVENTS`, `GUARD_TOKEN` configure it;
-flags of the same names override. `GUARD_SECRET_KEY` is the key the SSH passwords and the stored
+flags of the same names override. `GUARD_OTEL_SECRET` is the **collector's**
+credential: it opens `/v1/logs`, `/v1/traces` and `/v1/metrics` and nothing else,
+where `GUARD_TOKEN` opens those *and* every write endpoint in the API. Both are
+accepted at ingest, so an exporter configured before the secret existed keeps
+working; only the secret is safe to hand to a collector on somebody else's box.
+Set neither and ingest is unauthenticated — those three routes sit outside
+sign-in by construction, because a collector cannot authenticate with Google, so
+guard says so at startup rather than leaving it to be found. `GUARD_SECRET_KEY` is the key the SSH passwords and the stored
 secrets are sealed with — unset, guard generates `<db>.key` beside the database, which is
 part of the backup and never part of the repository. **`guard-vault` will not generate
 one**: without the key it refuses to start rather than answering with values it cannot

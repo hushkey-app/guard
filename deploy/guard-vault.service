@@ -8,6 +8,10 @@ Wants=network-online.target
 After=guard.service
 
 [Service]
+# The same file guard reads — GUARD_SECRET_KEY is the one that matters here,
+# and the two processes have to be given the same one or the vault answers with
+# values it cannot decrypt.
+EnvironmentFile=-/etc/guard/guard.env
 # Bind to the VPC address rather than 0.0.0.0. Nothing about this wants to be
 # on the internet.
 ExecStart=/usr/local/bin/guard-vault -db /var/lib/guard/guard.db -addr 127.0.0.1:4319

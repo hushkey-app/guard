@@ -85,6 +85,17 @@ Configuration is available as flags or environment variables:
 | `-retention-hours` | `GUARD_RETENTION_HOURS` | `24` |
 | `-max-events` | `GUARD_MAX_EVENTS` | `1000000` |
 | `-addr` | — | `:4318` |
+| — | `GUARD_TOKEN` | unset — the API and ingest are open |
+| — | `GUARD_OTEL_SECRET` | unset — ingest is open |
+
+`GUARD_OTEL_SECRET` is what an exporter should hold. It opens the three OTLP
+routes and nothing else, so a collector running beside your database does not
+also carry a key to the secrets page; `GUARD_TOKEN` opens everything and is the
+operator's. Either is accepted at `/v1/*`, both are sent the same way:
+
+```
+Authorization: Bearer <secret>
+```
 
 ## Where the data lives
 
