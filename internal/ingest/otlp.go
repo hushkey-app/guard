@@ -27,7 +27,18 @@ const maxBody = 16 << 20
 
 type Handler struct {
 	Store *telemetry.Store
+	// Token is GUARD_TOKEN: "a machine, let it through", everywhere in guard.
+	// It opens the JSON API and the dashboard's write endpoints as well as
+	// these three routes, which is why it is not the credential to hand a
+	// collector.
 	Token string
+	// Secret is GUARD_OTEL_SECRET, and it opens the OTLP routes and nothing
+	// else. That is the whole reason it exists: the thing scraping redis on
+	// some other box needs to post spans, not to read the secrets page, and
+	// under one shared token those were the same permission. It is also
+	// rotated on its own — a collector's credential changing should not mean
+	// re-issuing the operator's.
+	Secret string
 }
 
 // Register mounts the OTLP receiver. Only the protobuf half lives here: the
@@ -40,8 +51,24 @@ func (h Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/metrics", h.metrics)
 }
 
+// authorize gates the three collector routes. Either credential opens them —
+// GUARD_TOKEN because it opens everything and refusing it here would only mean
+// breaking every exporter configured before the secret existed, and
+// GUARD_OTEL_SECRET because it is the one a collector should be holding.
+//
+// Setting either closes the door. Both unset leaves it open, which is the
+// bargain the rest of guard makes for the instance running on somebody's
+// laptop — but this is the door reachable by anything that can route to the
+// port, so main.go says so at startup rather than leaving it to be discovered.
 func (h Handler) authorize(w http.ResponseWriter, r *http.Request) bool {
-	if h.Token == "" || r.Header.Get("Authorization") == "Bearer "+h.Token {
+	if h.Token == "" && h.Secret == "" {
+		return true
+	}
+	presented := r.Header.Get("Authorization")
+	if h.Token != "" && presented == "Bearer "+h.Token {
+		return true
+	}
+	if h.Secret != "" && presented == "Bearer "+h.Secret {
 		return true
 	}
 	w.Header().Set("WWW-Authenticate", "Bearer")

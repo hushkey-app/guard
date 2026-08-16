@@ -10,7 +10,8 @@ The door is separate; the house is not.
 
 ## Why not just point the browser at `/v1/traces`
 
-That endpoint is authenticated with `GUARD_TOKEN`, accepts 16MB bodies, and
+That endpoint is authenticated with `GUARD_OTEL_SECRET` (or `GUARD_TOKEN`),
+accepts 16MB bodies, and
 files events under whatever `service.name` the payload claims. A browser can
 hold no secret — anything you ship to it is public — so pointing a browser at
 it means either disabling the token or publishing it. Either way, anyone who
@@ -22,7 +23,7 @@ write to.
 
 | | `/v1/traces` | `/v1/rum/traces` |
 |---|---|---|
-| auth | `GUARD_TOKEN` | none — it is public by nature |
+| auth | `GUARD_OTEL_SECRET` or `GUARD_TOKEN` | none — it is public by nature |
 | identity | from the payload | **assigned by guard**, payload ignored |
 | body | 16 MB | 256 KB |
 | rate | unlimited | per address, `GUARD_RUM_PER_MINUTE` |

@@ -96,6 +96,10 @@ func main() {
 	// configuration is fatal rather than ignored — somebody who set a client id
 	// and forgot the secret meant to close the door.
 	token := os.Getenv("GUARD_TOKEN")
+	// The collector's credential, and deliberately not the operator's. It is
+	// never given to auth.Config: presenting it must not make a caller a
+	// machine anywhere else in guard, or the split would be decoration.
+	otelSecret := os.Getenv("GUARD_OTEL_SECRET")
 	signin := auth.FromEnv()
 	signin.APIToken = token
 	sessions, err := auth.New(store, signin)
@@ -143,7 +147,16 @@ func main() {
 
 	// The OTLP receiver: protobuf in, protobuf out, byte-compatible with every
 	// exporter. Not part of the typed API layer, on purpose.
-	receiver := ingest.Handler{Store: store, Token: token}
+	//
+	// It sits outside sign-in — a collector cannot authenticate with Google —
+	// so these two strings are the only thing between the port and whoever can
+	// reach it. Unset both and every panel, view and uptime figure is something
+	// a stranger can write to, so it is said once, loudly, at boot.
+	receiver := ingest.Handler{Store: store, Token: token, Secret: otelSecret}
+	if token == "" && otelSecret == "" {
+		slog.Warn("OTLP ingest is unauthenticated — anything that can reach this port may post telemetry",
+			slog.String("fix", "set GUARD_OTEL_SECRET"), slog.String("routes", "/v1/logs /v1/traces /v1/metrics"))
+	}
 	receiver.Register(mux)
 
 	// The browser intake, off unless origins are named. It cannot be enabled by
