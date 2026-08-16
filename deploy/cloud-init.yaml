@@ -119,7 +119,6 @@ write_files:
       OnBootSec=2min
       OnUnitActiveSec=15min
       RandomizedDelaySec=2min
-      Persistent=true
 
       [Install]
       WantedBy=timers.target
@@ -138,7 +137,14 @@ runcmd:
   - [ sh, -c, "curl -fsSL https://raw.githubusercontent.com/hushkey-app/guard/main/deploy/guard-update -o /usr/local/bin/guard-update" ]
   - [ chmod, "0755", /usr/local/bin/guard-update ]
   - [ systemctl, daemon-reload ]
-  - [ systemctl, enable, guard.service, guard-vault.service, guard-update.timer ]
+  - [ systemctl, enable, guard.service, guard-vault.service ]
+  # --now, and it is the whole difference between a box that updates itself and
+  # one that does not. `enable` alone only wires the timer to timers.target,
+  # which systemd reached long before cloud-init got here — so it would be armed
+  # for the next boot and never start on this one. The two services above are
+  # started by guard-update at the end of this file, which is exactly why the
+  # box would come up looking correct and quietly never take another release.
+  - [ systemctl, enable, --now, guard-update.timer ]
   # The first install is an ordinary update: download, verify, install, start
   # guard, wait for it to answer, then the vault. Nothing here is a special
   # first-boot path that stops being exercised afterwards.
@@ -166,3 +172,10 @@ final_message: |
     * The door. Guard listens on :4318 for the dashboard and for OTLP. Put it
       behind whatever fronts your other services, and leave the vault on the
       private address.
+
+  One thing worth confirming, because it fails silently:
+
+    systemctl list-timers guard-update.timer
+
+  A NEXT column means this box takes new releases. Nothing there means it
+  installed once and will never update again.
