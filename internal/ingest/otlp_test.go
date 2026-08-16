@@ -88,6 +88,58 @@ func TestOTLPProtobufAndJSON(t *testing.T) {
 	}
 }
 
+// TestIngestCredentials pins the two credentials the OTLP door takes. The rows
+// that matter are the last two: GUARD_OTEL_SECRET has to open these routes on
+// its own, or a deployment that issues only the collector's credential has no
+// working exporters — and GUARD_TOKEN has to keep opening them, or upgrading
+// silently drops the telemetry from every exporter configured before the
+// secret existed.
+func TestIngestCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		token, secret string
+		presented     string
+		want          int
+	}{
+		{name: "neither set is an open door", want: http.StatusOK},
+		{name: "token set, none presented", token: "operator", want: http.StatusUnauthorized},
+		{name: "token set, wrong one presented", token: "operator", presented: "Bearer nope", want: http.StatusUnauthorized},
+		{name: "token set and presented", token: "operator", presented: "Bearer operator", want: http.StatusOK},
+		{name: "secret alone closes the door", secret: "collector", want: http.StatusUnauthorized},
+		{name: "secret alone opens it", secret: "collector", presented: "Bearer collector", want: http.StatusOK},
+		{name: "both set, secret presented", token: "operator", secret: "collector", presented: "Bearer collector", want: http.StatusOK},
+		{name: "both set, token still presented", token: "operator", secret: "collector", presented: "Bearer operator", want: http.StatusOK},
+		{name: "both set, neither presented", token: "operator", secret: "collector", want: http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := telemetry.NewStore(100)
+			t.Cleanup(func() { store.Close() })
+			mux := http.NewServeMux()
+			Handler{Store: store, Token: tc.token, Secret: tc.secret}.Register(mux)
+			server := httptest.NewServer(mux)
+			t.Cleanup(server.Close)
+
+			body, err := proto.Marshal(&collectorlogspb.ExportLogsServiceRequest{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/logs", bytes.NewReader(body))
+			request.Header.Set("Content-Type", "application/x-protobuf")
+			if tc.presented != "" {
+				request.Header.Set("Authorization", tc.presented)
+			}
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != tc.want {
+				t.Fatalf("status %d, want %d", response.StatusCode, tc.want)
+			}
+		})
+	}
+}
+
 func testServer(t *testing.T, token string) (*telemetry.Store, *httptest.Server) {
 	t.Helper()
 	store := telemetry.NewStore(100)
