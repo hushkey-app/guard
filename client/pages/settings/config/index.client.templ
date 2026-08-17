@@ -13,8 +13,6 @@ package config
 import (
 	"github.com/axadrn/shadcn-templ/v2/components/alert"
 	"github.com/axadrn/shadcn-templ/v2/components/button"
-	"github.com/axadrn/shadcn-templ/v2/components/card"
-	"github.com/axadrn/shadcn-templ/v2/components/input"
 	"github.com/hushkey-app/guard/client/lifecycle"
 	"github.com/hushkey-app/guard/client/ui"
 	"github.com/hushkey-app/guard/client/ui/components"
@@ -36,6 +34,7 @@ templ Page() {
 					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Settings</h2>
 					<p class="mt-2 text-muted-foreground">
 						A value saved here is stored in Guard's database and put into Guard's environment at the next start — so it outranks the same name in a unit file, and it takes a restart to come into force.
+						Who may sign in is on <a href="/settings/security" class="underline">Security</a>.
 					</p>
 				</div>
 				<div data-config-ignored hidden>
@@ -48,7 +47,7 @@ templ Page() {
 						}
 					}
 				</div>
-				<div data-config-groups class="space-y-6">
+				<div data-config-groups data-config-page="config" class="space-y-6">
 					<p data-config-loading class="text-sm text-muted-foreground">Loading…</p>
 				</div>
 				<div class="sticky bottom-4 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card/95 p-4 shadow-lg backdrop-blur">
@@ -69,71 +68,12 @@ templ Page() {
 					}
 				}
 				@components.ConfirmDialog()
-				@group()
-				@row()
+				@components.ConfigTemplates()
 			</div>
 		</div>
 	</section>
 }
 
 // group is one titled section of the form. Cloned per group by config.js.
-templ group() {
-	<template data-config-group-template>
-		@card.Card() {
-			@card.Header() {
-				@card.Title() {
-					<span data-config-group-name></span>
-				}
-			}
-			@card.Content() {
-				<div data-config-group-rows class="space-y-5"></div>
-			}
-		}
-	</template>
-}
-
-// row is one variable: what it is called, where its value came from, and the
-// input that changes it. The three inputs are all here rather than built in
-// JavaScript, so Tailwind sees every class one of them needs.
-templ row() {
-	<template data-config-row-template>
-		<div data-config-row class="space-y-2">
-			<div class="flex flex-wrap items-baseline gap-2">
-				<label data-config-label class="text-sm font-medium"></label>
-				<code data-config-name class="font-mono text-xs text-muted-foreground"></code>
-				<span data-config-source class="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"></span>
-				<span data-config-pending hidden class="rounded-full border border-border px-2 py-0.5 text-[11px] text-warning">
-					saved · restart to apply
-				</span>
-			</div>
-			<div class="flex items-stretch gap-2">
-				@input.Input(input.Props{
-					Class:      "min-w-0 flex-1 font-mono",
-					Attributes: templ.Attributes{"data-config-input": true, "autocomplete": "off", "spellcheck": "false"},
-				})
-				<!-- Only the two opaque tokens get these, and config.js hides them
-				     everywhere else: a Generate beside an OAuth client secret would
-				     mint a value Google has never heard of. -->
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Class:      "shrink-0",
-					Attributes: templ.Attributes{"data-config-copy": true, "type": "button", "hidden": true},
-				}) {
-					Copy
-				}
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Class:      "shrink-0",
-					Attributes: templ.Attributes{"data-config-generate": true, "type": "button", "hidden": true},
-				}) {
-					Generate
-				}
-			</div>
-			<textarea data-config-textarea hidden rows="6" class="cn-input min-h-[8rem] w-full font-mono text-xs" autocomplete="off" spellcheck="false"></textarea>
-			<p data-config-help class="text-xs text-muted-foreground"></p>
-		</div>
-	</template>
-}
-
 func Mount()   { lifecycle.Mount("settings-config") }
 func Unmount() { lifecycle.Unmount("settings-config") }

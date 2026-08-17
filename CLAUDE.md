@@ -40,7 +40,7 @@ client/public/registries.js   the registries drill
 client/public/cloud.js        the cloud accounts, the machine link, the provider strip
 client/public/storage.js      the object storage page
 client/public/secrets.js      the secrets page: environments, pairs, keys, .env import
-client/public/config.js       the configuration page: the catalogue as a form
+client/public/config.js       both settings forms: the catalogue, filtered per page
 client/styles/app.css         stylesheet source — compiles to client/public/app.css
 ```
 
@@ -160,6 +160,16 @@ The three rules that are load-bearing:
   container — and a provider API answers for the power switch; neither knows the
   disk is full. Memory is total minus *available*; CPU is a rate, so the first
   sample has none and says so rather than showing 0%.
+- **One machine has its own page**, `/cluster/{id}`
+  (`client/pages/cluster/id.dyn/`, `GET /api/cluster/{id}`): the same card the
+  list draws, always open, plus the two things a list has no room for — a command
+  line and a terminal pane. **`POST /api/cluster/exec` is the one endpoint that
+  takes a command rather than an action id** — a deliberate exception, because the
+  lines people actually run start as lines they type once. It is admin, **refused
+  on a locked machine** (whose stored commands still run), and logged into the same
+  `cluster_runs` history, which now carries the command for rows no action backs.
+  The pane keeps the last output, the exit code and the duration; it selects and
+  copies like a terminal, and **History** shows the last runs in the same place.
 - **A machine has an environment, and two presses.** A box of `KEY=value` lines
   per machine (`cluster_env`, sealed like the SSH passwords): **Save** stores it in
   guard and touches nothing, **Inject** writes it to the box. Fixed paths, no files
@@ -172,7 +182,8 @@ The three rules that are load-bearing:
   atomically with the old one kept as `.guard-bak`, and the lock refuses the
   inject rather than the save. Read `docs/cluster.md` before changing any of it.
 - **`POST /api/cluster/run` takes an action id, never a command**, and reads the
-  machine off the action. Everything that runs was stored first, and every run
+  machine off the action. (The command line on `/cluster/{id}` is the one
+  exception, through its own endpoint — see above.) Everything that runs was stored first, and every run
   is logged. A machine can also be **locked**: one way, confirmed by typing its
   name, after which the login is frozen and the command list is closed — no
   adding, editing or removing, from the page or the API. The only way past it is
@@ -449,8 +460,9 @@ because the promise is that secrets keep being served while guard restarts, and
 a setup where they only run when somebody remembered to start them never
 exercises it.
 
-`GUARD_DB_PATH`, `GUARD_RETENTION_HOURS`, `GUARD_MAX_EVENTS`, `GUARD_TOKEN` configure it;
-flags of the same names override. `GUARD_OTEL_SECRET` is the **collector's**
+`GUARD_DB_PATH` and `GUARD_TOKEN` configure it; flags of the same names override.
+Retention and the event cap are rows in the `settings` table, edited on Settings →
+Data storage — the store's own defaults are what a new database starts with. `GUARD_OTEL_SECRET` is the **collector's**
 credential: it opens `/v1/logs`, `/v1/traces` and `/v1/metrics` and nothing else,
 where `GUARD_TOKEN` opens those *and* every write endpoint in the API. Both are
 accepted at ingest, so an exporter configured before the secret existed keeps
@@ -463,13 +475,18 @@ setting and restarts guard into them. `GUARD_SECRET_KEY` is the key the SSH pass
 secrets are sealed with — unset, guard generates `<db>.key` beside the database, which is
 part of the backup and never part of the repository. **`guard-vault` will not generate
 one**: without the key it refuses to start rather than answering with values it cannot
-decrypt. `GUARD_VAULT_ADDR` (:4319) and `GUARD_VAULT_TOUCH` (1m, how often one key's use
-is recorded) configure it. `GUARD_SSH_TIMEOUT` bounds one command run,
+decrypt. `GUARD_VAULT_ADDR` (:4319) is where it listens; how often one key's use is
+recorded is the server's own answer. `GUARD_SSH_TIMEOUT` bounds one command run,
 `GUARD_SCHEDULE_TIMEOUT` one scheduled run (30m). Alerts go to the destinations
 named on Settings → Alerts and to no environment variable.
-`GUARD_ALERT_INTERVAL` (5m) is how often the budgets are checked,
-`GUARD_MONITOR_INTERVAL` (30s) how often the machine rules are, and
-`GUARD_ALERT_REPEAT` (6h) how long anything firing stays quiet between repeats.
+Every loop's cadence is a constant beside the loop — the budgets every 5m, the
+machine rules every 30s, the watched views every minute, a firing rule quiet for 6h
+between repeats. **Twenty-one `GUARD_*` variables, and that is the whole list**: the
+catalogue on Settings → Configuration holds the six somebody changes, Security holds
+the ten about signing in, and the rest are the database, the key, the two tokens and
+the two escape hatches. Anything that reads like a tuning knob was deleted rather
+than made configurable — a number nobody has ever changed is a number with one right
+answer, and the place for it is twenty lines from where it is read.
 
 Sign-in adds `GUARD_GOOGLE_CLIENT_ID`/`GUARD_GOOGLE_CLIENT_SECRET`, the four
 `GUARD_APPLE_*` values (`CLIENT_ID` is the Services ID; the key is
@@ -496,6 +513,22 @@ that sets everything in its unit file behaves exactly as it did.
   `GET /api/config` — so adding a variable to guard is one entry there and
   nothing else. No template to edit, no endpoint to write, and no chance of a
   page that is wrong about what guard reads.
+- **Two pages draw it, and the group says which** (`config.pageOf`): everything
+  about signing in — Google, Apple, `GUARD_ADMIN_EMAIL`, the base URL, the session
+  TTL, a card each per provider — is on **Settings → Security**, and the rest is on **Settings →
+  Configuration**. One endpoint and one renderer (`config.js` filters on
+  `data-config-page`), because a second endpoint per page would be a second place
+  for the answer to be wrong. A group with no page named lands on the
+  configuration page: a new variable is a setting until somebody decides it is a
+  policy. The restart button is the process's, not the page's.
+- **Two values go in and do not come back**: `GUARD_GOOGLE_CLIENT_SECRET` and
+  `GUARD_APPLE_PRIVATE_KEY` are `Secret` in the catalogue — stored and applied,
+  never sent to a browser, shown as `set`/`not set`, replaced by pasting. An empty
+  box therefore means "unchanged" for them (or a neighbouring save would delete a
+  client secret), so removing one is its own press — and it takes the provider's
+  other half with it, since guard refuses to store half a sign-in configuration.
+  Nothing else is masked: a team id or an admin address has to be readable to be
+  worked with.
 - **`GUARD_DB_PATH` and `GUARD_SECRET_KEY` can never be stored**: anything needed
   to open and decrypt the database cannot live inside it. Both are shown
   read-only, and the key's value is never sent to a browser at all — unlike the

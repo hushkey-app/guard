@@ -1,0 +1,60 @@
+// One machine, on its own page.
+//
+// `/cluster` is a list: one line each, the figures in fixed columns, built for
+// finding the machine that is unlike the others. This is the other half of that —
+// the URL you keep open while you are working on a box, with everything about it
+// on one screen instead of behind a fold that closes when the list redraws.
+//
+// It renders the same card the list does, always open, and adds the two things a
+// list cannot give room to: a command line for this machine, and a terminal pane
+// under it that keeps what the last command printed.
+//
+// The directory is `id.dyn/` rather than a file called `id.dyn.client.templ`,
+// because a page's exports are package-level: two pages in one directory both
+// declaring Page and Head is a redeclaration, and the framework's answer is that
+// a directory takes the modifier too.
+package machine
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui/components"
+	"github.com/mirairoad/howl-go/core/router"
+)
+
+templ Head() {
+	<title>Machine — Guard</title>
+	<meta name="description" content="One watched machine: its numbers, its environment and its commands."/>
+}
+
+templ Page() {
+	<section data-machine={ router.Param(ctx, "id") } class="space-y-6">
+		<div class="flex flex-wrap items-end justify-between gap-3">
+			<div>
+				<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Infrastructure</p>
+				<h1 data-machine-name class="mt-2 text-3xl font-semibold tracking-tight">Machine</h1>
+				<p data-machine-note class="mt-2 text-muted-foreground empty:hidden"></p>
+			</div>
+			<div class="flex flex-wrap items-center gap-2">
+				@button.Button(button.Props{Href: "/cluster", Variant: button.VariantOutline, Size: button.SizeSm}) {
+					← All machines
+				}
+				@button.Button(button.Props{Href: "/settings/cluster", Variant: button.VariantGhost, Size: button.SizeSm}) {
+					Edit in settings
+				}
+			</div>
+		</div>
+		<!-- The machine's own card, drawn by cluster.js from the same template the
+		     list uses and opened on arrival: a page about one machine that starts
+		     folded shut is a page that makes you click to see what you came for. -->
+		<div data-machine-card class="overflow-hidden rounded-xl border border-border">
+			<p data-machine-loading class="p-4 text-sm text-muted-foreground">Loading…</p>
+		</div>
+		@components.MachineTerminal()
+		@components.ClusterOpsCard()
+		@components.ConfirmDialog()
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("machine") }
+func Unmount() { lifecycle.Unmount("machine") }

@@ -1,0 +1,88 @@
+// The configuration form's chrome, cloned per group and per variable.
+//
+// In components rather than on a page because two pages draw this catalogue now —
+// `/settings/config` for the settings somebody tunes and `/settings/security` for
+// the ones that decide who may open the dashboard at all. One copy of the markup,
+// so a row gains a control in one place; and it stays real shadcn markup where
+// Tailwind looks for classes, rather than being assembled in JavaScript.
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+)
+
+// ConfigTemplates is what config.js clones. Both settings pages render it.
+templ ConfigTemplates() {
+	@configGroup()
+	@configRow()
+}
+
+templ configGroup() {
+	<template data-config-group-template>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					<span data-config-group-name></span>
+				}
+			}
+			@card.Content() {
+				<div data-config-group-rows class="space-y-5"></div>
+			}
+		}
+	</template>
+}
+
+// row is one variable: what it is called, where its value came from, and the
+// input that changes it. The three inputs are all here rather than built in
+// JavaScript, so Tailwind sees every class one of them needs.
+templ configRow() {
+	<template data-config-row-template>
+		<div data-config-row class="space-y-2">
+			<div class="flex flex-wrap items-baseline gap-2">
+				<label data-config-label class="text-sm font-medium"></label>
+				<code data-config-name class="font-mono text-xs text-muted-foreground"></code>
+				<span data-config-source class="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"></span>
+				<span data-config-pending hidden class="rounded-full border border-border px-2 py-0.5 text-[11px] text-warning">
+					saved · restart to apply
+				</span>
+			</div>
+			<div class="flex items-stretch gap-2">
+				@input.Input(input.Props{
+					Class:      "min-w-0 flex-1 font-mono",
+					Attributes: templ.Attributes{"data-config-input": true, "autocomplete": "off", "spellcheck": "false"},
+				})
+				<!-- Only the two opaque tokens get these, and config.js hides them
+				     everywhere else: a Generate beside an OAuth client secret would
+				     mint a value Google has never heard of. -->
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Class:      "shrink-0",
+					Attributes: templ.Attributes{"data-config-copy": true, "type": "button", "hidden": true},
+				}) {
+					Copy
+				}
+				<!-- Only on a stored secret: an empty box means "unchanged" there, so
+				     removing one needs a press of its own. -->
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Class:      "shrink-0 text-muted-foreground hover:text-destructive",
+					Attributes: templ.Attributes{"data-config-clear": true, "type": "button", "hidden": true},
+				}) {
+					Remove
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Class:      "shrink-0",
+					Attributes: templ.Attributes{"data-config-generate": true, "type": "button", "hidden": true},
+				}) {
+					Generate
+				}
+			</div>
+			<textarea data-config-textarea hidden rows="6" class="cn-input min-h-[8rem] w-full font-mono text-xs" autocomplete="off" spellcheck="false"></textarea>
+			<p data-config-help class="text-xs text-muted-foreground"></p>
+		</div>
+	</template>
+}
+

@@ -1,0 +1,90 @@
+// Sign-in, on its own page.
+//
+// These values were a section of the configuration form and have been given a page
+// because they are a different kind of thing. The configuration page is a long list
+// somebody tunes — timeouts, intervals, a rate limit. These decide *who may open
+// the dashboard at all*, are set once from a provider's console in a sitting, and
+// are what somebody comes looking for when they are locking an instance down. They
+// were three quarters of the way down a form about timeouts.
+//
+// It draws the same rows the configuration page draws, from the same catalogue and
+// the same templates — the groups carry which page they belong to, so there is one
+// endpoint and one renderer rather than a second form to keep in step. What is here
+// and not there is the copy around them: the order the two providers want things
+// done in, and where the members list lives.
+package security
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/alert"
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
+)
+
+templ Head() {
+	<title>Security — Guard</title>
+	<meta name="description" content="Who may open this dashboard: the sign-in providers, the always-admin addresses and the session lifetime."/>
+}
+
+templ Page() {
+	<section class="space-y-8">
+		@ui.PageHeading("Workspace", "Security", "Who may open this dashboard, and how long they stay signed in.")
+		<div class="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
+			@components.SettingsNav("/settings/security")
+			<div class="min-w-0 space-y-6">
+				<div>
+					<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Access</p>
+					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Signing in</h2>
+					<p class="mt-2 text-muted-foreground">
+						Configured is on, unconfigured is off. With no credentials here Guard is the open tool it has always been —
+						the usual instance is a container on a laptop. Google's two values draw the Google button, Apple's five draw
+						Apple's, and both draw two. A card each, because you configure one at a time with that provider's console
+						open beside you.
+					</p>
+				</div>
+				<div data-config-ignored hidden>
+					@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+						@alert.Title() {
+							Started with GUARD_CONFIG_IGNORE
+						}
+						@alert.Description() {
+							This process is reading the environment alone. Saving still works, and nothing saved will be used until that variable is removed and Guard is restarted.
+						}
+					}
+				</div>
+				<!-- Drawn by client/public/config.js from GET /api/config, filtered to
+				     the groups this page owns. -->
+				<div data-config-groups data-config-page="security" class="space-y-6">
+					<p data-config-loading class="text-sm text-muted-foreground">Loading…</p>
+				</div>
+				<div class="sticky bottom-4 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card/95 p-4 shadow-lg backdrop-blur">
+					@button.Button(button.Props{Attributes: templ.Attributes{"data-config-save": true, "type": "button"}}) {
+						Save changes
+					}
+					@button.Button(button.Props{Variant: button.VariantOutline, Attributes: templ.Attributes{"data-config-restart": true, "type": "button", "hidden": true}}) {
+						Restart Guard
+					}
+					<span data-config-status class="text-sm text-muted-foreground"></span>
+				</div>
+				@alert.Alert() {
+					@alert.Title() {
+						Half a configuration is fatal at startup
+					}
+					@alert.Description() {
+						A client id with no secret refuses the save, and would refuse the start — somebody who set one and forgot the
+						other meant to close the door. The provider proves who somebody is; the
+						<a href="/settings/members" class="underline">members list</a> decides whether they may come in, and
+						<code class="font-mono">GUARD_ADMIN_EMAIL</code> is the way back when the last stored admin removes themselves.
+						<code class="font-mono">/v1/…</code> stays outside all of it: a collector cannot sign in with Google.
+					}
+				}
+				@components.ConfirmDialog()
+				@components.ConfigTemplates()
+			</div>
+		</div>
+	</section>
+}
+
+func Mount()   { lifecycle.Mount("settings-security") }
+func Unmount() { lifecycle.Unmount("settings-security") }

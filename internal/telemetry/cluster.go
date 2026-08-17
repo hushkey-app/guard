@@ -171,7 +171,11 @@ CREATE TABLE IF NOT EXISTS cluster_runs (
   outcome TEXT NOT NULL DEFAULT '',
   trigger TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
-  output TEXT NOT NULL DEFAULT ''
+  output TEXT NOT NULL DEFAULT '',
+  -- What ran, when nothing stored it: the command line on a machine's page has
+  -- no action row to join to, and a history that said "(removed command)" for
+  -- half its rows would be a history nobody reads.
+  command TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_cluster_runs_action ON cluster_runs(action_id, ran_at_ns DESC);
 CREATE INDEX IF NOT EXISTS idx_cluster_runs_node ON cluster_runs(node_id, ran_at_ns DESC);`
@@ -224,6 +228,29 @@ CREATE INDEX IF NOT EXISTS idx_cluster_runs_node ON cluster_runs(node_id, ran_at
 		}
 		if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE cluster_actions ADD COLUMN %s %s`, column, definition)); err != nil {
 			return fmt.Errorf("add %s: %w", column, err)
+		}
+	}
+	// And the same for the runs table, whose one added column is what an ad-hoc
+	// command line stores: there is no action row to read the command from.
+	runColumn := map[string]bool{}
+	rows, err = db.Query(`SELECT name FROM pragma_table_xinfo('cluster_runs')`)
+	if err != nil {
+		return fmt.Errorf("read run columns: %w", err)
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		runColumn[name] = true
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !runColumn["command"] {
+		if _, err := db.Exec(`ALTER TABLE cluster_runs ADD COLUMN command TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add run command: %w", err)
 		}
 	}
 	// Actions that predate the column: dated now, so the staleness watch has an
@@ -1179,6 +1206,57 @@ SELECT id FROM cluster_runs WHERE action_id = ? ORDER BY id DESC LIMIT ?)`, acti
 	return tx.Commit()
 }
 
+// RecordExec keeps a run that had no stored command behind it — the command line
+// on a machine's page.
+//
+// Same table, same retention, `action_id = 0` and the command in its own column.
+// It is not a second history: "what has been running on this box" has to include
+// the line somebody typed an hour ago, or the answer is wrong in exactly the case
+// somebody is asking about.
+func (s *Store) RecordExec(nodeID int64, run model.Run) error {
+	failure := run.Error
+	if failure == "" && run.ExitCode != 0 {
+		failure = fmt.Sprintf("exit %d", run.ExitCode)
+	}
+	outcome := run.Outcome
+	if outcome == "" {
+		outcome = run.Result()
+	}
+	output := run.Output
+	if len(output) > runOutputKept {
+		output = output[len(output)-runOutputKept:]
+	}
+	if _, err := s.db.Exec(`INSERT INTO cluster_runs(action_id,node_id,ran_at_ns,duration_ms,exit_code,outcome,trigger,error,output,command)
+VALUES(0,?,?,?,?,?,?,?,?,?)`,
+		nodeID, run.RanAt.UnixNano(), run.DurationMS, run.ExitCode, outcome, run.Trigger, failure, output, run.Command); err != nil {
+		return err
+	}
+	// Trimmed per machine rather than per action: every one of these rows shares
+	// action_id 0, so trimming by action would keep fifty for the whole fleet.
+	_, err := s.db.Exec(`DELETE FROM cluster_runs WHERE action_id = 0 AND node_id = ? AND id NOT IN (
+SELECT id FROM cluster_runs WHERE action_id = 0 AND node_id = ? ORDER BY id DESC LIMIT ?)`,
+		nodeID, nodeID, runRetention)
+	return err
+}
+
+// ExecTarget is what the command line needs: the machine's login, and the lock
+// applied.
+//
+// The lock is the whole reason this is a store method rather than a handler
+// reading SSHLoginFor directly. A locked machine's command list is closed so that
+// what can happen to it is a list somebody vetted; a command line that still
+// worked on it would make the lock decoration.
+func (s *Store) ExecTarget(nodeID int64) (SSHLogin, error) {
+	node, err := s.Node(nodeID)
+	if err != nil {
+		return SSHLogin{}, err
+	}
+	if node.Locked {
+		return SSHLogin{}, errors.New("this machine is locked: only its stored commands can be run")
+	}
+	return s.SSHLoginFor(nodeID)
+}
+
 // Runs reads the history back, newest first: one action's, or a whole
 // machine's when actionID is zero.
 //
@@ -1190,7 +1268,8 @@ func (s *Store) Runs(nodeID, actionID int64, limit int) ([]model.Run, error) {
 		limit = 50
 	}
 	query := `SELECT r.id,r.action_id,r.node_id,r.ran_at_ns,r.duration_ms,r.exit_code,r.outcome,r.trigger,r.error,r.output,
-COALESCE(a.name,''),COALESCE(a.command,'')
+COALESCE(NULLIF(a.name,''),CASE WHEN r.action_id = 0 THEN 'command line' ELSE '' END),
+COALESCE(NULLIF(a.command,''),r.command)
 FROM cluster_runs r LEFT JOIN cluster_actions a ON a.id = r.action_id WHERE `
 	args := []any{}
 	if actionID > 0 {

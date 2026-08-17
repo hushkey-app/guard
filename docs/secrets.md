@@ -191,7 +191,7 @@ guard-vault fetch -workspace hushkey -env local   # print one, no server
 ```
 
 `GUARD_VAULT_ADDR` and `GUARD_DB_PATH` configure it; flags of the same names
-override. `GUARD_VAULT_TOUCH` (1m) is how often one key's use is recorded.
+override. How often one key's use is recorded (a minute) is the server's own answer.
 
 `make dev` starts it beside guard on :4319, under its own watcher
 (`dev/vault`), sharing the terminal — its lines carry `app=vault`. A failed

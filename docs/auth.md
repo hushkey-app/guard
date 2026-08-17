@@ -21,7 +21,15 @@ internal/telemetry/auth.go  sessions and sign-ins in flight
 internal/telemetry/members.go  the allowlist
 client/pages/login/         the login page — a .raw route, its own document
 client/pages/settings/members/  the members page
+client/pages/settings/security/ the page these values are set on
 ```
+
+
+Everything below is configured from **Settings → Security**, which is where these
+ten values live — the two providers, the always-admin addresses, the public base
+URL and the session lifetime. They are rows of the same catalogue as the rest of
+guard's environment (see [configuration](config.md)); they have their own page
+because they decide who may open the dashboard rather than how it behaves.
 
 ## The three rules
 

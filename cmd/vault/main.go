@@ -52,7 +52,6 @@ func serve(args []string) error {
 	flags := flag.NewFlagSet("guard-vault", flag.ExitOnError)
 	addr := flags.String("addr", env("GUARD_VAULT_ADDR", ":4319"), "HTTP listen address")
 	dbPath := flags.String("db", env("GUARD_DB_PATH", "guard.db"), "the SQLite database guard writes")
-	touch := flags.Duration("touch", envDuration("GUARD_VAULT_TOUCH", time.Minute), "how often one key's use is recorded")
 	showVersion := flags.Bool("version", false, "print the version and exit")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -88,12 +87,11 @@ func serve(args []string) error {
 	if !typed["addr"] {
 		*addr = env("GUARD_VAULT_ADDR", ":4319")
 	}
-	if !typed["touch"] {
-		*touch = envDuration("GUARD_VAULT_TOUCH", time.Minute)
-	}
 
 	mux := http.NewServeMux()
-	(&vault.Server{Store: store, Touch: *touch}).Register(mux)
+	// No touch cadence passed: how often one key's use is recorded is the
+	// server's own answer, and nobody has wanted a different one.
+	(&vault.Server{Store: store}).Register(mux)
 	server := &http.Server{
 		Addr:    *addr,
 		Handler: mux,
@@ -130,7 +128,7 @@ func serve(args []string) error {
 func fetch(args []string) error {
 	flags := flag.NewFlagSet("guard-vault fetch", flag.ExitOnError)
 	dbPath := flags.String("db", env("GUARD_DB_PATH", "guard.db"), "the SQLite database guard writes")
-	workspace := flags.String("workspace", env("GUARD_WORKSPACE", ""), "which application's environment to print; needed once there is more than one")
+	workspace := flags.String("workspace", "", "which application's environment to print; needed once there is more than one")
 	name := flags.String("env", "local", "which environment to print")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -170,14 +168,6 @@ func fetch(args []string) error {
 
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func envDuration(name string, fallback time.Duration) time.Duration {
-	value, err := time.ParseDuration(os.Getenv(name))
-	if err == nil && value > 0 {
 		return value
 	}
 	return fallback

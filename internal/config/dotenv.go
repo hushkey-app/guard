@@ -131,9 +131,6 @@ func writeDotEnv(stored map[string]string) error {
 	}
 	out.WriteString("# guard — written from Settings → Configuration. Edit either; a save rewrites these lines.\n")
 	for _, entry := range Entries {
-		if entry.Bootstrap {
-			continue
-		}
 		if value := stored[entry.Name]; value != "" {
 			out.WriteString(entry.Name + "=" + model.EnvQuote(value) + "\n")
 			continue

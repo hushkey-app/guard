@@ -26,11 +26,10 @@
 // button would silently lose to a line in a unit file, which is worse than not
 // having the button.
 //
-// Two variables can never be stored: `GUARD_DB_PATH` and `GUARD_SECRET_KEY`.
-// Anything needed to open and decrypt the database cannot live inside it, and a
-// form that pretended otherwise would be one that bricks an instance when
-// somebody edits it. They are shown, read-only, because "where is this
-// configured" is a question the page should still answer.
+// Nothing needed to open and decrypt the database — `GUARD_DB_PATH`,
+// `GUARD_SECRET_KEY` — is in the catalogue at all, so no name here can be one of
+// them: a save of an unknown name is refused, which is a simpler rule than a flag
+// saying "shown but not storable".
 //
 // And `GUARD_CONFIG_IGNORE=1` starts guard from the environment alone. It is
 // the way back from a stored value that stops guard from starting — the case
@@ -63,16 +62,49 @@ const (
 	KindMultiline Kind = "multiline"
 )
 
-// Groups, in the order the page draws them.
+// Groups, in the order they are drawn.
 const (
-	GroupAccess  = "Access and ingest"
-	GroupCluster = "Cluster and loops"
-	GroupAlerts  = "Alerts"
-	GroupSignIn  = "Signing in"
-	GroupUpdates = "Updates"
-	GroupVault   = "The vault"
-	GroupPaths   = "Paths and keys"
+	GroupAccess   = "Access and ingest"
+	GroupCluster  = "Cluster and loops"
+	GroupAlerts   = "Alerts"
+	GroupGoogle   = "Google"
+	GroupApple    = "Apple"
+	GroupSessions = "Sessions and admins"
+	GroupUpdates  = "Updates"
+	GroupVault    = "The vault"
+	GroupPaths    = "Paths and keys"
 )
+
+// A card per provider rather than one "sign-in providers" list, because that is
+// how the work happens: somebody has a Google console open, or an Apple developer
+// account open, and never both. Two of Google's rows and five of Apple's in one
+// card is seven fields where the two that matter to you right now are wherever they
+// happen to fall.
+//
+// The two pages that draw this catalogue.
+//
+// Sign-in is its own page rather than a section of the configuration form, and it
+// is worth saying why: the configuration page is a long list of values somebody
+// tunes, and these are the ones that decide *who may open the dashboard at all*.
+// They are set once, from a provider's console, in a sitting — and everything else
+// that will ever be said about access (who is on the members list, which sessions
+// are open) belongs next to them rather than three quarters of the way down a form
+// about timeouts.
+const (
+	PageConfig   = "config"
+	PageSecurity = "security"
+)
+
+// pageOf answers which page a group is drawn on. A group with no entry here is on
+// the configuration page, which is the right default: a new variable is a setting
+// until somebody decides it is a policy.
+func pageOf(group string) string {
+	switch group {
+	case GroupGoogle, GroupApple, GroupSessions:
+		return PageSecurity
+	}
+	return PageConfig
+}
 
 // Entry is one variable: what it is called, what it means, and what guard does
 // when nothing sets it.
@@ -83,18 +115,19 @@ type Entry struct {
 	Help    string
 	Kind    Kind
 	Default string
-	// Bootstrap marks a value that cannot be stored, because guard needs it
-	// before it can read the database that would hold it.
-	Bootstrap bool
-	// Hidden marks a value that is never sent to a browser at all. Exactly one
-	// qualifies: the key that seals every secret in the database, which is not
-	// a credential somebody pastes into a collector — it is the thing that
-	// makes the backup readable, and it cannot be rotated without re-sealing
-	// everything.
-	Hidden bool
 	// Vault marks a value the second binary reads. It is applied there too, so
 	// the form is not quietly lying about half its rows.
 	Vault bool
+	// Secret marks a value that goes in but does not come back: the page is told
+	// whether one is set and never what it is.
+	//
+	// These are stored and have to be replaceable — you paste a new one — but
+	// there is no reason to read one back. Guard is not where somebody looks up their Google client
+	// secret; the provider's console is, and a value on screen is a value in a
+	// screenshot, a shared tab and a support thread. The rest of this page is not
+	// treated this way on purpose: a team id or an admin address has to be readable
+	// to be worked with, and masking those would be theatre.
+	Secret bool
 	// Generate marks a value guard can mint: 32 random bytes as hex, the same
 	// thing `openssl rand -hex 32` produces.
 	//
@@ -109,45 +142,37 @@ type Entry struct {
 	Generate bool
 }
 
-// Entries is the catalogue. Adding a variable to guard means adding it here, and
-// the page grows a field — there is no template to edit and no endpoint to
-// write.
+// Entries is what somebody changes, and deliberately not everything guard reads.
 //
-// Retention and the event cap are deliberately absent: they are first-class
-// rows in the settings table, applied the moment they are saved rather than at
-// the next start, and a second place to type them would be a second answer.
+// The first version of this listed all thirty-odd `GUARD_*` variables, on the
+// theory that a form which is the complete list can never be wrong about what
+// guard reads. It was: it was a wall of fields where the two you came for were
+// wherever they happened to fall, and most of them — a prober's idle wait, how
+// often the release API is polled, how often one key's use is recorded — are
+// values nobody has ever wanted to change and that have a sane default in the
+// code. Every one of them is still read from the environment and still overridable
+// by a flag, exactly as before; `docs/config.md` is the list.
+//
+// So the bar for a row here is: somebody changes this, on a real box, more than
+// once. A credential they rotate, a timeout they hit, whether guard phones home,
+// where the vault listens, and who may sign in.
+//
+// `GUARD_TOKEN` is the pointed absence. It was here, with a Generate button, and
+// it was a trap: generate one, and the only thing that can read it back is the
+// page it locked you out of. The token that protects the dashboard does not belong
+// in the dashboard — it goes in the unit file, where it has always been.
+//
+// Retention and the event cap are absent for a different reason: they are rows in
+// the settings table, applied the moment they are saved rather than at the next
+// start, and they stay on the storage page.
 var Entries = []Entry{
 	{
-		Name: "GUARD_TOKEN", Group: GroupAccess, Label: "Operator token", Kind: KindText, Generate: true,
-		Help: "Opens every write endpoint in the API as well as ingest. This one is yours — do not put it on a collector.",
-	},
-	{
 		Name: "GUARD_OTEL_SECRET", Group: GroupAccess, Label: "Collector secret", Kind: KindText, Generate: true,
-		Help: "Opens /v1/logs, /v1/traces and /v1/metrics and nothing else — the one to hand to a collector on somebody else's box.",
+		Help: "What exporters present at /v1/logs, /v1/traces and /v1/metrics. Unset, anything that can reach the port may post telemetry.",
 	},
 	{
 		Name: "GUARD_RUM_ORIGINS", Group: GroupAccess, Label: "Browser origins", Kind: KindList,
 		Help: "Comma-separated origins allowed to post browser telemetry. Empty turns the browser intake off entirely.",
-	},
-	{
-		Name: "GUARD_RUM_SERVICE", Group: GroupAccess, Label: "Browser service name", Kind: KindText, Default: "browser",
-		Help: "The service identity guard assigns to browser spans. It is never taken from the payload.",
-	},
-	{
-		Name: "GUARD_RUM_RELEASE", Group: GroupAccess, Label: "Browser release", Kind: KindText,
-		Help: "Reported as the service instance for browser telemetry.",
-	},
-	{
-		Name: "GUARD_RUM_PER_MINUTE", Group: GroupAccess, Label: "Browser rate limit", Kind: KindNumber, Default: "120",
-		Help: "Requests a minute, per address, at the browser intake.",
-	},
-	{
-		Name: "GUARD_CLUSTER_INTERVAL", Group: GroupCluster, Label: "Prober idle wait", Kind: KindDuration, Default: "30s",
-		Help: "How long the prober waits when no machine is due; each machine carries its own interval.",
-	},
-	{
-		Name: "GUARD_CLUSTER_TIMEOUT", Group: GroupCluster, Label: "Health check timeout", Kind: KindDuration, Default: "5s",
-		Help: "How long one health check may take before it counts as down.",
 	},
 	{
 		Name: "GUARD_SSH_TIMEOUT", Group: GroupCluster, Label: "Command timeout", Kind: KindDuration, Default: "2m",
@@ -158,88 +183,50 @@ var Entries = []Entry{
 		Help: "How long a scheduled command may take. Longer than a pressed one, because the jobs people schedule are dumps.",
 	},
 	{
-		Name: "GUARD_MONITOR_INTERVAL", Group: GroupCluster, Label: "Monitor interval", Kind: KindDuration, Default: "30s",
-		Help: "How often the machine rules are evaluated.",
-	},
-	{
-		Name: "GUARD_VIEW_ALERT_INTERVAL", Group: GroupCluster, Label: "View alert interval", Kind: KindDuration, Default: "1m",
-		Help: "How often saved views carrying a rule are run.",
-	},
-	{
-		Name: "GUARD_ALERT_INTERVAL", Group: GroupAlerts, Label: "Staleness check interval", Kind: KindDuration, Default: "5m",
-		Help: "How often guard checks that scheduled commands are still succeeding.",
-	},
-	{
-		Name: "GUARD_ALERT_REPEAT", Group: GroupAlerts, Label: "Repeat quiet period", Kind: KindDuration, Default: "6h",
-		Help: "How long anything firing stays quiet between repeats.",
-	},
-	{
-		Name: "GUARD_GOOGLE_CLIENT_ID", Group: GroupSignIn, Label: "Google client id", Kind: KindText,
-		Help: "Set both halves to draw the Google button. Half a configuration is fatal at startup, on purpose.",
-	},
-	{
-		Name: "GUARD_GOOGLE_CLIENT_SECRET", Group: GroupSignIn, Label: "Google client secret", Kind: KindText,
-		Help: "The other half of the Google credentials.",
-	},
-	{
-		Name: "GUARD_APPLE_CLIENT_ID", Group: GroupSignIn, Label: "Apple services id", Kind: KindText,
-		Help: "The Services ID, not the app id.",
-	},
-	{
-		Name: "GUARD_APPLE_TEAM_ID", Group: GroupSignIn, Label: "Apple team id", Kind: KindText,
-	},
-	{
-		Name: "GUARD_APPLE_KEY_ID", Group: GroupSignIn, Label: "Apple key id", Kind: KindText,
-	},
-	{
-		Name: "GUARD_APPLE_PRIVATE_KEY", Group: GroupSignIn, Label: "Apple private key", Kind: KindMultiline,
-		Help: "The .p8 contents. Paste it whole, including the BEGIN and END lines.",
-	},
-	{
-		Name: "GUARD_APPLE_PRIVATE_KEY_FILE", Group: GroupSignIn, Label: "Apple private key file", Kind: KindText,
-		Help: "Read instead of the key above, when the key is a file on the box.",
-	},
-	{
-		Name: "GUARD_ADMIN_EMAIL", Group: GroupSignIn, Label: "Always-admin addresses", Kind: KindList,
-		Help: "Comma-separated. Checked beside the members table rather than seeded into it, so this is the way back in when the last stored admin removes themselves.",
-	},
-	{
-		Name: "GUARD_AUTH_BASE_URL", Group: GroupSignIn, Label: "Public base URL", Kind: KindURL,
-		Help: "Pin this behind a proxy: the redirect URI is compared as a string at both providers.",
-	},
-	{
-		Name: "GUARD_AUTH_SESSION_TTL", Group: GroupSignIn, Label: "Session lifetime", Kind: KindDuration, Default: "168h",
-		Help: "How long a sign-in lasts.",
-	},
-	{
 		Name: "GUARD_UPDATE_REPO", Group: GroupUpdates, Label: "Release repository", Kind: KindText, Default: "hushkey-app/guard",
 		Help: "Empty watches nothing at all, which is what an instance with no outbound internet should do.",
-	},
-	{
-		Name: "GUARD_UPDATE_INTERVAL", Group: GroupUpdates, Label: "Release check interval", Kind: KindDuration, Default: "15m",
-		Help: "How often guard asks GitHub. Server-side, so four open tabs still cost one request.",
-	},
-	{
-		Name: "GUARD_UPDATE_STATE", Group: GroupUpdates, Label: "Version file", Kind: KindText, Default: "/etc/guard/version",
-		Help: "The file deploy/guard-update reads to know which version this box should be on.",
 	},
 	{
 		Name: "GUARD_VAULT_ADDR", Group: GroupVault, Label: "Vault listen address", Kind: KindText, Default: ":4319", Vault: true,
 		Help: "127.0.0.1 serves this box alone; the private address serves the VPC. Never 0.0.0.0.",
 	},
 	{
-		Name: "GUARD_VAULT_TOUCH", Group: GroupVault, Label: "Key use throttle", Kind: KindDuration, Default: "1m", Vault: true,
-		Help: "How often one key's use is recorded.",
+		Name: "GUARD_GOOGLE_CLIENT_ID", Group: GroupGoogle, Label: "Google client id", Kind: KindText,
+		Help: "Set both halves to draw the Google button. Half a configuration is fatal at startup, on purpose.",
 	},
 	{
-		Name: "GUARD_DB_PATH", Group: GroupPaths, Label: "SQLite database", Kind: KindText, Default: "guard.db",
-		Bootstrap: true, Vault: true,
-		Help: "Where this database is. It cannot be stored in the database it names.",
+		Name: "GUARD_GOOGLE_CLIENT_SECRET", Group: GroupGoogle, Label: "Google client secret", Kind: KindText, Secret: true,
+		Help: "The other half of the Google credentials. Stored, never shown again — paste a new one to replace it.",
 	},
 	{
-		Name: "GUARD_SECRET_KEY", Group: GroupPaths, Label: "Secret key", Kind: KindText,
-		Bootstrap: true, Hidden: true, Vault: true,
-		Help: "What the SSH passwords, the stored secrets and this configuration are sealed with. Unset, guard generates <db>.key beside the database. It is never shown and never stored here — it is what makes the rest readable.",
+		Name: "GUARD_APPLE_CLIENT_ID", Group: GroupApple, Label: "Apple services id", Kind: KindText,
+		Help: "The Services ID, not the app id.",
+	},
+	{
+		Name: "GUARD_APPLE_TEAM_ID", Group: GroupApple, Label: "Apple team id", Kind: KindText,
+	},
+	{
+		Name: "GUARD_APPLE_KEY_ID", Group: GroupApple, Label: "Apple key id", Kind: KindText,
+	},
+	{
+		Name: "GUARD_APPLE_PRIVATE_KEY", Group: GroupApple, Label: "Apple private key", Kind: KindMultiline, Secret: true,
+		Help: "The .p8 contents, whole, including the BEGIN and END lines. Stored, never shown again — paste a new one to replace it.",
+	},
+	{
+		Name: "GUARD_APPLE_PRIVATE_KEY_FILE", Group: GroupApple, Label: "Apple private key file", Kind: KindText,
+		Help: "Read instead of the key above, when the key is a file on the box.",
+	},
+	{
+		Name: "GUARD_ADMIN_EMAIL", Group: GroupSessions, Label: "Always-admin addresses", Kind: KindList,
+		Help: "Comma-separated. Checked beside the members table rather than seeded into it, so this is the way back in when the last stored admin removes themselves.",
+	},
+	{
+		Name: "GUARD_AUTH_BASE_URL", Group: GroupSessions, Label: "Public base URL", Kind: KindURL,
+		Help: "Pin this behind a proxy: the redirect URI is compared as a string at both providers.",
+	},
+	{
+		Name: "GUARD_AUTH_SESSION_TTL", Group: GroupSessions, Label: "Session lifetime", Kind: KindDuration, Default: "168h",
+		Help: "How long a sign-in lasts.",
 	},
 }
 
@@ -324,13 +311,6 @@ func Apply(store Store) ([]string, error) {
 		if !ok || value == "" {
 			continue
 		}
-		if entry.Bootstrap {
-			// Refused at save time as well; this is the second half of that,
-			// for a row written by an older build or by hand with sqlite3.
-			slog.Warn("ignoring stored configuration that cannot be applied at this point",
-				slog.String("name", entry.Name))
-			continue
-		}
 		if err := os.Setenv(entry.Name, value); err != nil {
 			return applied, err
 		}
@@ -396,18 +376,23 @@ type Value struct {
 	// Source is where that came from: stored, environment, or default.
 	Source string `json:"source"`
 	// Pending says the value differs from what this process is running.
-	Pending   bool `json:"pending"`
-	Bootstrap bool `json:"bootstrap,omitempty"`
-	Hidden    bool `json:"hidden,omitempty"`
-	IsSet     bool `json:"is_set"`
-	Vault     bool `json:"vault,omitempty"`
+	Pending bool `json:"pending"`
+	// Secret says the value is stored but not sent: the row shows set or not set,
+	// and a typed value replaces it.
+	Secret bool `json:"secret,omitempty"`
+	IsSet  bool `json:"is_set"`
+	Vault  bool `json:"vault,omitempty"`
 	// Generatable says the row gets a Generate button.
 	Generatable bool `json:"generatable,omitempty"`
 }
 
 // Group is a titled section of the form.
 type Group struct {
-	Name   string  `json:"name"`
+	Name string `json:"name"`
+	// Page is which of guard's two settings pages draws it. One endpoint answers
+	// with the whole catalogue and each page draws its own groups — a second
+	// endpoint per page would be a second place for the answer to be wrong.
+	Page   string  `json:"page"`
 	Values []Value `json:"values"`
 }
 
@@ -436,12 +421,11 @@ func (s *Set) State() (State, error) {
 		value := Value{
 			Name: entry.Name, Group: entry.Group, Label: entry.Label, Help: entry.Help,
 			Kind: entry.Kind, Default: entry.Default,
-			Bootstrap: entry.Bootstrap, Hidden: entry.Hidden, Vault: entry.Vault,
-			Generatable: entry.Generate,
+			Vault: entry.Vault, Secret: entry.Secret, Generatable: entry.Generate,
 		}
 		next := entry.Default
 		switch {
-		case stored[entry.Name] != "" && !entry.Bootstrap:
+		case stored[entry.Name] != "":
 			next, value.Source = stored[entry.Name], "stored"
 		case s.pristine[entry.Name] != "":
 			next, value.Source = s.pristine[entry.Name], "environment"
@@ -449,18 +433,17 @@ func (s *Set) State() (State, error) {
 			value.Source = "default"
 		}
 		value.IsSet = next != ""
-		// A bootstrap entry reports where it came from, and a hidden one does
-		// not report the value at all.
-		if !entry.Hidden {
+		// A secret reports nothing but whether it is set.
+		if !entry.Secret {
 			value.Value = next
 		}
-		if !entry.Bootstrap && next != s.booted[entry.Name] {
+		if next != s.booted[entry.Name] {
 			value.Pending = true
 			state.Pending = true
 		}
 		group := byGroup[entry.Group]
 		if group == nil {
-			group = &Group{Name: entry.Group}
+			group = &Group{Name: entry.Group, Page: pageOf(entry.Group)}
 			byGroup[entry.Group] = group
 		}
 		group.Values = append(group.Values, value)
@@ -489,9 +472,6 @@ func (s *Set) Save(values map[string]string) (State, error) {
 		entry, ok := Lookup(name)
 		if !ok {
 			return State{}, fmt.Errorf("%q is not a setting guard knows about", name)
-		}
-		if entry.Bootstrap {
-			return State{}, fmt.Errorf("%s cannot be stored — guard needs it before it can read the database, so it belongs in the unit file", name)
 		}
 		value = strings.TrimSpace(value)
 		if entry.Kind == KindMultiline {
@@ -635,5 +615,8 @@ func firstOf(values ...string) string {
 }
 
 func groupOrder() []string {
-	return []string{GroupAccess, GroupCluster, GroupAlerts, GroupSignIn, GroupUpdates, GroupVault, GroupPaths}
+	return []string{
+		GroupAccess, GroupCluster, GroupAlerts, GroupUpdates, GroupVault, GroupPaths,
+		GroupGoogle, GroupApple, GroupSessions,
+	}
 }

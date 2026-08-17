@@ -153,8 +153,10 @@ nothing to write and no unit to act on it.
 | variable | default | what |
 |---|---|---|
 | `GUARD_UPDATE_REPO` | `hushkey-app/guard` | empty watches nothing at all |
-| `GUARD_UPDATE_INTERVAL` | `15m` | how often guard asks GitHub |
-| `GUARD_UPDATE_STATE` | `/etc/guard/version` | the file the updater reads |
+
+Guard asks every fifteen minutes and writes `/etc/guard/version`; neither is
+configurable, because the interval is tuned to somebody else's rate limit and the
+path is hardcoded in `guard-update` anyway.
 
 `/etc/guard/version` is the whole interface:
 

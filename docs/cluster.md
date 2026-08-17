@@ -176,7 +176,7 @@ card, and gone when the command is.
 The other half is the **staleness alert**, which is the part worth being
 careful about. An action can carry a budget — "alert if no success in 420
 minutes" — and a separate loop checks it every five minutes
-(`GUARD_ALERT_INTERVAL`).
+— every five minutes.
 
 Separate on purpose, and this is the whole design:
 
@@ -200,7 +200,7 @@ Separate on purpose, and this is the whole design:
   the command names (**Settings → Alerts**) — its own HTTP client, not the SSH
   runner whose jobs are failing. A command that names none is logged and nothing
   else. A stale job is reported once and then repeated
-  every six hours (`GUARD_ALERT_REPEAT`) until it succeeds; a success clears
+  every six hours until it succeeds; a success clears
   the flag, so the next failure is announced afresh.
 - **A delivery that failed is not a delivery.** Anything but a 2xx leaves the
   flag unset, so the next pass tries again — an alert swallowed by a 401 would
@@ -388,6 +388,63 @@ connected at least once. No lock: that is a statement about a machine somebody
 finished configuring, and this one is not. No run history: the copy has never
 run anything. And it arrives **paused**, because until you change the
 address it is pointing at the machine it was copied from.
+
+## One machine, on its own page
+
+`/cluster/{id}` is the other half of the list. The list is for finding the machine
+that is unlike the others — one line each, figures in fixed columns. This is the
+URL you keep open while you are working on a box: the machine's name on any row
+links to it, and everything about that machine is on one screen instead of behind
+a fold that closes when the list redraws.
+
+It draws **the same card the list draws**, from the same template and through the
+same fillers, always open. That is the point: a section added to a machine —
+another meter, another strip — appears here without being written twice. What the
+page adds is what a list has no room for.
+
+### The command line
+
+One box, one button: **Run**. The line runs on the machine as typed, as the user in
+its SSH address, and what came back lands in the pane under it.
+
+This is the one endpoint in guard that takes a command rather than an action id
+(`POST /api/cluster/exec`), and that is a deliberate exception rather than a hole
+in the rule. Everything people actually do over SSH starts as a line they type
+once, and a dashboard that insisted on naming and storing it first was a dashboard
+people kept a terminal open beside. So the stored commands remain the *vetted*
+list — what is scheduled, what carries a staleness budget, what a card offers as a
+button — and this is a narrower door beside them:
+
+- **admin**, like everything that changes a machine;
+- **refused on a locked machine.** A locked box runs the list somebody vetted and
+  nothing else; a command line that still worked on it would make locking
+  decoration. Its stored commands still run.
+- **logged and kept**, with the machine, the login, the command and how it ended —
+  in the same history the stored commands write to, so "what has been running on
+  this box" still has one answer. Those rows carry the command themselves, since
+  there is no stored action to read it from.
+- **a line, not a script**: 4 KB, no NUL. Anything longer is a file, and a file
+  belongs on the machine.
+
+The line stays in the box after it runs and is selected, because the next command
+is usually a variation of the last one.
+
+### The terminal
+
+Under it, a pane that keeps what the last command printed — the exit code and how
+long it took in the line above, output below, scrolled to the bottom on every
+write. It is a plain `<pre>`, so it **selects and copies** like a terminal does,
+and **Copy** takes the whole of it: the reason to run `docker ps` from here is
+usually to paste a line of it somewhere else. Where the clipboard is refused —
+an insecure origin, which is exactly where a guard on a laptop lives — it selects
+the text instead of failing silently.
+
+**History** puts the last twenty-five runs on this machine in the same pane, typed
+lines and stored commands together, and **Clear** empties it.
+
+One request per press, not a stream: guard runs the command and reads what came
+back, so you get the whole of it at the end rather than a live tail. Output is
+capped at 256 KB by the runner, and a run that hits it says so.
 
 ## The machine's environment
 

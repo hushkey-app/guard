@@ -82,8 +82,6 @@ Configuration is available as flags or environment variables:
 | Flag | Environment | Default |
 | --- | --- | --- |
 | `-db` | `GUARD_DB_PATH` | `guard.db` |
-| `-retention-hours` | `GUARD_RETENTION_HOURS` | `24` |
-| `-max-events` | `GUARD_MAX_EVENTS` | `1000000` |
 | `-addr` | — | `:4318` |
 | — | `GUARD_TOKEN` | unset — the API and ingest are open |
 | — | `GUARD_OTEL_SECRET` | unset — ingest is open |
