@@ -8,7 +8,13 @@ Description=check for a new guard release
 OnBootSec=2min
 OnUnitActiveSec=15min
 RandomizedDelaySec=2min
-Persistent=true
+# No Persistent= here, because it would be decoration: it only catches up missed
+# OnCalendar= elapses, and both triggers above are monotonic. A box that was off
+# runs two minutes after it comes back, which is the behaviour Persistent= would
+# have been asked for anyway.
 
 [Install]
+# Enable this with --now. Enabling alone takes effect at the next boot, and a
+# provisioning script that reaches this line after timers.target — which is
+# every provisioning script — leaves the box never checking for a release.
 WantedBy=timers.target
