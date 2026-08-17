@@ -110,7 +110,7 @@ func Page() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"min-w-0 space-y-6\"><div><p class=\"text-xs font-semibold uppercase tracking-[.22em] text-primary\">Access</p><h2 class=\"mt-2 text-2xl font-semibold tracking-tight\">Signing in</h2><p class=\"mt-2 text-muted-foreground\">Configured is on, unconfigured is off. With no credentials here Guard is the open tool it has always been — the usual instance is a container on a laptop. Google's two values draw the Google button, Apple's four draw Apple's, and both draw two.</p></div><div data-config-ignored hidden>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"min-w-0 space-y-6\"><div><p class=\"text-xs font-semibold uppercase tracking-[.22em] text-primary\">Access</p><h2 class=\"mt-2 text-2xl font-semibold tracking-tight\">Signing in</h2><p class=\"mt-2 text-muted-foreground\">Configured is on, unconfigured is off. With no credentials here Guard is the open tool it has always been — the usual instance is a container on a laptop. Google's two values draw the Google button, Apple's five draw Apple's, and both draw two. A card each, because you configure one at a time with that provider's console open beside you.</p></div><div data-config-ignored hidden>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

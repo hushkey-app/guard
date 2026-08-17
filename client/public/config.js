@@ -15,7 +15,7 @@
 //   - **Only what changed is sent.** Two people with this page open should not
 //     overwrite each other's untouched fields, and the server takes a partial
 //     map for exactly that reason.
-import { adminHeaders, qs, qsa, request } from "./core.js";
+import { adminHeaders, el, qs, qsa, request, text } from "./core.js";
 import { ensure, set } from "./store.js";
 import { ask } from "./cluster.js";
 
@@ -160,17 +160,48 @@ function renderConfig(state) {
 }
 
 export async function refreshConfig() {
-  if (!qs("[data-config-groups]")) return;
+  const host = qs("[data-config-groups]");
+  if (!host) return;
   try {
     // Through the store like every other page, so walking back to it draws
     // instantly instead of saying "Loading…" again.
     await ensure("config", () => request("/api/config", { headers: adminHeaders() }), renderConfig);
   } catch (error) {
-    qs("[data-config-loading]")?.remove();
-    status(error.status === 401 || error.status === 403
-      ? "Only an admin may read this. Enter the admin token on the Data storage page."
-      : error.message);
+    // In the middle of the page, not as a line under a sticky bar. Every row here
+    // is admin, so on an instance with GUARD_TOKEN set this is what somebody sees
+    // on their first visit in a new tab — and an empty form with a sentence
+    // somewhere below it reads as "broken", which is how you end up looking for
+    // the bug in the build rather than in the field you have not filled in.
+    const locked = error.status === 401 || error.status === 403;
+    host.replaceChildren(errorPanel(locked, error.message));
+    status(locked ? "Waiting for the admin token." : error.message);
   }
+}
+
+function errorPanel(locked, message) {
+  const panel = el("div", "space-y-2 rounded-xl border border-border bg-card p-6");
+  panel.append(el("p", "text-sm font-medium", locked ? "This page needs the admin token" : "Could not read the configuration"));
+  if (!locked) {
+    panel.append(el("p", "text-sm text-muted-foreground", message));
+    return panel;
+  }
+  const line = el("p", "text-sm text-muted-foreground");
+  line.append(
+    text("Every value here is admin-only, and this instance has "),
+    el("code", "font-mono", "GUARD_TOKEN"),
+    text(" set. Paste it into the Admin token field on "),
+    link("/settings", "Data storage"),
+    text(" — it is kept in this browser tab and never written to SQLite."),
+  );
+  panel.append(line);
+  return panel;
+}
+
+function link(href, label) {
+  const anchor = el("a", "underline underline-offset-2 hover:text-foreground", label);
+  anchor.href = href;
+  anchor.dataset.navLink = "true";
+  return anchor;
 }
 
 // changed is every row whose input differs from the value the server last sent.

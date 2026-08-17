@@ -65,16 +65,23 @@ const (
 
 // Groups, in the order they are drawn.
 const (
-	GroupAccess    = "Access and ingest"
-	GroupCluster   = "Cluster and loops"
-	GroupAlerts    = "Alerts"
-	GroupProviders = "Sign-in providers"
-	GroupSessions  = "Sessions and admins"
-	GroupUpdates   = "Updates"
-	GroupVault     = "The vault"
-	GroupPaths     = "Paths and keys"
+	GroupAccess   = "Access and ingest"
+	GroupCluster  = "Cluster and loops"
+	GroupAlerts   = "Alerts"
+	GroupGoogle   = "Google"
+	GroupApple    = "Apple"
+	GroupSessions = "Sessions and admins"
+	GroupUpdates  = "Updates"
+	GroupVault    = "The vault"
+	GroupPaths    = "Paths and keys"
 )
 
+// A card per provider rather than one "sign-in providers" list, because that is
+// how the work happens: somebody has a Google console open, or an Apple developer
+// account open, and never both. Two of Google's rows and five of Apple's in one
+// card is seven fields where the two that matter to you right now are wherever they
+// happen to fall.
+//
 // The two pages that draw this catalogue.
 //
 // Sign-in is its own page rather than a section of the configuration form, and it
@@ -94,7 +101,7 @@ const (
 // until somebody decides it is a policy.
 func pageOf(group string) string {
 	switch group {
-	case GroupProviders, GroupSessions:
+	case GroupGoogle, GroupApple, GroupSessions:
 		return PageSecurity
 	}
 	return PageConfig
@@ -211,29 +218,29 @@ var Entries = []Entry{
 		Help: "How long anything firing stays quiet between repeats.",
 	},
 	{
-		Name: "GUARD_GOOGLE_CLIENT_ID", Group: GroupProviders, Label: "Google client id", Kind: KindText,
+		Name: "GUARD_GOOGLE_CLIENT_ID", Group: GroupGoogle, Label: "Google client id", Kind: KindText,
 		Help: "Set both halves to draw the Google button. Half a configuration is fatal at startup, on purpose.",
 	},
 	{
-		Name: "GUARD_GOOGLE_CLIENT_SECRET", Group: GroupProviders, Label: "Google client secret", Kind: KindText, Secret: true,
+		Name: "GUARD_GOOGLE_CLIENT_SECRET", Group: GroupGoogle, Label: "Google client secret", Kind: KindText, Secret: true,
 		Help: "The other half of the Google credentials. Stored, never shown again — paste a new one to replace it.",
 	},
 	{
-		Name: "GUARD_APPLE_CLIENT_ID", Group: GroupProviders, Label: "Apple services id", Kind: KindText,
+		Name: "GUARD_APPLE_CLIENT_ID", Group: GroupApple, Label: "Apple services id", Kind: KindText,
 		Help: "The Services ID, not the app id.",
 	},
 	{
-		Name: "GUARD_APPLE_TEAM_ID", Group: GroupProviders, Label: "Apple team id", Kind: KindText,
+		Name: "GUARD_APPLE_TEAM_ID", Group: GroupApple, Label: "Apple team id", Kind: KindText,
 	},
 	{
-		Name: "GUARD_APPLE_KEY_ID", Group: GroupProviders, Label: "Apple key id", Kind: KindText,
+		Name: "GUARD_APPLE_KEY_ID", Group: GroupApple, Label: "Apple key id", Kind: KindText,
 	},
 	{
-		Name: "GUARD_APPLE_PRIVATE_KEY", Group: GroupProviders, Label: "Apple private key", Kind: KindMultiline, Secret: true,
+		Name: "GUARD_APPLE_PRIVATE_KEY", Group: GroupApple, Label: "Apple private key", Kind: KindMultiline, Secret: true,
 		Help: "The .p8 contents, whole, including the BEGIN and END lines. Stored, never shown again — paste a new one to replace it.",
 	},
 	{
-		Name: "GUARD_APPLE_PRIVATE_KEY_FILE", Group: GroupProviders, Label: "Apple private key file", Kind: KindText,
+		Name: "GUARD_APPLE_PRIVATE_KEY_FILE", Group: GroupApple, Label: "Apple private key file", Kind: KindText,
 		Help: "Read instead of the key above, when the key is a file on the box.",
 	},
 	{
@@ -682,6 +689,6 @@ func firstOf(values ...string) string {
 func groupOrder() []string {
 	return []string{
 		GroupAccess, GroupCluster, GroupAlerts, GroupUpdates, GroupVault, GroupPaths,
-		GroupProviders, GroupSessions,
+		GroupGoogle, GroupApple, GroupSessions,
 	}
 }

@@ -508,8 +508,8 @@ that sets everything in its unit file behaves exactly as it did.
   nothing else. No template to edit, no endpoint to write, and no chance of a
   page that is wrong about what guard reads.
 - **Two pages draw it, and the group says which** (`config.pageOf`): everything
-  about signing in — the two providers, `GUARD_ADMIN_EMAIL`, the base URL, the
-  session TTL — is on **Settings → Security**, and the rest is on **Settings →
+  about signing in — Google, Apple, `GUARD_ADMIN_EMAIL`, the base URL, the session
+  TTL, a card each per provider — is on **Settings → Security**, and the rest is on **Settings →
   Configuration**. One endpoint and one renderer (`config.js` filters on
   `data-config-page`), because a second endpoint per page would be a second place
   for the answer to be wrong. A group with no page named lands on the

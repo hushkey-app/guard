@@ -31,7 +31,10 @@ The catalogue is drawn by two pages, and the group says which:
 | page | groups |
 |---|---|
 | **Settings → Configuration** | access and ingest, cluster and loops, alerts, updates, the vault, paths and keys |
-| **Settings → Security** | sign-in providers, sessions and admins |
+| **Settings → Security** | Google, Apple, sessions and admins |
+
+A card per provider rather than one list of seven fields: somebody has a Google
+console open, or an Apple developer account open, and never both.
 
 Sign-in has a page of its own because it is a different kind of thing. The
 configuration page is a long list somebody tunes — timeouts, intervals, a rate

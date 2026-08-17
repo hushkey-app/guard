@@ -366,6 +366,20 @@ func TestSignInIsDrawnOnTheSecurityPage(t *testing.T) {
 			t.Fatalf("%s is drawn on %q, want the configuration page", name, pages[name])
 		}
 	}
+	// A card per provider: Google's two and Apple's five are configured on
+	// different days, from different consoles.
+	if pages["GUARD_GOOGLE_CLIENT_ID"] != pages["GUARD_APPLE_CLIENT_ID"] {
+		t.Fatal("both providers are drawn on the security page")
+	}
+	groupOf := map[string]string{}
+	for _, group := range state.Groups {
+		for _, value := range group.Values {
+			groupOf[value.Name] = group.Name
+		}
+	}
+	if groupOf["GUARD_GOOGLE_CLIENT_SECRET"] == groupOf["GUARD_APPLE_TEAM_ID"] {
+		t.Fatal("Google and Apple share a card")
+	}
 	// Every group in the catalogue has to be one the pages actually draw, or its
 	// rows are stored, applied, and invisible.
 	for _, group := range state.Groups {
