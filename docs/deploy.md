@@ -64,20 +64,30 @@ checkout and the replace together — that also unblocks
 
 ## A new box
 
-`deploy/cloud-init.yaml` is the whole provisioning: paste it as user-data, boot,
-and the box comes up running both services. It installs no toolchain and builds
-nothing — it writes the units, fetches `guard-update`, and then runs it, so the
-first install goes down exactly the same path as every later one. A first-boot
-special case is a code path that stops being exercised the moment it works.
+Provisioning is yours — this repository ships the units, the updater and the
+list below, and no opinion about how they get onto a machine. What a box needs:
 
-Two knobs at the top: which version to follow or pin, and where the vault
-listens — `127.0.0.1` serves that box alone, the private address serves the
-VPC, and `0.0.0.0` serves the internet, which is not what this is for.
+- **A `guard` user** and `/var/lib/guard` for the database, its WAL and the key.
+- **`/etc/guard` owned by root**, with `version` handed to the guard user and
+  one directory inside it, `env.d`, `0700` and guard's. That split is the whole
+  permission model: guard rewrites the version file and the credentials it
+  generates for itself, and cannot touch `guard.env` beside them.
+- **The units and `guard-update`**, then `systemctl enable --now`. The
+  `--now` is load-bearing — `enable` alone wires a timer to `timers.target`,
+  which a provisioning script reaches *after* systemd has passed, so the box
+  comes up correct and never takes another release until it is rebooted. It
+  fails silently, and looks exactly like success.
+- **The first install is an ordinary update.** Run `guard-update` rather than
+  placing binaries by hand: same download, same checksum, same health gate. A
+  first-boot special case is a code path that stops being exercised the moment
+  it works.
 
-It cannot do two things for you. The **key**: guard generates
+Two things no provisioning can do for you. The **key**: guard generates
 `/var/lib/guard/guard.db.key` on first start, and joining a box to an existing
 database means putting that key there first. And the **door**: guard listens on
-:4318 for the dashboard and for OTLP, and what fronts that is your decision.
+:4318 for the dashboard and for OTLP, and what fronts that is your decision —
+along with which of them the network can reach, since `/v1/*` sits outside
+sign-in by construction and answers to whatever can route to the port.
 
 ## By hand
 
