@@ -26,6 +26,12 @@ STATE="${GUARD_STATE_DIR:-/etc/guard}"
 GUARD_URL="${GUARD_HEALTH_URL:-http://127.0.0.1:4318/healthz}"
 VAULT_URL="${GUARD_VAULT_HEALTH_URL:-http://127.0.0.1:4319/healthz}"
 
+# Every network call gets a ceiling. This runs from a systemd timer every
+# fifteen minutes and from the first boot of a box: a stalled connection to
+# GitHub with no limit is a unit that never finishes, and on the first boot it
+# is a provisioning run that never returns.
+CURL="curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15 --max-time 300"
+
 log() { echo "guard-update: $*"; }
 die() { log "$*"; exit 1; }
 
@@ -34,7 +40,7 @@ die() { log "$*"; exit 1; }
 # automatic timer from moving a box somebody deliberately held back.
 wanted=$(cat "$STATE/version" 2>/dev/null || echo latest)
 if [ "$wanted" = "latest" ]; then
-  wanted=$(curl -fsS "https://api.github.com/repos/$REPO/releases/latest" \
+  wanted=$($CURL "https://api.github.com/repos/$REPO/releases/latest" \
     | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)
   [ -n "$wanted" ] || die "could not read the latest release — leaving this box alone"
 fi
@@ -59,9 +65,9 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 base="https://github.com/$REPO/releases/download/$wanted"
 for name in guard guard-vault; do
-  curl -fsSL "$base/$name-linux-$arch" -o "$work/$name" || die "could not download $name"
+  $CURL "$base/$name-linux-$arch" -o "$work/$name" || die "could not download $name"
 done
-curl -fsSL "$base/SHA256SUMS" -o "$work/SHA256SUMS" || die "could not download SHA256SUMS"
+$CURL "$base/SHA256SUMS" -o "$work/SHA256SUMS" || die "could not download SHA256SUMS"
 
 # Verify against the published sums, naming only the two files we took.
 ( cd "$work" && for name in guard guard-vault; do
@@ -94,7 +100,7 @@ swap() {
 
   n=0
   while [ "$n" -lt 30 ]; do
-    if curl -fsS -o /dev/null "$url"; then
+    if curl -fsS -o /dev/null --max-time 5 "$url"; then
       # It answers — but ask it what it is. Something else listening on that
       # port, or an install that did not land, both look exactly like a healthy
       # new version from here.

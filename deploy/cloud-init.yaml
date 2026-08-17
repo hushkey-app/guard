@@ -68,7 +68,28 @@ write_files:
       GUARD_REF="${GUARD_REF:-main}"
       RAW="https://raw.githubusercontent.com/$GUARD_REPO/$GUARD_REF/deploy"
 
-      log() { echo "guard-bootstrap: $*"; }
+      # Progress goes to a file of its own as well as to the console, because the
+      # console is where it is unreadable: cloud-init interleaves every module,
+      # and the question being asked at that point is only ever "how far did it
+      # get". tail -f /var/log/guard-bootstrap.log answers it while it runs.
+      LOGFILE=/var/log/guard-bootstrap.log
+      log() { echo "guard-bootstrap: $*" | tee -a "$LOGFILE"; }
+
+      # Nothing below may block forever. A provisioning run that hangs is worse
+      # than one that fails: it never reaches the final message, cloud-init never
+      # reports done, and the box looks identical to one that is still working.
+      #
+      #   * DPkg::Lock::Timeout, because on a fresh boot unattended-upgrades and
+      #     apt-daily hold the dpkg lock, and apt's default is to wait for it
+      #     with no limit at all. That is the most common way a first boot
+      #     "stops" — and it looks exactly like a broken script.
+      #   * noninteractive, so a package that wants to ask something takes the
+      #     default rather than waiting for a keyboard nobody is at.
+      export DEBIAN_FRONTEND=noninteractive
+      APT="apt-get -o DPkg::Lock::Timeout=600 -qq"
+      # Downloads get a ceiling and a retry: a stalled TCP connection to GitHub
+      # is a hang, and a hang here is a box that never finishes provisioning.
+      CURL="curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15 --max-time 300"
 
       # curl is on the Ubuntu cloud images, so this asks rather than installing
       # unconditionally: a `packages:` block in a cloud-config triggers an apt
@@ -76,7 +97,7 @@ write_files:
       # was already there.
       if ! command -v curl >/dev/null 2>&1; then
         log "installing curl"
-        apt-get update -qq && apt-get install -y -qq curl ca-certificates
+        $APT update && $APT install -y curl ca-certificates
       fi
 
       # The user everything runs as. No login shell, no password: it owns a
@@ -119,7 +140,7 @@ write_files:
       work=$(mktemp -d)
       trap 'rm -rf "$work"' EXIT
       for f in guard.service guard-vault.service guard-update.service guard-update.timer guard-update; do
-        curl -fsSL "$RAW/$f" -o "$work/$f" || { echo "guard-bootstrap: could not fetch $f from $GUARD_REF" >&2; exit 1; }
+        $CURL "$RAW/$f" -o "$work/$f" || { echo "guard-bootstrap: could not fetch $f from $GUARD_REF" >&2; exit 1; }
       done
       install -m 0755 "$work/guard-update" /usr/local/bin/guard-update
       install -m 0644 "$work/guard.service" "$work/guard-vault.service" \
@@ -161,8 +182,8 @@ write_files:
       if [ -n "$GUARD_DOMAIN" ]; then
         if ! command -v nginx >/dev/null 2>&1 || ! command -v certbot >/dev/null 2>&1; then
           log "installing nginx and certbot"
-          apt-get update -qq
-          apt-get install -y -qq nginx certbot python3-certbot-nginx dnsutils
+          $APT update
+          $APT install -y nginx certbot python3-certbot-nginx dnsutils
         fi
 
         # Plain HTTP only. certbot rewrites this file when it issues, adding the
@@ -263,7 +284,7 @@ write_files:
       # What actually answers, rather than what was installed.
       for pair in "guard 4318" "guard-vault 4319"; do
         name=${pair% *}; port=${pair#* }
-        if curl -fsS -o /dev/null "http://127.0.0.1:$port/healthz"; then
+        if curl -fsS -o /dev/null --max-time 10 "http://127.0.0.1:$port/healthz"; then
           log "$name answers on $port"
         else
           log "$name is NOT answering on $port — journalctl -u $name"
@@ -273,7 +294,12 @@ write_files:
       log "guard is on $(/usr/local/bin/guard -version)"
 
 runcmd:
-  - [/usr/local/sbin/guard-bootstrap]
+  # timeout, because cloud-init has no budget of its own: a command that never
+  # returns leaves the box provisioning forever, with no final message and no
+  # way to tell it apart from one that is simply slow. Twenty minutes is far
+  # beyond a normal run — and if it ever fires, the update timer was armed long
+  # before and finishes the job on its own.
+  - [ timeout, "1200", /usr/local/sbin/guard-bootstrap ]
 
 final_message: |
   guard and guard-vault are provisioned. The OK / NOT ANSWERING lines are in
