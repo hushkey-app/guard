@@ -87,8 +87,13 @@ Install the units and the updater once:
 install -m 0755 deploy/guard-update /usr/local/bin/guard-update
 install -m 0644 deploy/*.service deploy/*.timer /etc/systemd/system/
 useradd --system --home /var/lib/guard --create-home guard
+install -d -o guard -g guard -m 0700 /etc/guard/env.d
 systemctl enable --now guard guard-vault guard-update.timer
 ```
+
+That one directory is guard's own; `/etc/guard` around it stays root's. It is
+where the dashboard writes the credentials it generates for itself, and a box
+without it simply gets a card that shows what is set and no buttons.
 
 Everything after that is the timer. It checks every fifteen minutes, with a
 randomised delay so a fleet does not ask GitHub in lockstep — unauthenticated
@@ -135,6 +140,50 @@ nothing to write and no unit to act on it.
 So pinning a box is one line. The thing that replaces binaries stays outside
 guard, under its own unit, and keeps working on the day guard does not start,
 which is the day you want it most.
+
+### The credentials card
+
+`GUARD_TOKEN` and `GUARD_OTEL_SECRET` arrive from the environment, which means
+they arrive from a file on the box — so rotating one has always been: SSH in,
+`openssl rand -hex 32`, edit an env file, `systemctl restart guard`. Four steps,
+three of them a shell, and the honest outcome is that neither is ever rotated.
+
+**Settings → Credentials** is those steps. Guard writes one env file of its own,
+`/etc/guard/env.d/tokens.env`, and the unit reads it **after** `guard.env` — so
+a value generated from the dashboard wins over the same name set by hand, and
+the button cannot quietly lose to a line somebody wrote a year ago. `guard.env`
+itself stays root-owned: the OAuth credentials, the database key and everything
+else typed by hand are not guard's to rewrite.
+
+Both values are shown **in the clear**, and that is the one place this differs
+from every other credential guard holds. An SSH password is one guard uses on
+somebody's behalf and is never read out; these two are values a person has to
+paste into a collector on another box, and a card of dots is a card that sends
+them back to the shell it replaces. Every endpoint behind it is `admin`, reads
+included, so nobody reads this who could not already read everything.
+
+Writing is not applying. A process has its environment from the moment it
+started, so the card says **generated · restart to apply** and offers a second,
+separate press — the restart drops the dashboard it was pressed on and anything
+in flight at ingest, which should be chosen rather than stumbled into.
+
+Guard restarts by **exiting**. It runs unprivileged with `NoNewPrivileges` and
+could not call `systemctl` if it wanted to; the unit's `Restart=always` starts
+it again two seconds later, against the new file. The button therefore appears
+only under systemd — guard asks for `INVOCATION_ID`, which is the supervisor's
+own word rather than a setting somebody has to keep true. Anywhere else,
+exiting is just stopping, so the card says to restart the service by hand.
+
+| variable | default | what |
+|---|---|---|
+| `GUARD_ENV_FILE` | `/etc/guard/env.d/tokens.env` | the env file guard may write |
+
+Rotating the collector's secret and rotating the operator's token are separate
+presses, because they are separate days: one is a box being decommissioned, the
+other a laptop being lost, and doing both because one was asked for stops every
+collector in the fleet at once. **Clear** takes a name back out of the file, so
+the next start falls back to `guard.env` or to nothing — which on an instance
+where nobody signs in reopens every write endpoint, so the dashboard asks first.
 
 ## What the updater guarantees
 

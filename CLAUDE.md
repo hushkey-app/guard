@@ -26,6 +26,7 @@ internal/secrets/secrets.go   AES-GCM at rest, for the SSH passwords and the sto
 internal/telemetry/vault.go   the secrets: environments, values, the keys that read them
 internal/vault/               the second binary's half: read the file, answer a key
 cmd/vault/                    guard-vault — secrets served while guard is down
+internal/access/access.go     the two tokens guard is reached with: generate, write the env file, exit
 internal/auth/               sign in with Google or Apple, and who is allowed in
 client/pages/                 the dashboard — howl-go filesystem routes
 client/ui/ui.templ            shared page furniture (nav, stats, filter bar, pagination)
@@ -440,7 +441,9 @@ accepted at ingest, so an exporter configured before the secret existed keeps
 working; only the secret is safe to hand to a collector on somebody else's box.
 Set neither and ingest is unauthenticated — those three routes sit outside
 sign-in by construction, because a collector cannot authenticate with Google, so
-guard says so at startup rather than leaving it to be found. `GUARD_SECRET_KEY` is the key the SSH passwords and the stored
+guard says so at startup rather than leaving it to be found. Both can be
+generated from Settings → Credentials, which writes `GUARD_ENV_FILE`
+(`/etc/guard/env.d/tokens.env`) and restarts guard into it. `GUARD_SECRET_KEY` is the key the SSH passwords and the stored
 secrets are sealed with — unset, guard generates `<db>.key` beside the database, which is
 part of the backup and never part of the repository. **`guard-vault` will not generate
 one**: without the key it refuses to start rather than answering with values it cannot
@@ -478,6 +481,16 @@ restarts. `/etc/guard/version` pins a box (`latest`, or a tag).
   cannot be written over, so installing is a rename too.
 - `-version` on both binaries is what the updater asks — never a state file
   that can drift from what is actually installed.
+- **Settings → Credentials** (`internal/access`) rotates `GUARD_TOKEN` and
+  `GUARD_OTEL_SECRET` without an SSH session: guard writes one env file of its
+  own, `/etc/guard/env.d/tokens.env`, read by the unit **after** `guard.env` so
+  a dashboard rotation wins over a name set by hand. Both values come back in
+  the clear — the endpoints are `admin`, reads included, and the point of the
+  card is pasting the secret into a collector on another box. Writing is not
+  applying: a process has its environment from its start, so the card says
+  "restart to apply" and the restart is a second press. Guard restarts by
+  **exiting** — unprivileged, `NoNewPrivileges`, no systemctl — and offers the
+  button only where `INVOCATION_ID` says a supervisor will bring it back.
 - **The sidebar's Update card** (`internal/release`, `ui.UpdateCard`) polls the
   releases API server-side every 15m and writes `/etc/guard/version` when
   pressed — it installs nothing, which is why the card says "requested" rather

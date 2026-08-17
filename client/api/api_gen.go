@@ -7,10 +7,12 @@ package apiclient
 
 import (
 	"context"
+	"github.com/hushkey-app/guard/internal/access"
 	"github.com/hushkey-app/guard/internal/cloud"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vultr"
+	access2 "github.com/hushkey-app/guard/server/apis/access"
 	"github.com/hushkey-app/guard/server/apis/cloud/accounts"
 	"github.com/hushkey-app/guard/server/apis/cloud/storage"
 	"github.com/hushkey-app/guard/server/apis/cluster"
@@ -32,6 +34,11 @@ import (
 type Client struct{ *api.Transport }
 
 func New(baseURL string) *Client { return &Client{Transport: api.NewTransport(baseURL)} }
+
+// AccessCredentials calls GET /api/access.
+func (c *Client) AccessCredentials(ctx context.Context) (access.State, error) {
+	return api.Call[access.State](ctx, c.Transport, "GET", "/api/access", nil, nil)
+}
 
 // AddCloudAccount calls POST /api/cloud/accounts.
 func (c *Client) AddCloudAccount(ctx context.Context, body model.ProviderAccount) (model.ProviderAccount, error) {
@@ -61,6 +68,11 @@ func (c *Client) CheckClusterNow(ctx context.Context) ([]model.Node, error) {
 // CheckClusterSSH calls POST /api/cluster/ssh.
 func (c *Client) CheckClusterSSH(ctx context.Context, body contract.NodeRequest) (model.Run, error) {
 	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/ssh", nil, body)
+}
+
+// ClearCredential calls POST /api/access/clear.
+func (c *Client) ClearCredential(ctx context.Context, body access2.Request) (access.State, error) {
+	return api.Call[access.State](ctx, c.Transport, "POST", "/api/access/clear", nil, body)
 }
 
 // CloudAccounts calls GET /api/cloud/accounts.
@@ -224,6 +236,11 @@ func (c *Client) Facets(ctx context.Context) (model.Facets, error) {
 	return api.Call[model.Facets](ctx, c.Transport, "GET", "/api/facets", nil, nil)
 }
 
+// GenerateCredential calls POST /api/access.
+func (c *Client) GenerateCredential(ctx context.Context, body access2.Request) (access.State, error) {
+	return api.Call[access.State](ctx, c.Transport, "POST", "/api/access", nil, body)
+}
+
 // Health calls GET /healthz.
 func (c *Client) Health(ctx context.Context) (contract.Health, error) {
 	return api.Call[contract.Health](ctx, c.Transport, "GET", "/healthz", nil, nil)
@@ -356,6 +373,11 @@ func (c *Client) ReorderViews(ctx context.Context, body contract.ViewOrder) ([]m
 // RequestUpdate calls POST /api/update.
 func (c *Client) RequestUpdate(ctx context.Context, body update.Request) (release.State, error) {
 	return api.Call[release.State](ctx, c.Transport, "POST", "/api/update", nil, body)
+}
+
+// RestartGuard calls POST /api/access/restart.
+func (c *Client) RestartGuard(ctx context.Context) (access.State, error) {
+	return api.Call[access.State](ctx, c.Transport, "POST", "/api/access/restart", nil, nil)
 }
 
 // RestoreMachineSnapshot calls POST /api/cluster/provider/restore.
