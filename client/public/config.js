@@ -99,11 +99,21 @@ function patchRow(row, value) {
 function renderConfig(state) {
   const host = qs("[data-config-groups]");
   if (!host) return;
+  // One catalogue, two pages: /settings/config for the settings somebody tunes and
+  // /settings/security for the ones that decide who may open the dashboard. The
+  // group carries which page it belongs to, so this filters rather than fetching
+  // something different — and `known` holds only this page's rows, which is what
+  // makes "only what changed is sent" true per page.
+  const page = host.dataset.configPage || "config";
+  const groups = (state.groups || []).filter((group) => (group.page || "config") === page);
   known = new Map();
-  for (const group of state.groups || []) for (const value of group.values) known.set(value.name, value);
+  for (const group of groups) for (const value of group.values) known.set(value.name, value);
 
   const ignored = qs("[data-config-ignored]");
   if (ignored) ignored.hidden = !state.ignored;
+  // Pending is the whole process's, not this page's: a value saved on the other
+  // page is still a restart this one can press, and hiding the button here would
+  // be hiding the only thing that makes either save real.
   const restart = qs("[data-config-restart]");
   if (restart) restart.hidden = !(state.pending && state.restartable);
 
@@ -112,7 +122,7 @@ function renderConfig(state) {
   if (!host.dataset.built) {
     host.replaceChildren();
     const template = qs("[data-config-group-template]");
-    for (const group of state.groups || []) {
+    for (const group of groups) {
       const card = template.content.firstElementChild.cloneNode(true);
       qs("[data-config-group-name]", card).textContent = group.name;
       const rows = qs("[data-config-group-rows]", card);
@@ -125,8 +135,10 @@ function renderConfig(state) {
     const value = known.get(row.dataset.configFor);
     if (value) patchRow(row, value);
   }
-  if (state.pending && state.restartable) status("Saved. Guard is still running the old values until it restarts.");
-  else if (state.pending) status("Saved. Restart Guard by hand to use it.");
+  const waiting = groups.some((group) => group.values.some((value) => value.pending));
+  if (waiting && state.restartable) status("Saved. Guard is still running the old values until it restarts.");
+  else if (waiting) status("Saved. Restart Guard by hand to use it.");
+  else if (state.pending) status("Everything here is in force. Something saved on another page is waiting for a restart.");
   else status("Everything here is what Guard is running.");
 }
 

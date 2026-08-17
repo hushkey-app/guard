@@ -24,6 +24,34 @@ configuration system running beside the environment — there is one, and this
 fills it in. Which is why the page is honest about needing a restart: a process
 has its environment from the moment it starts, and only a start reads one.
 
+## Two pages
+
+The catalogue is drawn by two pages, and the group says which:
+
+| page | groups |
+|---|---|
+| **Settings → Configuration** | access and ingest, cluster and loops, alerts, updates, the vault, paths and keys |
+| **Settings → Security** | sign-in providers, sessions and admins |
+
+Sign-in has a page of its own because it is a different kind of thing. The
+configuration page is a long list somebody tunes — timeouts, intervals, a rate
+limit. Those ten values decide *who may open the dashboard at all*, are set once
+from a provider's console in a sitting, and are what somebody comes looking for
+when they are locking an instance down; they were three quarters of the way down a
+form about timeouts. Everything else that will ever be said about access — who is
+on the members list, which sessions are open — belongs beside them.
+
+It is one endpoint and one renderer: `GET /api/config` answers with the whole
+catalogue, each group carries its page, and `config.js` draws the groups whose page
+matches the one it is on. A second endpoint per page would be a second place for
+the answer to be wrong. A group with no page named is drawn on the configuration
+page, which is the right default — a new variable is a setting until somebody
+decides it is a policy.
+
+The **Restart Guard** button is the whole process's, not the page's: a value saved
+on either page is a restart both can press, and the status line says so rather than
+going quiet about a save somebody made next door.
+
 ## Precedence
 
 ```

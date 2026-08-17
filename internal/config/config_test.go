@@ -331,3 +331,46 @@ func TestRestartIsRefusedWhenNothingWouldStartGuardAgain(t *testing.T) {
 		t.Fatal("want the restart to have been asked for")
 	}
 }
+
+// The catalogue is drawn by two pages, and which one a group belongs to is the
+// server's answer rather than a list the browser keeps.
+func TestSignInIsDrawnOnTheSecurityPage(t *testing.T) {
+	set, _ := load(t, nil)
+	state, err := set.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]string{}
+	for _, group := range state.Groups {
+		if group.Page == "" {
+			t.Fatalf("group %q says nothing about which page draws it", group.Name)
+		}
+		for _, value := range group.Values {
+			pages[value.Name] = group.Page
+		}
+	}
+	// Everything that decides who may open the dashboard.
+	for _, name := range []string{
+		"GUARD_GOOGLE_CLIENT_ID", "GUARD_GOOGLE_CLIENT_SECRET",
+		"GUARD_APPLE_CLIENT_ID", "GUARD_APPLE_TEAM_ID", "GUARD_APPLE_KEY_ID",
+		"GUARD_APPLE_PRIVATE_KEY", "GUARD_APPLE_PRIVATE_KEY_FILE",
+		"GUARD_ADMIN_EMAIL", "GUARD_AUTH_BASE_URL", "GUARD_AUTH_SESSION_TTL",
+	} {
+		if pages[name] != PageSecurity {
+			t.Fatalf("%s is drawn on %q, want the security page", name, pages[name])
+		}
+	}
+	// And everything else is a setting until somebody decides otherwise.
+	for _, name := range []string{"GUARD_TOKEN", "GUARD_MONITOR_INTERVAL", "GUARD_DB_PATH", "GUARD_VAULT_ADDR"} {
+		if pages[name] != PageConfig {
+			t.Fatalf("%s is drawn on %q, want the configuration page", name, pages[name])
+		}
+	}
+	// Every group in the catalogue has to be one the pages actually draw, or its
+	// rows are stored, applied, and invisible.
+	for _, group := range state.Groups {
+		if group.Page != PageConfig && group.Page != PageSecurity {
+			t.Fatalf("group %q is on page %q, which nothing draws", group.Name, group.Page)
+		}
+	}
+}

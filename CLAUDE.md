@@ -40,7 +40,7 @@ client/public/registries.js   the registries drill
 client/public/cloud.js        the cloud accounts, the machine link, the provider strip
 client/public/storage.js      the object storage page
 client/public/secrets.js      the secrets page: environments, pairs, keys, .env import
-client/public/config.js       the configuration page: the catalogue as a form
+client/public/config.js       both settings forms: the catalogue, filtered per page
 client/styles/app.css         stylesheet source — compiles to client/public/app.css
 ```
 
@@ -507,6 +507,14 @@ that sets everything in its unit file behaves exactly as it did.
   `GET /api/config` — so adding a variable to guard is one entry there and
   nothing else. No template to edit, no endpoint to write, and no chance of a
   page that is wrong about what guard reads.
+- **Two pages draw it, and the group says which** (`config.pageOf`): everything
+  about signing in — the two providers, `GUARD_ADMIN_EMAIL`, the base URL, the
+  session TTL — is on **Settings → Security**, and the rest is on **Settings →
+  Configuration**. One endpoint and one renderer (`config.js` filters on
+  `data-config-page`), because a second endpoint per page would be a second place
+  for the answer to be wrong. A group with no page named lands on the
+  configuration page: a new variable is a setting until somebody decides it is a
+  policy. The restart button is the process's, not the page's.
 - **`GUARD_DB_PATH` and `GUARD_SECRET_KEY` can never be stored**: anything needed
   to open and decrypt the database cannot live inside it. Both are shown
   read-only, and the key's value is never sent to a browser at all — unlike the

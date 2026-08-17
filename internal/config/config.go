@@ -63,16 +63,42 @@ const (
 	KindMultiline Kind = "multiline"
 )
 
-// Groups, in the order the page draws them.
+// Groups, in the order they are drawn.
 const (
-	GroupAccess  = "Access and ingest"
-	GroupCluster = "Cluster and loops"
-	GroupAlerts  = "Alerts"
-	GroupSignIn  = "Signing in"
-	GroupUpdates = "Updates"
-	GroupVault   = "The vault"
-	GroupPaths   = "Paths and keys"
+	GroupAccess    = "Access and ingest"
+	GroupCluster   = "Cluster and loops"
+	GroupAlerts    = "Alerts"
+	GroupProviders = "Sign-in providers"
+	GroupSessions  = "Sessions and admins"
+	GroupUpdates   = "Updates"
+	GroupVault     = "The vault"
+	GroupPaths     = "Paths and keys"
 )
+
+// The two pages that draw this catalogue.
+//
+// Sign-in is its own page rather than a section of the configuration form, and it
+// is worth saying why: the configuration page is a long list of values somebody
+// tunes, and these are the ones that decide *who may open the dashboard at all*.
+// They are set once, from a provider's console, in a sitting — and everything else
+// that will ever be said about access (who is on the members list, which sessions
+// are open) belongs next to them rather than three quarters of the way down a form
+// about timeouts.
+const (
+	PageConfig   = "config"
+	PageSecurity = "security"
+)
+
+// pageOf answers which page a group is drawn on. A group with no entry here is on
+// the configuration page, which is the right default: a new variable is a setting
+// until somebody decides it is a policy.
+func pageOf(group string) string {
+	switch group {
+	case GroupProviders, GroupSessions:
+		return PageSecurity
+	}
+	return PageConfig
+}
 
 // Entry is one variable: what it is called, what it means, and what guard does
 // when nothing sets it.
@@ -174,41 +200,41 @@ var Entries = []Entry{
 		Help: "How long anything firing stays quiet between repeats.",
 	},
 	{
-		Name: "GUARD_GOOGLE_CLIENT_ID", Group: GroupSignIn, Label: "Google client id", Kind: KindText,
+		Name: "GUARD_GOOGLE_CLIENT_ID", Group: GroupProviders, Label: "Google client id", Kind: KindText,
 		Help: "Set both halves to draw the Google button. Half a configuration is fatal at startup, on purpose.",
 	},
 	{
-		Name: "GUARD_GOOGLE_CLIENT_SECRET", Group: GroupSignIn, Label: "Google client secret", Kind: KindText,
+		Name: "GUARD_GOOGLE_CLIENT_SECRET", Group: GroupProviders, Label: "Google client secret", Kind: KindText,
 		Help: "The other half of the Google credentials.",
 	},
 	{
-		Name: "GUARD_APPLE_CLIENT_ID", Group: GroupSignIn, Label: "Apple services id", Kind: KindText,
+		Name: "GUARD_APPLE_CLIENT_ID", Group: GroupProviders, Label: "Apple services id", Kind: KindText,
 		Help: "The Services ID, not the app id.",
 	},
 	{
-		Name: "GUARD_APPLE_TEAM_ID", Group: GroupSignIn, Label: "Apple team id", Kind: KindText,
+		Name: "GUARD_APPLE_TEAM_ID", Group: GroupProviders, Label: "Apple team id", Kind: KindText,
 	},
 	{
-		Name: "GUARD_APPLE_KEY_ID", Group: GroupSignIn, Label: "Apple key id", Kind: KindText,
+		Name: "GUARD_APPLE_KEY_ID", Group: GroupProviders, Label: "Apple key id", Kind: KindText,
 	},
 	{
-		Name: "GUARD_APPLE_PRIVATE_KEY", Group: GroupSignIn, Label: "Apple private key", Kind: KindMultiline,
+		Name: "GUARD_APPLE_PRIVATE_KEY", Group: GroupProviders, Label: "Apple private key", Kind: KindMultiline,
 		Help: "The .p8 contents. Paste it whole, including the BEGIN and END lines.",
 	},
 	{
-		Name: "GUARD_APPLE_PRIVATE_KEY_FILE", Group: GroupSignIn, Label: "Apple private key file", Kind: KindText,
+		Name: "GUARD_APPLE_PRIVATE_KEY_FILE", Group: GroupProviders, Label: "Apple private key file", Kind: KindText,
 		Help: "Read instead of the key above, when the key is a file on the box.",
 	},
 	{
-		Name: "GUARD_ADMIN_EMAIL", Group: GroupSignIn, Label: "Always-admin addresses", Kind: KindList,
+		Name: "GUARD_ADMIN_EMAIL", Group: GroupSessions, Label: "Always-admin addresses", Kind: KindList,
 		Help: "Comma-separated. Checked beside the members table rather than seeded into it, so this is the way back in when the last stored admin removes themselves.",
 	},
 	{
-		Name: "GUARD_AUTH_BASE_URL", Group: GroupSignIn, Label: "Public base URL", Kind: KindURL,
+		Name: "GUARD_AUTH_BASE_URL", Group: GroupSessions, Label: "Public base URL", Kind: KindURL,
 		Help: "Pin this behind a proxy: the redirect URI is compared as a string at both providers.",
 	},
 	{
-		Name: "GUARD_AUTH_SESSION_TTL", Group: GroupSignIn, Label: "Session lifetime", Kind: KindDuration, Default: "168h",
+		Name: "GUARD_AUTH_SESSION_TTL", Group: GroupSessions, Label: "Session lifetime", Kind: KindDuration, Default: "168h",
 		Help: "How long a sign-in lasts.",
 	},
 	{
@@ -407,7 +433,11 @@ type Value struct {
 
 // Group is a titled section of the form.
 type Group struct {
-	Name   string  `json:"name"`
+	Name string `json:"name"`
+	// Page is which of guard's two settings pages draws it. One endpoint answers
+	// with the whole catalogue and each page draws its own groups — a second
+	// endpoint per page would be a second place for the answer to be wrong.
+	Page   string  `json:"page"`
 	Values []Value `json:"values"`
 }
 
@@ -460,7 +490,7 @@ func (s *Set) State() (State, error) {
 		}
 		group := byGroup[entry.Group]
 		if group == nil {
-			group = &Group{Name: entry.Group}
+			group = &Group{Name: entry.Group, Page: pageOf(entry.Group)}
 			byGroup[entry.Group] = group
 		}
 		group.Values = append(group.Values, value)
@@ -635,5 +665,8 @@ func firstOf(values ...string) string {
 }
 
 func groupOrder() []string {
-	return []string{GroupAccess, GroupCluster, GroupAlerts, GroupSignIn, GroupUpdates, GroupVault, GroupPaths}
+	return []string{
+		GroupAccess, GroupCluster, GroupAlerts, GroupUpdates, GroupVault, GroupPaths,
+		GroupProviders, GroupSessions,
+	}
 }
