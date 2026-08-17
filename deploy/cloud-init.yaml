@@ -35,6 +35,11 @@
 #     yours to add; guard is happy behind anything, and needs
 #     GUARD_AUTH_BASE_URL set from the dashboard when it is.
 #
+# Written for the Ubuntu cloud images, and it says so rather than pretending
+# otherwise: apt, useradd, systemd. A second package manager in here would be a
+# branch nobody has ever run, which is worse than not having it — it reads as
+# support for a distro this has never been tested on.
+#
 # Pin the ref the units come from by editing GUARD_REF below. Re-running
 # /usr/local/sbin/guard-bootstrap by hand is safe and is how you pick up a
 # change to a unit.
@@ -63,15 +68,13 @@ write_files:
 
       log() { echo "guard-bootstrap: $*"; }
 
-      # curl is on every cloud image worth the name, so this asks rather than
-      # installing unconditionally: `packages:` in a cloud-config triggers an
-      # apt update on every boot, which is minutes on a small box, to arrive at
-      # what was already there.
+      # curl is on the Ubuntu cloud images this is written for, so this asks
+      # rather than installing unconditionally: `packages:` in a cloud-config
+      # triggers an apt update on every boot, which is minutes on a small box,
+      # to arrive at what was already there.
       if ! command -v curl >/dev/null 2>&1; then
         log "installing curl"
-        (apt-get update -qq && apt-get install -y -qq curl ca-certificates) \
-          || (dnf install -y -q curl ca-certificates) \
-          || { echo "guard-bootstrap: no curl and no way to install one" >&2; exit 1; }
+        apt-get update -qq && apt-get install -y -qq curl ca-certificates
       fi
 
       # The user everything runs as. No login shell, no password: it owns a
