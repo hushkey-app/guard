@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hushkey-app/guard/client/pages"
+	"github.com/hushkey-app/guard/internal/access"
 	"github.com/hushkey-app/guard/internal/auth"
 	"github.com/hushkey-app/guard/internal/build"
 	"github.com/hushkey-app/guard/internal/cluster"
@@ -25,6 +26,7 @@ import (
 	"github.com/hushkey-app/guard/internal/telemetry"
 	"github.com/hushkey-app/guard/internal/viewalerts"
 	"github.com/hushkey-app/guard/server/apis"
+	apiaccess "github.com/hushkey-app/guard/server/apis/access"
 	apicollector "github.com/hushkey-app/guard/server/apis/collector"
 	apiprober "github.com/hushkey-app/guard/server/apis/prober"
 	apirunner "github.com/hushkey-app/guard/server/apis/runner"
@@ -66,6 +68,7 @@ func main() {
 	updateRepo := flag.String("update-repo", env("GUARD_UPDATE_REPO", release.DefaultRepo), "the GitHub repository to watch for releases; empty watches nothing")
 	updateInterval := flag.Duration("update-interval", envDuration("GUARD_UPDATE_INTERVAL", 15*time.Minute), "how often to ask GitHub for the newest release")
 	updateState := flag.String("update-state", env("GUARD_UPDATE_STATE", release.DefaultStatePath), "the file deploy/guard-update reads to know which version this box should be on")
+	envFile := flag.String("env-file", env("GUARD_ENV_FILE", access.DefaultPath), "the env file guard may write its own credentials into; read by the unit after guard.env")
 	// What this binary is, without starting it. The updater on the box asks the
 	// file on disk rather than keeping its own note of what it installed, which
 	// is the note that goes stale the one time somebody copies a binary by hand.
@@ -266,6 +269,28 @@ func main() {
 	}
 	go updates.Run(proberCtx)
 	apiupdate.Use(updates)
+	// The two credentials guard is reached with, and the one file guard may
+	// write them into. Rotating one has always meant an SSH session, an env
+	// file and `systemctl restart`, which is why in practice neither is ever
+	// rotated; this is those steps behind a button, and nothing else about
+	// them changes — they still arrive from the environment, at a start.
+	//
+	// Restarting is exiting. Guard runs unprivileged with NoNewPrivileges and
+	// cannot ask systemd for anything, so the honest way for a service to be
+	// restarted is to stop and be brought back — which is offered only where
+	// something will do the bringing back. os.Exit rather than an unwind for
+	// the same reason the normal path is log.Fatal: nothing here has a
+	// shutdown to run, and SQLite in WAL mode is crash-consistent by design.
+	keys := &access.Keys{
+		Path:    *envFile,
+		Running: access.Credentials{Token: token, Secret: otelSecret},
+	}
+	if access.Supervised() {
+		keys.Restart = func() {
+			time.AfterFunc(500*time.Millisecond, func() { os.Exit(0) })
+		}
+	}
+	apiaccess.Use(keys)
 	// What the members endpoints need to know that only the environment can
 	// answer: whether sign-in is on, and which admins came from it.
 	apisignin.Use(sessions)

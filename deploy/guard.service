@@ -10,6 +10,12 @@ Wants=network-online.target
 # to the guard user, which is why the file is root-owned 0600 and readable by
 # nothing else, even though /etc/guard is otherwise the guard user's to write.
 EnvironmentFile=-/etc/guard/guard.env
+# The one env file guard itself may write: GUARD_TOKEN and GUARD_OTEL_SECRET,
+# generated from Settings → Credentials. Read after guard.env, so a value
+# rotated from the dashboard wins over the same name set by hand — a button
+# that silently lost to a line written a year ago is worse than no button.
+# Owned by the guard user; guard.env beside it stays root's.
+EnvironmentFile=-/etc/guard/env.d/tokens.env
 ExecStart=/usr/local/bin/guard -db /var/lib/guard/guard.db
 User=guard
 Restart=always

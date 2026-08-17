@@ -39,7 +39,9 @@ write_files:
       # What exporters present at /v1/logs, /v1/traces and /v1/metrics. Unset,
       # anything that can reach :4318 may post telemetry — and those routes sit
       # outside sign-in on purpose, because a collector cannot authenticate
-      # with Google. Generate one with: openssl rand -hex 32
+      # with Google. Generate one with: openssl rand -hex 32 — or from
+      # Settings → Credentials in the dashboard, which writes
+      # /etc/guard/env.d/tokens.env and is read after this file.
       #GUARD_OTEL_SECRET=
       #
       # The operator's token: this opens the API and every write endpoint as
@@ -61,6 +63,10 @@ write_files:
 
       [Service]
       EnvironmentFile=-/etc/guard/guard.env
+      # What the dashboard writes: GUARD_TOKEN and GUARD_OTEL_SECRET, generated
+      # from Settings → Credentials. Read last, so a rotation from the
+      # dashboard wins over the same name set by hand above.
+      EnvironmentFile=-/etc/guard/env.d/tokens.env
       ExecStart=/usr/local/bin/guard -db /var/lib/guard/guard.db
       User=guard
       Restart=always
@@ -132,6 +138,10 @@ runcmd:
   # directory, not on the file.
   - [ install, -d, -o, root, -g, root, -m, "0755", /etc/guard ]
   - [ chown, "guard:guard", /etc/guard/version ]
+  # The one directory inside it that is guard's: the credentials it generates
+  # for itself from the dashboard. A directory rather than a file so guard can
+  # replace it atomically, and 0700 because a token in it opens the API.
+  - [ install, -d, -o, guard, -g, guard, -m, "0700", /etc/guard/env.d ]
   # The updater, taken from the repo at the version this box is pinned to. It
   # is the only thing fetched from git — the binaries come from the release.
   - [ sh, -c, "curl -fsSL https://raw.githubusercontent.com/hushkey-app/guard/main/deploy/guard-update -o /usr/local/bin/guard-update" ]
