@@ -58,8 +58,8 @@ write_files:
       # The public name for this box, and the address Let's Encrypt should send
       # expiry warnings to. Set both, or leave both empty for a box with no nginx
       # and no certificate — guard then answers :4318 itself.
-      GUARD_DOMAIN=""
-      GUARD_TLS_EMAIL=""
+      GUARD_DOMAIN="guard.hushkey.dev"
+      GUARD_TLS_EMAIL="leotermine@hushkey.app"
       # ------------------------------------------------------------------------
 
       GUARD_REPO="${GUARD_REPO:-hushkey-app/guard}"
@@ -188,11 +188,20 @@ write_files:
 
       # The public name, if this box has one. Everything from here is nginx and a
       # certificate; a box with GUARD_DOMAIN empty is finished above.
-      if [ -n "$GUARD_DOMAIN" ]; then
+      # In a function, so a failure in here cannot take the box down with it.
+      # Guard is installed and answering by this point, and the difference
+      # between "the dashboard is up but the domain is not wired yet" and
+      # "provisioning stopped without saying where" is the difference between a
+      # ten-second fix and an afternoon. Each step is checked by hand, because a
+      # function called from an if runs with set -e suspended.
+      public_name() {
         if ! command -v nginx >/dev/null 2>&1 || ! command -v certbot >/dev/null 2>&1; then
           log "installing nginx and certbot"
-          $APT update
-          $APT install -y nginx certbot python3-certbot-nginx dnsutils
+          $APT update || { log "apt update failed"; return 1; }
+          # certbot and its nginx plugin live in universe. If a future image
+          # drops them, this is where it will say so rather than dying mid-file.
+          $APT install -y nginx certbot python3-certbot-nginx dnsutils \
+            || { log "could not install nginx and certbot — is universe enabled?"; return 1; }
         fi
 
         # Plain HTTP only. certbot rewrites this file when it issues, adding the
@@ -226,9 +235,9 @@ write_files:
       NGINX
         ln -sf /etc/nginx/sites-available/guard /etc/nginx/sites-enabled/guard
         rm -f /etc/nginx/sites-enabled/default
-        nginx -t
-        systemctl enable nginx >/dev/null
-        systemctl restart nginx
+        nginx -t || { log "the nginx configuration did not validate"; return 1; }
+        systemctl enable nginx >/dev/null || true
+        systemctl restart nginx || { log "nginx would not restart — systemctl status nginx"; return 1; }
         log "nginx is proxying $GUARD_DOMAIN to :4318"
 
         # The certificate issues itself, on a timer, once DNS points here. A
@@ -297,8 +306,15 @@ write_files:
       WantedBy=timers.target
       UNIT
         systemctl daemon-reload
-        systemctl enable --now guard-tls.timer >/dev/null
+        systemctl enable --now guard-tls.timer >/dev/null || { log "the TLS timer would not start"; return 1; }
         log "TLS will issue itself within fifteen minutes of DNS pointing here"
+      }
+
+      if [ -n "$GUARD_DOMAIN" ]; then
+        if ! public_name; then
+          log "the public name is NOT wired up — guard itself is fine on :4318"
+          log "fix what the line above names, then re-run: /usr/local/sbin/guard-bootstrap"
+        fi
       fi
 
       # What actually answers, rather than what was installed.
