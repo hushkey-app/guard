@@ -26,7 +26,7 @@ write to.
 | auth | `GUARD_OTEL_SECRET` or `GUARD_TOKEN` | none — it is public by nature |
 | identity | from the payload | **assigned by guard**, payload ignored |
 | body | 16 MB | 256 KB |
-| rate | unlimited | per address, `GUARD_RUM_PER_MINUTE` |
+| rate | unlimited | 120 a minute per address |
 | enabled | always | only when `GUARD_RUM_ORIGINS` is set |
 | signals | logs, traces, metrics | traces, logs |
 
@@ -77,9 +77,6 @@ it; with a bare ingress, make sure the proxy overwrites rather than appends.
 
 ```bash
 GUARD_RUM_ORIGINS=https://app.example.com,https://www.example.com  # required; enables the intake
-GUARD_RUM_SERVICE=browser        # what every browser event is filed under
-GUARD_RUM_RELEASE=v1.4.2         # the instance, so releases can be compared
-GUARD_RUM_PER_MINUTE=120         # per address
 ```
 
 `GUARD_RUM_ORIGINS=*` is accepted and means what it says. It is right behind a

@@ -176,7 +176,7 @@ card, and gone when the command is.
 The other half is the **staleness alert**, which is the part worth being
 careful about. An action can carry a budget — "alert if no success in 420
 minutes" — and a separate loop checks it every five minutes
-(`GUARD_ALERT_INTERVAL`).
+— every five minutes.
 
 Separate on purpose, and this is the whole design:
 
@@ -200,7 +200,7 @@ Separate on purpose, and this is the whole design:
   the command names (**Settings → Alerts**) — its own HTTP client, not the SSH
   runner whose jobs are failing. A command that names none is logged and nothing
   else. A stale job is reported once and then repeated
-  every six hours (`GUARD_ALERT_REPEAT`) until it succeeds; a success clears
+  every six hours until it succeeds; a success clears
   the flag, so the next failure is announced afresh.
 - **A delivery that failed is not a delivery.** Anything but a 2xx leaves the
   flag unset, so the next pass tries again — an alert swallowed by a 401 would

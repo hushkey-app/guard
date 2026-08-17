@@ -53,6 +53,11 @@ type Watchdog struct {
 	once sync.Once
 }
 
+// Neither is configurable, and both are wired in from nowhere: main passes a
+// zero Watchdog and these stand. Six hours is the answer for every fleet this
+// has been run against, and the day somebody needs a different one it belongs on
+// Settings → Alerts beside the destinations rather than in the environment,
+// where a repeat nobody can see is a repeat nobody can explain.
 const (
 	defaultWatchInterval = 5 * time.Minute
 	defaultWatchRepeat   = 6 * time.Hour

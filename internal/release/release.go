@@ -33,6 +33,11 @@ import (
 // DefaultRepo is where guard looks for itself.
 const DefaultRepo = "hushkey-app/guard"
 
+// DefaultInterval is how often guard asks GitHub. Four requests an hour against
+// an unauthenticated budget of sixty per address, shared with the updater on the
+// same box — a number tuned to somebody else's rate limit is not a preference.
+const DefaultInterval = 15 * time.Minute
+
 // DefaultStatePath is the file the updater reads. Writing it is the only side
 // effect this package has.
 const DefaultStatePath = "/etc/guard/version"

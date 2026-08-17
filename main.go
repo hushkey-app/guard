@@ -49,22 +49,12 @@ var publicFS embed.FS
 func main() {
 	addr := flag.String("addr", ":4318", "HTTP and OTLP/HTTP listen address")
 	dbPath := flag.String("db", env("GUARD_DB_PATH", "guard.db"), "SQLite database file")
-	retentionHours := flag.Int("retention-hours", envInt("GUARD_RETENTION_HOURS", 24), "hours of telemetry to retain")
-	maxEvents := flag.Int("max-events", envInt("GUARD_MAX_EVENTS", 1_000_000), "maximum telemetry events retained")
-	clusterInterval := flag.Duration("cluster-interval", envDuration("GUARD_CLUSTER_INTERVAL", 30*time.Second), "how long the prober waits when no node is due; each node carries its own interval")
-	clusterTimeout := flag.Duration("cluster-timeout", envDuration("GUARD_CLUSTER_TIMEOUT", 5*time.Second), "how long a cluster health check may take")
 	sshTimeout := flag.Duration("ssh-timeout", envDuration("GUARD_SSH_TIMEOUT", remote.DefaultTimeout), "how long a command run over SSH may take")
 	// A scheduled command gets its own, much longer budget: the jobs people put
 	// on a timer are dumps and syncs, and a backup killed at the two minutes a
 	// pressed button gets is a backup that has never once worked.
 	scheduleTimeout := flag.Duration("schedule-timeout", envDuration("GUARD_SCHEDULE_TIMEOUT", cluster.DefaultScheduleTimeout), "how long a scheduled command may take")
-	alertInterval := flag.Duration("alert-interval", envDuration("GUARD_ALERT_INTERVAL", 5*time.Minute), "how often to check that scheduled jobs are still succeeding")
-	alertRepeat := flag.Duration("alert-repeat", envDuration("GUARD_ALERT_REPEAT", 6*time.Hour), "how long a stale job stays quiet after it has been reported")
-	monitorInterval := flag.Duration("monitor-interval", envDuration("GUARD_MONITOR_INTERVAL", 30*time.Second), "how often the machine rules are evaluated")
-	viewAlertInterval := flag.Duration("view-alert-interval", envDuration("GUARD_VIEW_ALERT_INTERVAL", time.Minute), "how often the saved views carrying a rule are run")
 	updateRepo := flag.String("update-repo", env("GUARD_UPDATE_REPO", release.DefaultRepo), "the GitHub repository to watch for releases; empty watches nothing")
-	updateInterval := flag.Duration("update-interval", envDuration("GUARD_UPDATE_INTERVAL", 15*time.Minute), "how often to ask GitHub for the newest release")
-	updateState := flag.String("update-state", env("GUARD_UPDATE_STATE", release.DefaultStatePath), "the file deploy/guard-update reads to know which version this box should be on")
 	// What this binary is, without starting it. The updater on the box asks the
 	// file on disk rather than keeping its own note of what it installed, which
 	// is the note that goes stale the one time somebody copies a binary by hand.
@@ -79,7 +69,11 @@ func main() {
 	// what guard itself would rather ingest.
 	console.Setup(console.Options{})
 
-	store, err := telemetry.Open(*dbPath, telemetry.Settings{RetentionHours: *retentionHours, MaxEvents: *maxEvents})
+	// Retention and the event cap are rows in the settings table, edited on
+	// Settings → Data storage and applied the moment they are saved. What is
+	// passed here is only what a brand-new database starts with, so it is the
+	// store's own default rather than a flag nobody would reach for twice.
+	store, err := telemetry.Open(*dbPath, telemetry.Settings{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -100,17 +94,9 @@ func main() {
 	}
 	typed := map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { typed[f.Name] = true })
-	redo(typed, "cluster-interval", clusterInterval, func() time.Duration { return envDuration("GUARD_CLUSTER_INTERVAL", 30*time.Second) })
-	redo(typed, "cluster-timeout", clusterTimeout, func() time.Duration { return envDuration("GUARD_CLUSTER_TIMEOUT", 5*time.Second) })
 	redo(typed, "ssh-timeout", sshTimeout, func() time.Duration { return envDuration("GUARD_SSH_TIMEOUT", remote.DefaultTimeout) })
 	redo(typed, "schedule-timeout", scheduleTimeout, func() time.Duration { return envDuration("GUARD_SCHEDULE_TIMEOUT", cluster.DefaultScheduleTimeout) })
-	redo(typed, "alert-interval", alertInterval, func() time.Duration { return envDuration("GUARD_ALERT_INTERVAL", 5*time.Minute) })
-	redo(typed, "alert-repeat", alertRepeat, func() time.Duration { return envDuration("GUARD_ALERT_REPEAT", 6*time.Hour) })
-	redo(typed, "monitor-interval", monitorInterval, func() time.Duration { return envDuration("GUARD_MONITOR_INTERVAL", 30*time.Second) })
-	redo(typed, "view-alert-interval", viewAlertInterval, func() time.Duration { return envDuration("GUARD_VIEW_ALERT_INTERVAL", time.Minute) })
 	redo(typed, "update-repo", updateRepo, func() string { return env("GUARD_UPDATE_REPO", release.DefaultRepo) })
-	redo(typed, "update-interval", updateInterval, func() time.Duration { return envDuration("GUARD_UPDATE_INTERVAL", 15*time.Minute) })
-	redo(typed, "update-state", updateState, func() string { return env("GUARD_UPDATE_STATE", release.DefaultStatePath) })
 
 	public, err := fs.Sub(publicFS, "client/public")
 	if err != nil {
@@ -189,18 +175,20 @@ func main() {
 	// The browser intake, off unless origins are named. It cannot be enabled by
 	// accident, because an unauthenticated write endpoint that appears by
 	// default is a hole somebody finds before you do.
-	receiver.RegisterBrowser(mux, ingest.Browser{
-		Origins:   splitList(os.Getenv("GUARD_RUM_ORIGINS")),
-		Service:   env("GUARD_RUM_SERVICE", "browser"),
-		Instance:  os.Getenv("GUARD_RUM_RELEASE"),
-		PerMinute: envInt("GUARD_RUM_PER_MINUTE", 120),
-	})
+	// One switch, and the rest is the package's own answer: the service identity
+	// guard assigns to browser spans, and how many requests a minute one address
+	// may post. Neither is a thing anybody has wanted to change, and both are
+	// wrong to take from the payload.
+	receiver.RegisterBrowser(mux, ingest.Browser{Origins: splitList(os.Getenv("GUARD_RUM_ORIGINS"))})
 
 	// The cluster prober: the one part of guard that makes outbound requests.
 	// It watches machines that were declared rather than ones that talk to
 	// us — the difference between "this service stopped sending telemetry" and
 	// "this box is down", which is the whole reason to have it.
-	probe := &cluster.Prober{Store: store, Interval: *clusterInterval, Timeout: *clusterTimeout}
+	// No cadence passed: each machine carries its own interval in the database,
+	// and what is left is an idle wait and a timeout that the package answers for
+	// itself. Every loop below reads the same way.
+	probe := &cluster.Prober{Store: store}
 	proberCtx, stopProber := context.WithCancel(context.Background())
 	defer stopProber()
 	go probe.Run(proberCtx)
@@ -243,45 +231,25 @@ func main() {
 	// format and the timeout, so a second thing that needs to tell somebody
 	// something is a caller rather than a copy.
 	sender := &notify.Webhook{}
-	watch := &cluster.Watchdog{
-		Store:    store,
-		Sender:   sender,
-		Interval: *alertInterval,
-		Repeat:   *alertRepeat,
-	}
+	watch := &cluster.Watchdog{Store: store, Sender: sender}
 	go watch.Run(proberCtx)
 	// And the rules over what the cluster page already measures — the health
 	// check, the uptime share, and what each machine says about its own CPU,
 	// memory and disk. Same delivery module, same destinations, its own faster
 	// loop: a rule about a machine being down is worth evaluating in seconds,
 	// where a rule about a six-hourly backup is not.
-	monitors := &cluster.Monitors{
-		Store:    store,
-		Sender:   sender,
-		Interval: *monitorInterval,
-		Repeat:   *alertRepeat,
-	}
+	monitors := &cluster.Monitors{Store: store, Sender: sender}
 	go monitors.Run(proberCtx)
 	// And the panels that watch themselves: a saved view with a line drawn
 	// across it, run on its own slower loop because each pass is somebody's
 	// compiled query against the same table the dashboard is reading.
-	go (&viewalerts.Watcher{
-		Store:    store,
-		Sender:   sender,
-		Interval: *viewAlertInterval,
-		Repeat:   *alertRepeat,
-	}).Run(proberCtx)
+	go (&viewalerts.Watcher{Store: store, Sender: sender}).Run(proberCtx)
 	// Whether a newer guard exists. Its own slow loop, and the only thing it
 	// can do about the answer is write a version into a file — installing is
 	// deploy/guard-update, a root-owned unit on a timer, because the process
 	// holding every application's secrets should not also be the one that can
 	// replace binaries.
-	updates := &release.Watch{
-		Repo:      *updateRepo,
-		Current:   build.Tag(),
-		Interval:  *updateInterval,
-		StatePath: *updateState,
-	}
+	updates := &release.Watch{Repo: *updateRepo, Current: build.Tag()}
 	go updates.Run(proberCtx)
 	apiupdate.Use(updates)
 	// How a change to the stored configuration becomes a change to the running
@@ -390,14 +358,6 @@ func splitList(value string) []string {
 
 func envDuration(name string, fallback time.Duration) time.Duration {
 	value, err := time.ParseDuration(os.Getenv(name))
-	if err == nil && value > 0 {
-		return value
-	}
-	return fallback
-}
-
-func envInt(name string, fallback int) int {
-	value, err := strconv.Atoi(os.Getenv(name))
 	if err == nil && value > 0 {
 		return value
 	}

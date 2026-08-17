@@ -64,7 +64,7 @@ Four rules about the rules:
 - **A rule with no machine covers every machine**, including the ones added next
   month. "Any disk over 90%" is one rule, not one per box.
 
-A firing rule repeats every `GUARD_ALERT_REPEAT` (6h) until it clears. Editing a
+A firing rule repeats every six hours until it clears. Editing a
 rule forgets where it stood — a threshold that just moved from 90 to 95 is a
 different question, and the old "already told them" flag would answer it with
 the old one's silence.
@@ -148,11 +148,10 @@ configured by a `GUARD_ALERT_WEBHOOK` would be a second answer to "where do aler
 go" — one that no page could show and nobody could test. A job that names no
 destination is logged and nothing else.
 
-What is left in the environment is the three cadences, because they are loops
-rather than destinations and this page has nowhere to put them:
-`GUARD_MONITOR_INTERVAL` (30s) is how often the machine rules are evaluated,
-`GUARD_VIEW_ALERT_INTERVAL` (1m) how often the watched views are run — slower,
-because each pass is somebody's compiled query against the same table the
-dashboard is reading — `GUARD_ALERT_INTERVAL` (5m) how often the staleness budgets
-are checked, and `GUARD_ALERT_REPEAT` (6h) how long anything firing stays quiet
-between repeats. All four are rows on **Settings → Configuration**.
+The cadences are gone too, and for a plainer reason: nobody changed them. The
+machine rules run every 30s, the watched views every minute — slower, because each
+pass is somebody's compiled query against the same table the dashboard is reading —
+the staleness budgets are checked every 5m, and anything firing stays quiet for six
+hours between repeats. Each is a constant beside the loop it paces. The day the
+repeat needs to be somebody's choice it belongs on this page, next to the
+destinations, rather than in the environment.

@@ -460,8 +460,9 @@ because the promise is that secrets keep being served while guard restarts, and
 a setup where they only run when somebody remembered to start them never
 exercises it.
 
-`GUARD_DB_PATH`, `GUARD_RETENTION_HOURS`, `GUARD_MAX_EVENTS`, `GUARD_TOKEN` configure it;
-flags of the same names override. `GUARD_OTEL_SECRET` is the **collector's**
+`GUARD_DB_PATH` and `GUARD_TOKEN` configure it; flags of the same names override.
+Retention and the event cap are rows in the `settings` table, edited on Settings →
+Data storage — the store's own defaults are what a new database starts with. `GUARD_OTEL_SECRET` is the **collector's**
 credential: it opens `/v1/logs`, `/v1/traces` and `/v1/metrics` and nothing else,
 where `GUARD_TOKEN` opens those *and* every write endpoint in the API. Both are
 accepted at ingest, so an exporter configured before the secret existed keeps
@@ -474,13 +475,18 @@ setting and restarts guard into them. `GUARD_SECRET_KEY` is the key the SSH pass
 secrets are sealed with — unset, guard generates `<db>.key` beside the database, which is
 part of the backup and never part of the repository. **`guard-vault` will not generate
 one**: without the key it refuses to start rather than answering with values it cannot
-decrypt. `GUARD_VAULT_ADDR` (:4319) and `GUARD_VAULT_TOUCH` (1m, how often one key's use
-is recorded) configure it. `GUARD_SSH_TIMEOUT` bounds one command run,
+decrypt. `GUARD_VAULT_ADDR` (:4319) is where it listens; how often one key's use is
+recorded is the server's own answer. `GUARD_SSH_TIMEOUT` bounds one command run,
 `GUARD_SCHEDULE_TIMEOUT` one scheduled run (30m). Alerts go to the destinations
 named on Settings → Alerts and to no environment variable.
-`GUARD_ALERT_INTERVAL` (5m) is how often the budgets are checked,
-`GUARD_MONITOR_INTERVAL` (30s) how often the machine rules are, and
-`GUARD_ALERT_REPEAT` (6h) how long anything firing stays quiet between repeats.
+Every loop's cadence is a constant beside the loop — the budgets every 5m, the
+machine rules every 30s, the watched views every minute, a firing rule quiet for 6h
+between repeats. **Twenty-one `GUARD_*` variables, and that is the whole list**: the
+catalogue on Settings → Configuration holds the six somebody changes, Security holds
+the ten about signing in, and the rest are the database, the key, the two tokens and
+the two escape hatches. Anything that reads like a tuning knob was deleted rather
+than made configurable — a number nobody has ever changed is a number with one right
+answer, and the place for it is twenty lines from where it is read.
 
 Sign-in adds `GUARD_GOOGLE_CLIENT_ID`/`GUARD_GOOGLE_CLIENT_SECRET`, the four
 `GUARD_APPLE_*` values (`CLIENT_ID` is the Services ID; the key is

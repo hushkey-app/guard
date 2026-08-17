@@ -160,7 +160,7 @@ rotation that has not happened is the one thing this page must not do: the
 collector that matters is still presenting the old secret.
 
 `guard-vault` reads the two settings that are its own (`GUARD_VAULT_ADDR`,
-`GUARD_VAULT_TOUCH`) from the same table, the same way. It is a read like every
+`GUARD_DB_PATH`) from the same table, the same way. It is a read like every
 other one it makes — the vault's store has no method that changes a setting —
 and it means the form is not quietly lying about half its rows. The two
 processes are restarted separately, as always.

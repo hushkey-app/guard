@@ -1,8 +1,6 @@
 package pages
 
 import (
-	"strings"
-
 	"github.com/axadrn/shadcn-templ/v2/components/button"
 	"github.com/hushkey-app/guard/client/ui"
 	"github.com/hushkey-app/guard/client/ui/components"
@@ -11,14 +9,6 @@ import (
 	"github.com/mirairoad/howl-go/core/router"
 	"github.com/mirairoad/howl-go/core/state"
 )
-
-// pageLabel is the document title without the site suffix — the same string
-// guard.js derives in updatePageTitle, so the topbar paints its final text
-// server-side instead of flashing the full title until JS runs.
-func pageLabel(title string) string {
-	label, _ := strings.CutSuffix(title, " — Guard")
-	return label
-}
 
 templ App(title, head string) {
 	// 	<a href="/x" data-transition-slide-left>   <!-- one link         -->
@@ -128,6 +118,21 @@ templ App(title, head string) {
 						</form>
 					</div>
 				}
+				<!-- The live tick's own control, in the sidebar rather than a bar
+				     across the top: it is one thing about the whole session, like
+				     the endpoint under it and the version under that, and it was the
+				     only reason that row existed. guard.js drives every element
+				     carrying these attributes, so moving them is all this took. -->
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Size:       button.SizeSm,
+					Class:      "mt-3 w-full justify-start gap-2 px-2 text-xs",
+					Attributes: templ.Attributes{"data-live-toggle": true, "aria-label": "Pause live refresh"},
+				}) {
+					<span class="signal-dot" data-live-dot></span>
+					<span data-live-status>connecting</span>
+					<span data-live-action class="ml-auto text-muted-foreground">Pause</span>
+				}
 				<!-- Who made it and which build is answering. The version is the
 				     same string the OpenAPI document reports, so a bug report
 				     naming what the sidebar says names something real.
@@ -141,22 +146,16 @@ templ App(title, head string) {
 				</div>
 			</aside>
 			<div class="flex min-h-screen flex-col lg:pl-64">
-				<header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-background px-4 lg:px-8">
-					<label for="nav-drawer" class="grid size-8 cursor-pointer place-items-center rounded-lg border border-border text-muted-foreground hover:text-foreground lg:hidden" aria-label="Open navigation">☰</label>
-					<div class="min-w-0 flex-1">
-						<p data-page-title class="truncate text-sm font-medium">{ pageLabel(title) }</p>
-					</div>
-					@button.Button(button.Props{
-						Variant:    button.VariantGhost,
-						Size:       button.SizeSm,
-						Class:      "gap-2",
-						Attributes: templ.Attributes{"data-live-toggle": true, "aria-label": "Pause live refresh"},
-					}) {
-						<span class="signal-dot" data-live-dot></span>
-						<span data-live-status>connecting</span>
-						<span data-live-action class="text-muted-foreground">Pause</span>
-					}
-				</header>
+				<!-- No top bar. It carried a page title every page already prints as
+				     its own heading, and two controls — so the controls moved to
+				     where they belong and the row went with it. What is left is a
+				     mobile-only handle for the drawer, floating, because below lg
+				     the sidebar is off-canvas and there has to be a way back to it. -->
+				<label
+					for="nav-drawer"
+					aria-label="Open navigation"
+					class="fixed left-4 top-4 z-30 grid size-9 cursor-pointer place-items-center rounded-lg border border-border bg-card/95 text-muted-foreground shadow-lg backdrop-blur hover:text-foreground lg:hidden"
+				>☰</label>
 				<main id="outlet" data-route={ router.Current(ctx) } class="mx-auto w-full max-w-[96rem] p-4 lg:p-8">{ children... }</main>
 			</div>
 			<!-- Row detail. Present on every page because guard.js fills it from

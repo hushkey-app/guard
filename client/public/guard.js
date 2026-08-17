@@ -544,11 +544,6 @@ async function refreshPage({ facets = false } = {}) {
   await Promise.allSettled(work);
 }
 
-function updatePageTitle() {
-  const label = document.title.replace(/\s+[—-]\s+Guard$/, "");
-  for (const node of qsa("[data-page-title]")) node.textContent = label;
-}
-
 async function liveTick() {
   if (live && !refreshInFlight && document.visibilityState === "visible" && Date.now() - lastInteraction > 500) {
     refreshInFlight = true;
@@ -650,7 +645,6 @@ globalThis.guardPageMount = (page) => {
   // The cold document can start fetching as soon as guard.js executes, without
   // waiting for the WASM binary. Its later Mount consumes that same promise;
   // AOT navigations start a fresh page-specific load here.
-  updatePageTitle();
   refreshUpdate();
   renderGeneration++;
   if (page === initializedPage && initialRefresh) {
