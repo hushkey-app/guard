@@ -39,10 +39,10 @@
 # /usr/local/sbin/guard-bootstrap by hand is safe and is how you pick up a
 # change to a unit.
 
-package_update: true
-packages:
-  - curl
-  - ca-certificates
+# No `packages:` and no `package_update:` on purpose. Either one makes cloud-init
+# run an apt update before anything else happens, which on a small box is minutes
+# of boot spent arriving at the curl that was already installed. The script below
+# asks for what it needs and installs only what is missing.
 
 write_files:
   # A script rather than a pile of runcmd lines: this is the thing somebody
@@ -63,14 +63,34 @@ write_files:
 
       log() { echo "guard-bootstrap: $*"; }
 
+      # curl is on every cloud image worth the name, so this asks rather than
+      # installing unconditionally: `packages:` in a cloud-config triggers an
+      # apt update on every boot, which is minutes on a small box, to arrive at
+      # what was already there.
+      if ! command -v curl >/dev/null 2>&1; then
+        log "installing curl"
+        (apt-get update -qq && apt-get install -y -qq curl ca-certificates) \
+          || (dnf install -y -q curl ca-certificates) \
+          || { echo "guard-bootstrap: no curl and no way to install one" >&2; exit 1; }
+      fi
+
       # The user everything runs as. No login shell, no password: it owns a
       # database and answers a port.
+      #
+      # --user-group is not decoration. Whether useradd also makes a group of
+      # the same name depends on USERGROUPS_ENAB in /etc/login.defs, which
+      # differs between images — and every `install -o guard -g guard` below
+      # fails on an image where it did not, taking the whole provision with it.
       if ! id guard >/dev/null 2>&1; then
         nologin=/usr/sbin/nologin
         [ -x "$nologin" ] || nologin=/sbin/nologin
-        useradd --system --home-dir /var/lib/guard --create-home --shell "$nologin" guard
+        useradd --system --user-group --home-dir /var/lib/guard --create-home --shell "$nologin" guard
         log "created the guard user"
       fi
+      # An image that made the user without the group, or a half-finished
+      # earlier run: cheaper to check than to debug.
+      getent group guard >/dev/null 2>&1 || groupadd --system guard
+      usermod -g guard guard 2>/dev/null || true
 
       # The database, its WAL, and guard.db.key beside them. Guard generates the
       # key on first start; it is not in any artifact and joining a box to an
@@ -109,19 +129,30 @@ write_files:
       # restarts both services, which is what starts them the first time.
       systemctl enable guard.service guard-vault.service >/dev/null
 
+      # The timer is armed BEFORE the first install, and that order is the whole
+      # difference between a box that heals itself and a box somebody has to
+      # visit. GitHub rate-limits, releases move, a health check can be slow on a
+      # cold small instance — and with the timer armed afterwards, any of those
+      # left a box with no binary AND no timer, which is a box that never tries
+      # again. Armed first, the same failure costs fifteen minutes.
+      #
+      # --now is the other half: `enable` alone arms it for the next boot, and
+      # provisioning reaches this line long after timers.target has passed, so
+      # the box would come up correct and never take another release. That one
+      # fails silently and looks exactly like success.
+      systemctl enable --now guard-update.timer >/dev/null
+      log "the update timer is armed"
+
       # The first install is an ordinary update: it reads /etc/guard/version,
       # downloads the release, verifies it against SHA256SUMS, installs guard
       # first and then the vault, and rolls either back if it does not answer
       # /healthz within thirty seconds.
       log "installing the release"
-      GUARD_REPO="$GUARD_REPO" /usr/local/bin/guard-update
-
-      # --now is load-bearing. `enable` alone arms the timer for the next boot,
-      # and a provisioning script reaches this line long after timers.target has
-      # passed — so the box would come up correct and then never take another
-      # release. It fails silently and looks exactly like success.
-      systemctl enable --now guard-update.timer >/dev/null
-      log "the update timer is armed"
+      if ! GUARD_REPO="$GUARD_REPO" /usr/local/bin/guard-update; then
+        log "the first install did not finish — the timer will try again within fifteen minutes"
+        log "look at: journalctl -u guard -u guard-update, and /var/log/cloud-init-output.log"
+        exit 1
+      fi
 
       log "guard is on $(/usr/local/bin/guard -version), the dashboard is on :4318"
 
