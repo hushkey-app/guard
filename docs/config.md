@@ -225,10 +225,34 @@ separate presses, because they are separate days — one is a laptop being lost,
 other a collector box being decommissioned, and rotating both because one was
 asked for stops every exporter at once.
 
-## Reading is admin
+## Reading is admin, and the first visit says so
 
 Every endpoint here is `admin`, reads included, and the values come back in the
 clear. The alternative is forty masked fields nobody can check against the
-provider's console they are copying from. On an instance with no token and no
-sign-in there is nothing here to leak, because there is nothing set — and once
-either is configured, whoever can read this already holds it.
+provider's console they are copying from.
+
+What that means in practice depends on how the instance is configured, and the page
+says which:
+
+| instance | these pages |
+|---|---|
+| no `GUARD_TOKEN`, nobody signing in | open — there is nothing here to leak, because nothing is set |
+| `GUARD_TOKEN` set | the token is the whole of what protects the port, so it is asked for |
+| sign-in configured | whoever is signed in, and on the members list as an admin |
+
+On a token instance a fresh tab gets a 401, so the pages draw **an explanation and
+a box to paste the token into** rather than an empty form: it lands in
+`sessionStorage` — the same place the Admin token field on Data storage puts it — so
+one paste unlocks every page in that tab and nothing is written to SQLite.
+
+That is deliberately not relaxed for "nothing is configured yet". This page shows
+`GUARD_TOKEN` in full, so opening it to unauthenticated callers on an instance that
+has one would hand over the operator token, and with it every write endpoint and
+ingest. The setup path for a fresh instance is the other way round: it starts open,
+you configure it from here, and it closes behind you.
+
+**If the token was generated here and you no longer have it**, nothing can read it
+back — it is sealed in the database with the same keeper as the SSH passwords. Start
+guard with `GUARD_CONFIG_IGNORE=1`, which runs it on the environment alone: nothing
+asks for a token, and you can read or generate a new one. The panel says so, because
+that is the one dead end this feature can create for itself.

@@ -16,7 +16,7 @@
 //     overwrite each other's untouched fields, and the server takes a partial
 //     map for exactly that reason.
 import { adminHeaders, el, qs, qsa, request, text } from "./core.js";
-import { ensure, set } from "./store.js";
+import { ensure, forget, set } from "./store.js";
 import { ask } from "./cluster.js";
 
 // What the last answer said, so a save can be diffed against it and the restart
@@ -179,22 +179,66 @@ export async function refreshConfig() {
 }
 
 function errorPanel(locked, message) {
-  const panel = el("div", "space-y-2 rounded-xl border border-border bg-card p-6");
+  const panel = el("div", "space-y-3 rounded-xl border border-border bg-card p-6");
   panel.append(el("p", "text-sm font-medium", locked ? "This page needs the admin token" : "Could not read the configuration"));
   if (!locked) {
     panel.append(el("p", "text-sm text-muted-foreground", message));
     return panel;
   }
-  const line = el("p", "text-sm text-muted-foreground");
+  const line = el("p", "max-w-2xl text-sm text-muted-foreground");
   line.append(
     text("Every value here is admin-only, and this instance has "),
     el("code", "font-mono", "GUARD_TOKEN"),
-    text(" set. Paste it into the Admin token field on "),
+    text(" set — on an instance with no token and nobody signing in, none of this asks. Paste it once and this tab remembers it: "),
+    text("it is kept in this browser tab only and never written to SQLite. It is the same field as the one on "),
     link("/settings", "Data storage"),
-    text(" — it is kept in this browser tab and never written to SQLite."),
+    text("."),
   );
   panel.append(line);
+  // The box goes here rather than only on another page, because being sent
+  // somewhere else to type a value and then having to come back is the whole of
+  // why this looked broken.
+  panel.append(tokenBox());
+  // And the trap this feature can set for itself: a token generated on this page
+  // is sealed in guard's database, so the only thing that can read it back is the
+  // page you cannot open. Naming the way out here is the difference between a
+  // minute and an afternoon.
+  const lost = el("p", "max-w-2xl text-xs text-muted-foreground");
+  lost.append(
+    text("Lost it? A token generated here is sealed in Guard's database and cannot be read back any other way. Start Guard with "),
+    el("code", "font-mono", "GUARD_CONFIG_IGNORE=1"),
+    text(" — it then runs on the environment alone, nothing asks for a token, and you can read or generate a new one from this page."),
+  );
+  panel.append(lost);
   return panel;
+}
+
+// Paste the token and get on with it. It lands in the same sessionStorage key
+// adminHeaders reads, so every page in this tab is unlocked by one paste — and it
+// dies with the tab, which is what makes it safe to type into a laptop's browser.
+function tokenBox() {
+  const form = el("form", "flex flex-wrap items-stretch gap-2");
+  const input = el("input", "cn-input h-9 min-w-0 flex-1 font-mono text-xs");
+  input.type = "password";
+  input.placeholder = "GUARD_TOKEN";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.dataset.configToken = "true";
+  const submit = el("button", "cn-button cn-button-variant-default cn-button-size-sm h-9 shrink-0", "Unlock");
+  submit.type = "submit";
+  form.append(input, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const token = input.value.trim();
+    if (!token) return;
+    sessionStorage.setItem("guard.token", token);
+    // Forget the failed read, or the store would hand the next page the error it
+    // is holding rather than asking again with the token.
+    forget("config");
+    status("Reading…");
+    refreshConfig();
+  });
+  return form;
 }
 
 function link(href, label) {
