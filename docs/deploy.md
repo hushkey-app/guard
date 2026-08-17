@@ -45,6 +45,22 @@ and `/api/openapi.json` cannot disagree about what is running. The updater asks
 the binary rather than keeping its own note, which is the note that goes stale
 the one time somebody copies a file by hand.
 
+Locally, `make` stamps `git describe --tags --dirty` instead, so a development
+build reports the commit it came from — `v0.1.0-7-g741bc0a-dirty` — and `make
+dev` passes the same thing through `GOFLAGS`. Nothing stamped at all (a plain
+`go run .`) reports `v0.0.0-dev`. The default in `internal/build` used to be the
+current release number, hardcoded, which meant every release made it staler: a
+development binary claimed an *older* version than the checkout it was built
+from, and the update card then offered an upgrade to a release the tree was
+already past. A version guard has to be told is a version somebody forgets to
+tell it.
+
+The sidebar card stays hidden for those builds (`build.IsDevelopment`). It
+compares versions by difference rather than by ordering — republishing an older
+tag is how a fleet is rolled back — and a working tree differs from every
+release by construction, so without that check the card would live permanently
+in every checkout's sidebar.
+
 ### The framework checkout
 
 `go.mod` still carries `replace github.com/mirairoad/howl-go => ../howl-go`, and
@@ -68,10 +84,10 @@ Provisioning is yours — this repository ships the units, the updater and the
 list below, and no opinion about how they get onto a machine. What a box needs:
 
 - **A `guard` user** and `/var/lib/guard` for the database, its WAL and the key.
-- **`/etc/guard` owned by root**, with `version` handed to the guard user and
-  one directory inside it, `env.d`, `0700` and guard's. That split is the whole
-  permission model: guard rewrites the version file and the credentials it
-  generates for itself, and cannot touch `guard.env` beside them.
+- **`/etc/guard` owned by root**, with `version` handed to the guard user. That
+  split is the whole permission model: guard rewrites the version file and
+  cannot touch `guard.env` beside it. Everything else guard changes about itself
+  now lives in its database — see [configuration](config.md).
 - **The units and `guard-update`**, then `systemctl enable --now`. The
   `--now` is load-bearing — `enable` alone wires a timer to `timers.target`,
   which a provisioning script reaches *after* systemd has passed, so the box
@@ -97,13 +113,13 @@ Install the units and the updater once:
 install -m 0755 deploy/guard-update /usr/local/bin/guard-update
 install -m 0644 deploy/*.service deploy/*.timer /etc/systemd/system/
 useradd --system --home /var/lib/guard --create-home guard
-install -d -o guard -g guard -m 0700 /etc/guard/env.d
 systemctl enable --now guard guard-vault guard-update.timer
 ```
 
-That one directory is guard's own; `/etc/guard` around it stays root's. It is
-where the dashboard writes the credentials it generates for itself, and a box
-without it simply gets a card that shows what is set and no buttons.
+`/etc/guard` stays root's, with only `version` handed to the guard user — that is
+the whole of what guard writes outside `/var/lib/guard`. Its own configuration
+goes in the database, so there is no env file to create and no directory to hand
+over for it.
 
 Everything after that is the timer. It checks every fifteen minutes, with a
 randomised delay so a fleet does not ask GitHub in lockstep — unauthenticated
@@ -151,49 +167,23 @@ So pinning a box is one line. The thing that replaces binaries stays outside
 guard, under its own unit, and keeps working on the day guard does not start,
 which is the day you want it most.
 
-### The credentials card
+### Rotating the two tokens
 
-`GUARD_TOKEN` and `GUARD_OTEL_SECRET` arrive from the environment, which means
-they arrive from a file on the box — so rotating one has always been: SSH in,
-`openssl rand -hex 32`, edit an env file, `systemctl restart guard`. Four steps,
-three of them a shell, and the honest outcome is that neither is ever rotated.
+`GUARD_TOKEN` and `GUARD_OTEL_SECRET` arrive from the environment, which used to
+mean: SSH in, `openssl rand -hex 32`, edit an env file, `systemctl restart guard`.
+Four steps, three of them a shell, and the honest outcome is that neither is ever
+rotated.
 
-**Settings → Credentials** is those steps. Guard writes one env file of its own,
-`/etc/guard/env.d/tokens.env`, and the unit reads it **after** `guard.env` — so
-a value generated from the dashboard wins over the same name set by hand, and
-the button cannot quietly lose to a line somebody wrote a year ago. `guard.env`
-itself stays root-owned: the OAuth credentials, the database key and everything
-else typed by hand are not guard's to rewrite.
+They are now two rows of the [configuration](config.md) page with a **Generate**
+button on them — the only rows that have one, because they are the only values
+guard itself issues. Press it, press **Restart Guard**, and the new token is what
+the process is running. The value is shown in full and copied to the clipboard:
+the collector secret exists to be pasted into a collector on another box.
 
-Both values are shown **in the clear**, and that is the one place this differs
-from every other credential guard holds. An SSH password is one guard uses on
-somebody's behalf and is never read out; these two are values a person has to
-paste into a collector on another box, and a card of dots is a card that sends
-them back to the shell it replaces. Every endpoint behind it is `admin`, reads
-included, so nobody reads this who could not already read everything.
-
-Writing is not applying. A process has its environment from the moment it
-started, so the card says **generated · restart to apply** and offers a second,
-separate press — the restart drops the dashboard it was pressed on and anything
-in flight at ingest, which should be chosen rather than stumbled into.
-
-Guard restarts by **exiting**. It runs unprivileged with `NoNewPrivileges` and
-could not call `systemctl` if it wanted to; the unit's `Restart=always` starts
-it again two seconds later, against the new file. The button therefore appears
-only under systemd — guard asks for `INVOCATION_ID`, which is the supervisor's
-own word rather than a setting somebody has to keep true. Anywhere else,
-exiting is just stopping, so the card says to restart the service by hand.
-
-| variable | default | what |
-|---|---|---|
-| `GUARD_ENV_FILE` | `/etc/guard/env.d/tokens.env` | the env file guard may write |
-
-Rotating the collector's secret and rotating the operator's token are separate
-presses, because they are separate days: one is a box being decommissioned, the
-other a laptop being lost, and doing both because one was asked for stops every
-collector in the fleet at once. **Clear** takes a name back out of the file, so
-the next start falls back to `guard.env` or to nothing — which on an instance
-where nobody signs in reopens every write endpoint, so the dashboard asks first.
+Boxes provisioned against an earlier release have a `/etc/guard/env.d/tokens.env`
+that guard used to write. It keeps working — the unit reads it, so it is simply
+the environment — and the first value generated after this release outranks it.
+The file can then be deleted.
 
 ## What the updater guarantees
 

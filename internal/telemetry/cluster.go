@@ -354,8 +354,20 @@ func (s *Store) Nodes() ([]Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	// And what each machine's environment amounts to: counts and dates, never
+	// values.
+	envStates, err := s.envStateByNode()
+	if err != nil {
+		return nil, err
+	}
+	envCounts, err := s.envCountByNode()
+	if err != nil {
+		return nil, err
+	}
 	for i := range nodes {
 		nodes[i].Actions = actions[nodes[i].ID]
+		nodes[i].Env = envStates[nodes[i].ID]
+		nodes[i].Env.Count = envCounts[nodes[i].ID]
 		if err := s.attachChecks(&nodes[i]); err != nil {
 			return nil, err
 		}
@@ -406,6 +418,16 @@ func (s *Store) Node(id int64) (Node, error) {
 		return node, err
 	}
 	node.Actions = actions[id]
+	envStates, err := s.envStateByNode()
+	if err != nil {
+		return node, err
+	}
+	envCounts, err := s.envCountByNode()
+	if err != nil {
+		return node, err
+	}
+	node.Env = envStates[id]
+	node.Env.Count = envCounts[id]
 	return node, s.attachChecks(&node)
 }
 

@@ -21,7 +21,7 @@ func TestTopologyGroupsInstancesByHost(t *testing.T) {
 	store := NewStore(1000)
 	t.Cleanup(func() { store.Close() })
 
-	store.SaveNode(Node{Name: "VPS-1", URL: "http://vps-1:8000/api/health", Enabled: true}) //nolint:errcheck
+	store.SaveNode(Node{Name: "VPS-1", URL: "http://vps-1:8000/api/health", Enabled: true})     //nolint:errcheck
 	store.SaveNode(Node{Name: "VPS-2", URL: "https://vps-2.example.com/health", Enabled: true}) //nolint:errcheck
 
 	telemetryFrom(t, store, "web", "web-1", map[string]any{"url.full": "http://vps-1:8000/api/orders"})

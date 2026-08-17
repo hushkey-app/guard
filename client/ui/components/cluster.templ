@@ -456,6 +456,46 @@ templ clusterDetail() {
 				</div>
 			</div>
 		</section>
+		<!-- The machine's environment. Not a file to declare: a box of KEY=value
+		     lines, saved here and then put on the machine — /etc/environment for
+		     logins and a systemd drop-in for services — so everything running on
+		     that box takes the same set. Two presses on purpose: saving changes
+		     nothing on the machine, injecting is what reaches into it. -->
+		<section class="space-y-3 border-t border-border pt-4">
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<h3 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Environment</h3>
+				<span data-env-state class="text-[.65rem] text-muted-foreground empty:hidden"></span>
+			</div>
+			<textarea
+				data-env-text
+				rows="8"
+				spellcheck="false"
+				autocomplete="off"
+				placeholder="DATABASE_URL=postgres://user:pass@10.0.0.5:5432/app&#10;OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.2:4318&#10;# comments and quoted values are fine"
+				class="cn-input min-h-[10rem] w-full font-mono text-xs leading-relaxed"
+			></textarea>
+			<p data-env-skipped class="text-[.65rem] text-warning empty:hidden"></p>
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<p class="max-w-lg text-xs text-muted-foreground">
+					Injecting writes <code class="font-mono">/etc/environment</code> and
+					<code class="font-mono">/etc/systemd/system.conf.d/10-guard-env.conf</code>, keeping the
+					previous copies as <code class="font-mono">.guard-bak</code>. Services already running keep
+					their old environment until they are restarted.
+				</p>
+				<div class="ml-auto flex flex-wrap items-center gap-2">
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-env-save": true},
+					}) {
+						Save
+					}
+					@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-env-inject": true}}) {
+						Inject on machine
+					}
+				</div>
+			</div>
+		</section>
 		<!-- Commands somebody keeps for this machine. Guard does not know what
 		     they do: the point is that the line you already type at 3am lives
 		     next to the machine you type it at. -->
@@ -810,6 +850,22 @@ templ ClusterOpsCard() {
 					<div data-card-instances class="flex flex-wrap items-center gap-1.5"></div>
 				</div>
 				@cloudStrip()
+				<!-- What this machine's environment is, and the press that puts it
+				     there. Editing it is under Settings → Cluster; this page is
+				     where things are done to machines. -->
+				<div data-card-env-wrap hidden class="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+					<div class="min-w-0 flex-1">
+						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Environment</p>
+						<p data-card-env-note class="truncate text-xs text-muted-foreground"></p>
+					</div>
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-env-inject": true},
+					}) {
+						Inject on machine
+					}
+				</div>
 				<div class="space-y-2 border-t border-border pt-4">
 					<div class="flex items-center justify-between gap-3">
 						<p class="text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Commands</p>

@@ -44,11 +44,11 @@ type Event struct {
 // "how you ask guard for events" rather than a struct here and a set of
 // r.URL.Query().Get calls somewhere else that drift apart.
 type Filter struct {
-	Signal   string    `query:"signal"`
-	Service  string    `query:"service"`
-	Severity string    `query:"severity"`
-	Name     string    `query:"name"`
-	Query    string    `query:"q"`
+	Signal   string `query:"signal"`
+	Service  string `query:"service"`
+	Severity string `query:"severity"`
+	Name     string `query:"name"`
+	Query    string `query:"q"`
 	// Nodes narrows to the machines these cluster nodes cover — comma-separated
 	// ids, because more than one is the useful case: "everything on the two
 	// web boxes" is a question, and "everything on exactly one" usually is not.
@@ -56,11 +56,11 @@ type Filter struct {
 	// A list of ids rather than a list of services, so that the filter follows
 	// the cluster as its membership changes. Pin a new service to a machine and
 	// a saved "node 3" filter includes it without being edited.
-	Nodes string `query:"nodes"`
-	From     time.Time `query:"from"`
-	To       time.Time `query:"to"`
-	Limit    int       `query:"limit"`
-	Offset   int       `query:"offset"`
+	Nodes  string    `query:"nodes"`
+	From   time.Time `query:"from"`
+	To     time.Time `query:"to"`
+	Limit  int       `query:"limit"`
+	Offset int       `query:"offset"`
 }
 
 type Instance struct {

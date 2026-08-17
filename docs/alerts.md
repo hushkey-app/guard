@@ -142,12 +142,17 @@ cannot be swallowed by a 401.
 
 ## Environment
 
-`GUARD_ALERT_WEBHOOK`, `GUARD_ALERT_TOKEN` and `GUARD_ALERT_HEADER` are still
-read, and are the destination used by a scheduled job that names no stored one —
-an instance configured before there were named destinations does not go quiet on
-upgrade. `GUARD_MONITOR_INTERVAL` (30s) is how often the machine rules are
-evaluated, `GUARD_VIEW_ALERT_INTERVAL` (1m) how often the watched views are run
-— slower, because each pass is somebody's compiled query against the same table
-the dashboard is reading — `GUARD_ALERT_INTERVAL` (5m) how often the staleness budgets are, and
-`GUARD_ALERT_REPEAT` (6h) how long anything firing stays quiet between
-repeats.
+There is no environment variable for a destination, and that is deliberate: a
+destination is a named row somebody added on this page, and a second invisible one
+configured by a `GUARD_ALERT_WEBHOOK` would be a second answer to "where do alerts
+go" — one that no page could show and nobody could test. A job that names no
+destination is logged and nothing else.
+
+What is left in the environment is the three cadences, because they are loops
+rather than destinations and this page has nowhere to put them:
+`GUARD_MONITOR_INTERVAL` (30s) is how often the machine rules are evaluated,
+`GUARD_VIEW_ALERT_INTERVAL` (1m) how often the watched views are run — slower,
+because each pass is somebody's compiled query against the same table the
+dashboard is reading — `GUARD_ALERT_INTERVAL` (5m) how often the staleness budgets
+are checked, and `GUARD_ALERT_REPEAT` (6h) how long anything firing stays quiet
+between repeats. All four are rows on **Settings → Configuration**.

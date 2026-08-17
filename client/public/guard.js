@@ -14,6 +14,7 @@ import { refreshStorage } from "./storage.js";
 import { refreshMembers } from "./members.js";
 import { refreshAlerts } from "./alerts.js";
 import { refreshSecrets } from "./secrets.js";
+import { refreshConfig } from "./config.js";
 import { screenCleared } from "./store.js";
 
 // Which machines the signal pages are scoped to. Shared across logs, traces and
@@ -499,9 +500,6 @@ async function saveSettings(form) {
   try {
     const value = { retention_hours: Number(qs('[data-setting="retention_hours"]', form).value), max_events: Number(qs('[data-setting="max_events"]', form).value) };
     await request("/api/settings", { method: "PUT", headers: adminHeaders(), body: JSON.stringify(value) }); status.textContent = "Saved and cleanup applied."; await refreshSummary();
-    // The token typed above is what the access card needed to be readable, and
-    // saving is when it lands in sessionStorage.
-    await refreshAccess();
   } catch (error) { status.textContent = error.message; }
 }
 
@@ -509,92 +507,6 @@ async function purgeNow() {
   const status = qs("[data-settings-status]"); status.textContent = "Cleaning…";
   try { const value = await request("/api/settings/purge", { method: "POST", headers: adminHeaders() }); status.textContent = `Cleanup complete · ${number.format(value.removed)} removed.`; await refreshSummary(); }
   catch (error) { status.textContent = error.message; }
-}
-
-// The two credentials guard is reached with — GUARD_TOKEN and
-// GUARD_OTEL_SECRET — as a card rather than an SSH session.
-//
-// Read on a mount and after a press, never on the tick: nothing moves here
-// except when somebody presses something, and the value is a text field
-// somebody is halfway through selecting.
-const accessEnvNames = { token: "GUARD_TOKEN", secret: "GUARD_OTEL_SECRET" };
-let accessState = null;
-
-function accessStatus(message) { const node = qs("[data-access-status]"); if (node) node.textContent = message; }
-
-async function refreshAccess() {
-  if (!qs("[data-access]")) return;
-  try { renderAccess(await request("/api/access", { headers: adminHeaders() })); }
-  catch (error) {
-    accessState = null;
-    // 401 here is the ordinary state of a fresh tab on a token instance: the
-    // admin token above has not been typed yet. Saying which press fixes it
-    // beats repeating "unauthorized".
-    accessStatus(error.status === 401 || error.status === 403 ? "Enter the admin token above to read these." : error.message);
-  }
-}
-
-function renderAccess(state) {
-  accessState = state;
-  for (const name of Object.keys(accessEnvNames)) {
-    const field = qs(`[data-access-value="${name}"]`);
-    if (field) field.value = state[name] || "";
-    const pending = qs(`[data-access-pending="${name}"]`);
-    if (pending) pending.hidden = !state[`${name}_pending`];
-    // A box where guard cannot write its env file can still show what is set;
-    // it just cannot change it, so the two buttons that would fail are gone
-    // rather than present and refusing.
-    for (const action of ["generate", "clear"]) {
-      const button = qs(`[data-access-${action}="${name}"]`);
-      if (button) button.hidden = !state.managed;
-    }
-  }
-  const pendingAny = state.token_pending || state.secret_pending;
-  const restart = qs("[data-access-restart]");
-  if (restart) restart.hidden = !(pendingAny && state.restartable);
-  if (!state.managed) accessStatus(`Read-only here — Guard cannot write ${state.path}. Set these in the environment.`);
-  else if (pendingAny && state.restartable) accessStatus("Written. Guard is still running the old value until it restarts.");
-  else if (pendingAny) accessStatus(`Written to ${state.path}. Restart Guard by hand to use it.`);
-  else accessStatus(`In force, from ${state.path}.`);
-}
-
-async function changeAccess(name, action) {
-  const envName = accessEnvNames[name];
-  const held = accessState?.[name];
-  if (action === "generate" && held && !confirm(`Replace ${envName}? Everything presenting the current one stops working when Guard restarts.`)) return;
-  if (action === "clear" && !confirm(`Remove ${envName} from Guard's env file? Whatever else sets it — or nothing at all — takes over at the next restart.`)) return;
-  accessStatus(action === "generate" ? "Generating…" : "Clearing…");
-  try { renderAccess(await request(action === "generate" ? "/api/access" : "/api/access/clear", { method: "POST", headers: adminHeaders(), body: JSON.stringify({ name: envName }) })); }
-  catch (error) { accessStatus(error.message); }
-}
-
-// The restart is guard exiting and systemd starting it again, so the page's
-// own connection is what goes away. It polls until something answers, then
-// reloads — and carries the new token over first, because the tab was
-// authenticating with the one that has just been replaced.
-async function restartGuard() {
-  if (!confirm("Restart Guard now? The dashboard reconnects in a few seconds; telemetry in flight is lost.")) return;
-  const wanted = accessState?.token || "";
-  const usingToken = Boolean(sessionStorage.getItem("guard.token"));
-  accessStatus("Restarting…");
-  try { await request("/api/access/restart", { method: "POST", headers: adminHeaders() }); }
-  catch (error) { accessStatus(error.message); return; }
-  // Long enough for the old process to be gone: it answers first and exits
-  // behind the response, so polling immediately would find the one that is
-  // about to stop and call it a success.
-  await new Promise((done) => setTimeout(done, 2000));
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try {
-      const response = await fetch("/healthz", { cache: "no-store" });
-      if (response.ok) {
-        if (usingToken && wanted) sessionStorage.setItem("guard.token", wanted);
-        location.reload();
-        return;
-      }
-    } catch { /* still down — that is the expected answer for a second or two */ }
-    await new Promise((done) => setTimeout(done, 750));
-  }
-  accessStatus("Guard has not come back yet. Check the service on the box.");
 }
 
 async function refreshPage({ facets = false } = {}) {
@@ -610,10 +522,9 @@ async function refreshPage({ facets = false } = {}) {
   // than when telemetry arrives — so it is read on a mount and after a change,
   // not on the tick.
   if (facets && qs("[data-member-rows]")) work.push(refreshMembers());
-  // Guard's own env file: it changes when somebody presses a button on this
-  // card, and reading it touches the filesystem — so a mount and a press, not
-  // the tick.
-  if (facets && qs("[data-access]")) work.push(refreshAccess());
+  // Guard's own configuration: it changes when somebody saves the form, never on
+  // its own — so a mount and a press, not the tick.
+  if (facets && qs("[data-config-groups]")) work.push(refreshConfig());
   // The alert rules and their destinations: guard's own SQLite, but read on a
   // mount and after a change rather than on the tick. Nothing here moves
   // except when somebody edits it — and a row being redrawn under a cursor
@@ -802,18 +713,7 @@ document.addEventListener("click", (event) => {
   }
   const row = event.target.closest("[data-event-id]"); if (row) { openDetail(row.dataset.eventId).catch(() => {}); return; }
   if (event.target.closest("[data-refresh-now]")) { refreshPage({ facets: true }); return; }
-  if (event.target.closest("[data-purge-now]")) { purgeNow(); return; }
-  const copy = event.target.closest("[data-access-copy]");
-  if (copy) {
-    const field = qs(`[data-access-value="${copy.dataset.accessCopy}"]`);
-    if (field?.value) navigator.clipboard.writeText(field.value).then(() => accessStatus("Copied."), () => accessStatus("Could not copy — select the field instead."));
-    return;
-  }
-  const generate = event.target.closest("[data-access-generate]");
-  if (generate) { changeAccess(generate.dataset.accessGenerate, "generate"); return; }
-  const clear = event.target.closest("[data-access-clear]");
-  if (clear) { changeAccess(clear.dataset.accessClear, "clear"); return; }
-  if (event.target.closest("[data-access-restart]")) restartGuard();
+  if (event.target.closest("[data-purge-now]")) purgeNow();
 });
 
 document.addEventListener("keydown", (event) => {

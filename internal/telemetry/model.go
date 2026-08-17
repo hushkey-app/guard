@@ -237,6 +237,15 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	if err := migrateVault(s.db); err != nil {
 		return err
 	}
+	// Guard's own configuration. Read once at startup, before anything asks the
+	// environment for anything — see internal/config.
+	if err := migrateConfig(s.db); err != nil {
+		return err
+	}
+	// The env files each machine keeps: paths, never contents.
+	if err := migrateClusterEnv(s.db); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO settings(id, retention_hours, max_events) VALUES(1, ?, ?)`, defaults.RetentionHours, defaults.MaxEvents); err != nil {
 		return fmt.Errorf("initialize settings: %w", err)
 	}

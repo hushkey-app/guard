@@ -127,7 +127,10 @@ func TestIndexedAttributeMergesSemconvSpellings(t *testing.T) {
 // so p50 is 120 and p99 is 240 — numbers that are wrong under interpolation.
 func TestPercentileIsExact(t *testing.T) {
 	store, _ := seed(t)
-	for _, tc := range []struct{ agg string; want float64 }{{"p50", 120}, {"p99", 240}, {"min", 60}, {"max", 240}} {
+	for _, tc := range []struct {
+		agg  string
+		want float64
+	}{{"p50", 120}, {"p99", 240}, {"min", 60}, {"max", 240}} {
 		frame := run(t, store, "bar", ViewQuery{
 			Signal: "traces", Range: "24h", GroupBy: "attr:http.route", Agg: tc.agg, Value: "duration_ms",
 		})

@@ -147,4 +147,3 @@ func TestSQLiteBatchesConcurrentWriters(t *testing.T) {
 		t.Fatalf("batched summary = %#v, want %d events", summary, writers)
 	}
 }
-

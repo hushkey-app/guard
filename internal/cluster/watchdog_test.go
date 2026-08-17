@@ -61,13 +61,14 @@ func (r *recordingSender) Send(_ context.Context, _ notify.Destination, event no
 	return nil
 }
 
-// somewhere is a configured fallback destination, so the watch has a place to
-// deliver to in these tests.
-var somewhere = notify.Destination{Name: "test", URL: "https://hooks.example.com/test"}
+// A command names the destination its alert goes to. There is no instance-wide
+// fallback: the destinations are the named ones somebody added on
+// /settings/alerts, and a command that names none is logged and nothing else.
+const opsWebhook = 3
 
 func staleAction() model.NodeAction {
 	return model.NodeAction{
-		ID: 1, NodeID: 7, Name: "Dump to R2", Schedule: "0 */6 * * *",
+		ID: 1, NodeID: 7, Name: "Dump to R2", Schedule: "0 */6 * * *", WebhookID: opsWebhook,
 		StaleAfterSeconds: int((7 * time.Hour).Seconds()),
 		// Ran five minutes ago and failed; last worked nine hours ago. This is
 		// the shape the watch exists for — the last run is fine, the last
@@ -81,7 +82,7 @@ func staleAction() model.NodeAction {
 func TestWatchdogReportsAJobThatHasNotSucceeded(t *testing.T) {
 	store := &fakeWatchStore{actions: []model.NodeAction{staleAction()}}
 	sender := &recordingSender{}
-	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
+	w := &Watchdog{Store: store, Sender: sender, Log: quietLogger()}
 
 	raised := w.Round(context.Background())
 	if len(raised) != 1 || len(sender.sent) != 1 {
@@ -107,7 +108,7 @@ func TestWatchdogStaysQuietInsideTheRepeatWindow(t *testing.T) {
 	action.AlertedAt = time.Now().Add(-time.Hour)
 	store := &fakeWatchStore{actions: []model.NodeAction{action}}
 	sender := &recordingSender{}
-	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Repeat: 6 * time.Hour, Log: quietLogger()}
+	w := &Watchdog{Store: store, Sender: sender, Repeat: 6 * time.Hour, Log: quietLogger()}
 
 	if raised := w.Round(context.Background()); len(raised) != 0 {
 		t.Fatal("a job reported an hour ago should not be reported again yet")
@@ -126,7 +127,7 @@ func TestWatchdogLeavesAHealthyJobAlone(t *testing.T) {
 	action.LastOKAt = time.Now().Add(-time.Hour)
 	store := &fakeWatchStore{actions: []model.NodeAction{action}}
 	sender := &recordingSender{}
-	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
+	w := &Watchdog{Store: store, Sender: sender, Log: quietLogger()}
 
 	if raised := w.Round(context.Background()); len(raised) != 0 {
 		t.Fatalf("raised %d alerts about a job that worked an hour ago", len(raised))
@@ -139,7 +140,7 @@ func TestWatchdogLeavesAHealthyJobAlone(t *testing.T) {
 func TestAFailedDeliveryIsRetriedNextPass(t *testing.T) {
 	store := &fakeWatchStore{actions: []model.NodeAction{staleAction()}}
 	sender := &recordingSender{err: errors.New("webhook down")}
-	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
+	w := &Watchdog{Store: store, Sender: sender, Log: quietLogger()}
 
 	w.Round(context.Background())
 	if len(store.alerted) != 0 {
@@ -154,7 +155,7 @@ func TestWatchdogWatchesJobsWithNoScheduleToo(t *testing.T) {
 	action.Schedule = ""
 	store := &fakeWatchStore{actions: []model.NodeAction{action}}
 	sender := &recordingSender{}
-	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
+	w := &Watchdog{Store: store, Sender: sender, Log: quietLogger()}
 
 	if raised := w.Round(context.Background()); len(raised) != 1 {
 		t.Fatal("an unscheduled job with a threshold is still watched")
@@ -167,7 +168,7 @@ func TestNeverSucceededIsNullRatherThanTheYearOne(t *testing.T) {
 	action.CreatedAt = time.Now().Add(-9 * time.Hour)
 	store := &fakeWatchStore{actions: []model.NodeAction{action}}
 	sender := &recordingSender{}
-	w := &Watchdog{Store: store, Sender: sender, Fallback: somewhere, Log: quietLogger()}
+	w := &Watchdog{Store: store, Sender: sender, Log: quietLogger()}
 
 	raised := w.Round(context.Background())
 	if len(raised) != 1 {
@@ -185,5 +186,32 @@ func TestNeverSucceededIsNullRatherThanTheYearOne(t *testing.T) {
 	}
 	if payload["last_ok_at"] != nil {
 		t.Fatalf("last_ok_at = %v, want null", payload["last_ok_at"])
+	}
+}
+
+// A command with no destination is logged and nothing else — and it counts as
+// told, or every pass would re-log it. There used to be a GUARD_ALERT_WEBHOOK
+// behind this; the named destinations on /settings/alerts are the whole answer
+// now, and a second invisible one configured by an environment variable was a
+// second answer to "where do alerts go".
+func TestACommandWithNoDestinationIsLoggedAndNotRepeated(t *testing.T) {
+	action := staleAction()
+	action.WebhookID = 0
+	store := &fakeWatchStore{actions: []model.NodeAction{action}}
+	sender := &recordingSender{}
+	w := &Watchdog{Store: store, Sender: sender, Log: quietLogger()}
+
+	raised := w.Round(context.Background())
+	if len(raised) != 1 {
+		t.Fatalf("raised %d, want the event to have been raised", len(raised))
+	}
+	if len(sender.sent) != 0 {
+		t.Fatalf("sent %d, want nothing sent anywhere", len(sender.sent))
+	}
+	if _, ok := store.alerted[action.ID]; !ok {
+		t.Fatal("it must be marked as told, or the next pass logs it again")
+	}
+	if len(store.delivered) != 0 {
+		t.Fatal("there was no delivery to record")
 	}
 }

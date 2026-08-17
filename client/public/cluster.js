@@ -165,7 +165,7 @@ function renderTopology(topology) {
 
     const icon = qs("[data-node-icon]", section);
     if (node.has_icon) {
-      icon.src = `/api/cluster/${node.id}/icon`;
+      icon.src = `/api/cluster/icon/${node.id}`;
       icon.hidden = false;
       icon.onerror = () => { icon.hidden = true; };
     }
@@ -356,7 +356,7 @@ function row(node) {
 
   const icon = qs("[data-node-icon]", item);
   if (icon && node.has_icon) {
-    icon.src = `/api/cluster/${node.id}/icon`;
+    icon.src = `/api/cluster/icon/${node.id}`;
     icon.hidden = false;
     // The bytes were an image when guard stored them; a broken one now means
     // the node changed under us, and an alt box is worse than the dot alone.
@@ -451,6 +451,7 @@ function detail(item, node) {
 
   fillTagEditor(panel, node);
   fillActions(panel, node);
+  fillEnv(panel, node);
   // Only for an open row: the picker asks the provider what the account runs,
   // and a closed row is not a question anybody asked.
   if (open) fillCloudDetail(panel, node).catch(() => {});
@@ -803,7 +804,7 @@ function cardFor(template, node) {
 
   const icon = qs("[data-node-icon]", item);
   if (node.has_icon) {
-    icon.src = `/api/cluster/${node.id}/icon`;
+    icon.src = `/api/cluster/icon/${node.id}`;
     icon.hidden = false;
     icon.onerror = () => { icon.hidden = true; };
   }
@@ -871,6 +872,7 @@ function cardFor(template, node) {
   }));
   qs("[data-card-actions-empty]", item).hidden = actions.length > 0;
 
+  fillCardEnv(item, node);
   fillCardInstances(item, node);
   fillHost(item, node);
   fillCloudCard(item, node);
@@ -1588,14 +1590,6 @@ function handlePanel(event, panel) {
     return;
   }
 
-  const remove = event.target.closest("[data-action-remove]");
-  if (remove) {
-    remove.closest("[data-action]").remove();
-    dirty.add(id);
-    say(panel, "Removed — press Save actions to keep it that way.");
-    return;
-  }
-
   const runner = event.target.closest("[data-action-run]");
   if (runner) {
     const row = runner.closest("[data-action]");
@@ -1665,3 +1659,158 @@ function reportOn(node) {
     else node.title = failure.message;
   };
 }
+
+// A machine's environment: a box of KEY=value lines, saved here and injected onto
+// the machine.
+//
+// Two presses, and the difference between them is the whole feature. **Save**
+// stores the variables in guard and touches nothing — it is somebody's intent,
+// typed once, and a locked machine can still be edited. **Inject** writes them to
+// the box: /etc/environment and a systemd drop-in, so everything on that machine
+// that takes an environment takes the same one. That press is the one the lock
+// refuses, and the one that asks first.
+//
+// The text is parsed on the server with the same dialect the vault's .env import
+// uses, so nothing here has to know what a quoted multi-line value looks like.
+function fillEnv(panel, node) {
+  const box = qs("[data-env-text]", panel);
+  if (!box) return;
+  const state = node.env || {};
+  const line = qs("[data-env-state]", panel);
+  if (line) {
+    const saved = realStamp(state.saved_at);
+    const injected = realStamp(state.injected_at);
+    line.textContent = !state.count
+      ? "nothing saved yet"
+      : [
+        `${state.count} ${state.count === 1 ? "variable" : "variables"}`,
+        saved ? `saved ${relativeTime(saved)}` : "",
+        // The one thing this line exists to say: what is stored is not what the
+        // machine has.
+        injected ? `on the machine ${relativeTime(injected)}` : "never injected",
+      ].filter(Boolean).join(" · ");
+    line.className = envPending(state)
+      ? "text-[.65rem] text-warning empty:hidden"
+      : "text-[.65rem] text-muted-foreground empty:hidden";
+  }
+  // Loaded once per open row and then left alone: the values are not in the
+  // machine list, and refetching under somebody typing would replace the box
+  // mid-word.
+  if (box.dataset.loaded === String(node.id)) return;
+  box.dataset.loaded = String(node.id);
+  box.value = "";
+  request(`/api/cluster/env?node_id=${node.id}`, { headers: adminHeaders() })
+    .then((answer) => {
+      if (box.dataset.dirty === "true") return;
+      // The server renders it: a value with a comment marker or a quote in it
+      // has to come back the way a save will read it, and that is the same
+      // function that writes the file.
+      box.value = answer.text || "";
+    })
+    .catch((failure) => { qs("[data-env-skipped]", panel).textContent = failure.message; });
+  const inject = qs("[data-env-inject]", panel);
+  if (inject) inject.hidden = !!node.locked;
+}
+
+function envPending(state) {
+  if (!state.count) return false;
+  const injected = realStamp(state.injected_at);
+  const saved = realStamp(state.saved_at);
+  return !injected || (saved && injected < saved);
+}
+
+async function saveEnv(panel) {
+  const item = panel.closest("[data-node-id]");
+  const id = Number(item.dataset.nodeId);
+  const box = qs("[data-env-text]", panel);
+  const skipped = qs("[data-env-skipped]", panel);
+  dirty.delete(id);
+  box.dataset.dirty = "false";
+  const answer = await request("/api/cluster/env", {
+    method: "PUT",
+    headers: adminHeaders(),
+    body: JSON.stringify({ node_id: id, text: box.value }),
+  });
+  // Redrawn from what was stored, not from what was typed: a line guard could
+  // not read is named here rather than silently dropped, and the box then shows
+  // exactly what the machine will be given.
+  box.value = answer.text || "";
+  skipped.textContent = (answer.skipped || []).length
+    ? `Not saved: ${answer.skipped.map((line) => `line ${line.line} (${line.reason})`).join(", ")}`
+    : "";
+  const node = nodes.find((candidate) => candidate.id === id);
+  if (node) node.env = answer.state;
+  say(panel, `Saved ${answer.vars.length} ${answer.vars.length === 1 ? "variable" : "variables"} — press Inject to put them on the machine.`);
+  forget("cluster");
+}
+
+// Put them on the machine. The request carries a node id and nothing else: the
+// variables come from the database and the paths are fixed in the server, so there
+// is no shape of this call that writes chosen content to a chosen place.
+async function injectEnv(panel, node) {
+  const count = node.env?.count || 0;
+  const yes = await ask({
+    title: `Inject the environment on ${node.name}?`,
+    body: "Writes /etc/environment and a systemd drop-in, keeping the previous copies as .guard-bak. Services already running keep their old environment until they are restarted.",
+    detail: `${count} ${count === 1 ? "variable" : "variables"}`,
+    confirm: "Inject it",
+  });
+  if (!yes) return;
+  say(panel, "Injecting…");
+  const answer = await request("/api/cluster/env/inject", {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ node_id: node.id }),
+  });
+  node.env = answer.state;
+  show(panel, node.id, `Injected ${answer.count} ${answer.count === 1 ? "variable" : "variables"} — restart a service to pick them up`, answer.output || "");
+  forget("cluster");
+}
+
+// One line on the operational card: what the machine's environment is, and the
+// same press. Editing it stays in settings, where things are declared.
+function fillCardEnv(item, node) {
+  const wrap = qs("[data-card-env-wrap]", item);
+  if (!wrap) return;
+  const state = node.env || {};
+  wrap.hidden = !state.count;
+  if (!state.count) return;
+  const note = qs("[data-card-env-note]", item);
+  const injected = realStamp(state.injected_at);
+  note.textContent = [
+    `${state.count} ${state.count === 1 ? "variable" : "variables"}`,
+    injected ? `on the machine ${relativeTime(injected)}` : "never injected",
+    envPending(state) ? "· saved since" : "",
+  ].filter(Boolean).join(" · ");
+  note.className = envPending(state) ? "truncate text-xs text-warning" : "truncate text-xs text-muted-foreground";
+  const inject = qs("[data-env-inject]", item);
+  if (inject) {
+    // A machine with no login has nothing to write with, and a locked one takes
+    // nothing: the button says why rather than failing on the press.
+    const why = node.locked ? "This machine is locked" : !node.has_password || !node.ssh_address ? "This machine has no stored SSH login" : "";
+    inject.disabled = !!why;
+    inject.title = why;
+  }
+}
+
+document.addEventListener("input", (event) => {
+  const box = event.target.closest("[data-env-text]");
+  if (!box) return;
+  box.dataset.dirty = "true";
+  dirty.add(Number(box.closest("[data-node-id]").dataset.nodeId));
+});
+
+document.addEventListener("click", (event) => {
+  const save = event.target.closest("[data-env-save]");
+  if (save) {
+    const panel = save.closest("[data-node-id]");
+    saveEnv(panel).catch((failure) => say(panel, failure.message));
+    return;
+  }
+  const inject = event.target.closest("[data-env-inject]");
+  if (inject && !inject.disabled) {
+    const item = inject.closest("[data-node-id]");
+    const node = nodes.find((candidate) => String(candidate.id) === item.dataset.nodeId);
+    if (node) injectEnv(item, node).catch((failure) => say(item, failure.message));
+  }
+});

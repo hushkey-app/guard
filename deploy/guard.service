@@ -10,11 +10,10 @@ Wants=network-online.target
 # to the guard user, which is why the file is root-owned 0600 and readable by
 # nothing else, even though /etc/guard is otherwise the guard user's to write.
 EnvironmentFile=-/etc/guard/guard.env
-# The one env file guard itself may write: GUARD_TOKEN and GUARD_OTEL_SECRET,
-# generated from Settings → Credentials. Read after guard.env, so a value
-# rotated from the dashboard wins over the same name set by hand — a button
-# that silently lost to a line written a year ago is worse than no button.
-# Owned by the guard user; guard.env beside it stays root's.
+# Kept for boxes provisioned before guard's configuration moved into its
+# database. Guard no longer writes this file; a value it once generated here is
+# now simply part of the environment, and anything saved from Settings →
+# Configuration outranks it at the next start.
 EnvironmentFile=-/etc/guard/env.d/tokens.env
 ExecStart=/usr/local/bin/guard -db /var/lib/guard/guard.db
 User=guard
@@ -22,9 +21,10 @@ Restart=always
 RestartSec=2
 # It writes the database, its WAL and the key file beside them — and
 # /etc/guard/version, which is the one thing the dashboard's Update button
-# does. Installing is guard-update's job, running as root on a timer; guard
-# only writes down which version is wanted, which is why this is the whole
-# extent of what it may touch outside its own data directory.
+# does. Guard's own settings live in the database, not in a file here.
+# Installing is guard-update's job, running as root on a timer; guard only
+# writes down which version is wanted, which is why this is the whole extent of
+# what it may touch outside its own data directory.
 ProtectSystem=strict
 ReadWritePaths=/var/lib/guard /etc/guard
 NoNewPrivileges=yes

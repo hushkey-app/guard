@@ -1,0 +1,179 @@
+# Configuration
+
+Guard has always been configured the way a container is: `GUARD_*` in the
+environment, a flag of the same name to override it. That is right for the
+process and wrong for the person — every change is an SSH session, a file
+somebody has to remember the name of, and a restart typed by hand. The value
+that ends up in that file is usually copied out of a document listing the names,
+so guard may as well *be* that document.
+
+**Settings → Configuration** is every variable guard reads, as a form. The
+catalogue is `internal/config`'s `Entries`; the page is drawn from what
+`GET /api/config` answers, so adding a variable to guard adds a field to the
+page and nothing else — there is no template to edit and no endpoint to write.
+
+## The one rule
+
+**Stored values are applied to the process environment at startup, and nothing
+else changes.**
+
+Everything above `internal/config` still reads `os.Getenv` or takes a flag,
+sign-in still builds itself from `auth.FromEnv`, and a deployment that sets
+everything in its unit file behaves exactly as it did before. There is no second
+configuration system running beside the environment — there is one, and this
+fills it in. Which is why the page is honest about needing a restart: a process
+has its environment from the moment it starts, and only a start reads one.
+
+## Precedence
+
+```
+an explicit flag  >  a stored value  >  the environment  >  the default
+```
+
+- **A flag typed on the command line wins**, because it is the escape hatch —
+  the thing to reach for when the dashboard has stored something that will not
+  start. `main` re-derives only the flags nobody passed (`flag.Visit` is how it
+  knows the difference).
+- **A stored value outranks the environment**, because otherwise the button
+  would silently lose to a line in a unit file, which is worse than not having
+  the button. The page says where each value came from — `stored here`, `from
+  the environment`, `default` — so this is never a guess.
+- **Clearing a field is a removal, not an empty value.** The row goes away and
+  the environment is the fallback again. A stored empty string would shadow a
+  name set in the unit file with nothing at all, which is how somebody turns
+  sign-in off by resetting a field.
+
+## What cannot be stored
+
+`GUARD_DB_PATH` and `GUARD_SECRET_KEY` are what guard needs to open and decrypt
+the database, so they cannot live inside it. Both are shown read-only — "where
+is this configured" is a question the page should still answer — and the API
+refuses them in words if asked anyway.
+
+`GUARD_SECRET_KEY` is further **never sent to a browser at all**, unlike the two
+tokens, which are the point of the Generate button below. The tokens are values
+somebody pastes into a collector; the key is what makes every sealed row and
+every backup readable, and it cannot be rotated without re-sealing all of them.
+The page reports only that one is set.
+
+Retention and the event cap are deliberately absent: they are rows in the
+`settings` table, applied the moment they are saved rather than at the next
+start, and they stay on the **Data storage** page. A second place to type them
+would be a second answer.
+
+## Saving
+
+- **All or nothing.** A value that will not parse, a name guard does not know,
+  or a provider's credentials left half-filled refuses the whole save, and
+  nothing is written. Guard treats half a sign-in configuration as fatal at
+  startup on purpose, so the moment to say so is while somebody is still looking
+  at the field — not from a log file at the next restart, with the dashboard
+  down.
+- **Only what changed is sent.** Two people with the page open should not
+  overwrite each other's untouched fields.
+- **A field somebody is editing is never overwritten.** The rows are built once
+  and patched afterwards; a row that has been typed in keeps what it holds.
+- **Values are sealed at rest**, with the same keeper the SSH passwords and the
+  stored secrets use. Half of this catalogue is a credential, and the database
+  file gets copied to laptops and attached to bug reports.
+
+## Restarting
+
+Guard restarts by **exiting**. It runs unprivileged with `NoNewPrivileges` and
+could not call `systemctl` if it wanted to; the unit's `Restart=always` starts it
+again two seconds later, against the new environment. The button therefore
+appears only under systemd — guard asks for `INVOCATION_ID`, which is the
+supervisor's own word rather than a setting somebody has to keep true. Anywhere
+else, exiting is just stopping, so the page says to restart the service by hand.
+
+A row that has been saved but not started into says **saved · restart to
+apply**, and the page says the same thing in one line at the bottom. Claiming a
+rotation that has not happened is the one thing this page must not do: the
+collector that matters is still presenting the old secret.
+
+`guard-vault` reads the two settings that are its own (`GUARD_VAULT_ADDR`,
+`GUARD_VAULT_TOUCH`) from the same table, the same way. It is a read like every
+other one it makes — the vault's store has no method that changes a setting —
+and it means the form is not quietly lying about half its rows. The two
+processes are restarted separately, as always.
+
+## In development: a `.env`
+
+On a box the environment comes from the unit file. On a laptop there is no unit
+file, and what a checkout already has is a `.env` — so **a development build reads
+one at startup and writes it back when something is saved.** `make dev` runs in the
+repo root, so the file lands beside the code, and everything else that reads a
+`.env` — docker compose, a test script, direnv — sees the same values.
+
+```
+.env            read at startup, rewritten on every save
+GUARD_DOTENV    name a different file, or set 0 to turn it off
+```
+
+Two rules, both conventional:
+
+- **A real environment variable wins over the file**, so `GUARD_DB_PATH=x make dev`
+  means what it says. Set-but-empty counts as unset, because that is how every
+  other reader in guard treats it.
+- **Lines guard does not own are left alone.** The guard variables are rewritten as
+  one block under a header; a comment, a blank line, somebody's own `STRIPE_KEY`
+  pass through untouched. Losing those to a settings save would be worse than not
+  having the file.
+
+The file is the *environment* layer, so a stored value still outranks it and the
+page still says which is which — edit either. It is written 0600, because it holds
+the operator token, and it is **off for a released build**: a binary on a server
+that quietly wrote a `.env` into whatever directory systemd started it in would be
+a surprise, and the box has a better place for all of this.
+
+## When a stored value will not start
+
+`GUARD_CONFIG_IGNORE=1` starts guard from the environment alone. It is the way
+back from a value that stops guard from starting, which this page has to have an
+answer for, given that the way you would otherwise fix it is the dashboard that
+is not running:
+
+```bash
+sudo systemctl edit guard          # [Service] Environment=GUARD_CONFIG_IGNORE=1
+sudo systemctl restart guard
+```
+
+Guard then runs on the unit file's values, the page says so in a banner, and
+saving still works — nothing saved is used until the variable is removed. Fix
+the field, drop the override, restart.
+
+A single stored value that will not decrypt — the key changed, or the file came
+from another instance — is skipped rather than fatal, for the same reason: a
+guard that refused to start over one unreadable timeout is a guard that cannot
+be fixed from the dashboard that stores it.
+
+## Generating the two tokens
+
+`GUARD_TOKEN` and `GUARD_OTEL_SECRET` are the only rows with a **Generate**
+button, and that is a rule about what they are rather than a gap. Both are opaque
+bearer tokens whose only property is being unguessable, so a random 32 bytes is
+strictly better than something somebody typed — and the alternative is reaching
+for a shell to run `openssl rand -hex 32`, which is the last step of this page
+that still needed one.
+
+Nothing else qualifies. An OAuth client secret is issued by Google; an alert token
+is issued by whoever receives the alert; `GUARD_SECRET_KEY` *could* be minted and
+must never be minted from a button, because changing it orphans every sealed row
+in the database. A Generate beside any of those would produce a value the far end
+has never heard of.
+
+Pressing it stores the value like any other save — validated, logged, pending a
+restart — and puts it on the clipboard, because the reason to generate one of
+these is to paste it somewhere. Replacing a value that is already set asks first:
+everything presenting the old one stops working at the restart. The two are
+separate presses, because they are separate days — one is a laptop being lost, the
+other a collector box being decommissioned, and rotating both because one was
+asked for stops every exporter at once.
+
+## Reading is admin
+
+Every endpoint here is `admin`, reads included, and the values come back in the
+clear. The alternative is forty masked fields nobody can check against the
+provider's console they are copying from. On an instance with no token and no
+sign-in there is nothing here to leak, because there is nothing set — and once
+either is configured, whoever can read this already holds it.

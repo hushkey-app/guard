@@ -91,7 +91,7 @@ templ Page() {
 									Attributes:  templ.Attributes{"data-setting": "token", "autocomplete": "off"},
 								})
 								@field.Description() {
-									Kept only in this browser tab; it is never written to SQLite.
+									Kept only in this browser tab; it is never written to SQLite. Generate or rotate the token itself under <a href="/settings/config" class="underline">Configuration</a>.
 								}
 							}
 							<div class="flex flex-wrap items-center gap-3 border-t border-border pt-5">
@@ -106,29 +106,6 @@ templ Page() {
 						</form>
 					}
 				}
-				<div>
-					<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Access</p>
-					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Credentials</h2>
-					<p class="mt-2 text-muted-foreground">The two tokens Guard is reached with. Generating one writes it to Guard's own env file; it is in force after a restart.</p>
-				</div>
-				@card.Card() {
-					@card.Content() {
-						<div data-access class="space-y-6">
-							@credential("token", "Operator token", "GUARD_TOKEN") {
-								Opens every write endpoint in the API as well as ingest. This is yours — do not put it on a collector.
-							}
-							@credential("secret", "Collector secret", "GUARD_OTEL_SECRET") {
-								Opens <code class="font-mono">/v1/logs</code>, <code class="font-mono">/v1/traces</code> and <code class="font-mono">/v1/metrics</code> and nothing else. This is the one to hand to a collector on somebody else's box.
-							}
-							<div class="flex flex-wrap items-center gap-3 border-t border-border pt-5">
-								@button.Button(button.Props{Variant: button.VariantOutline, Attributes: templ.Attributes{"data-access-restart": true, "type": "button", "hidden": true}}) {
-									Restart Guard
-								}
-								<span data-access-status class="text-sm text-muted-foreground">Loading…</span>
-							</div>
-						</div>
-					}
-				}
 				@alert.Alert() {
 					@alert.Title() {
 						Safe Docker path
@@ -140,46 +117,6 @@ templ Page() {
 			</div>
 		</div>
 	</section>
-}
-
-// credential is one row of the access card: the value in the clear, and the
-// three things that can be done to it.
-//
-// In the clear because the whole point of the row is that the value gets
-// pasted into a collector's env file on another box — a row of dots is a row
-// that sends somebody back to the shell this replaces. The endpoints behind it
-// are admin-only, so nobody reads this who could not already read everything.
-templ credential(name, label, envName string) {
-	@field.Field() {
-		@field.Label(field.LabelProps{For: "access-" + name}) {
-			{ label }
-			<span class="font-mono text-xs font-normal text-muted-foreground">{ envName }</span>
-			<span data-access-pending={ name } hidden class="rounded-full border border-border px-2 py-0.5 text-[11px] font-normal text-warning">
-				generated · restart to apply
-			</span>
-		}
-		<div class="flex flex-wrap items-stretch gap-2">
-			@input.Input(input.Props{
-				ID:          "access-" + name,
-				ReadOnly:    true,
-				Class:       "min-w-[16rem] flex-1 font-mono",
-				Placeholder: "not set",
-				Attributes:  templ.Attributes{"data-access-value": name, "autocomplete": "off", "spellcheck": "false"},
-			})
-			@button.Button(button.Props{Variant: button.VariantOutline, Attributes: templ.Attributes{"data-access-copy": name, "type": "button"}}) {
-				Copy
-			}
-			@button.Button(button.Props{Variant: button.VariantOutline, Attributes: templ.Attributes{"data-access-generate": name, "type": "button"}}) {
-				Generate
-			}
-			@button.Button(button.Props{Variant: button.VariantGhost, Attributes: templ.Attributes{"data-access-clear": name, "type": "button"}}) {
-				Clear
-			}
-		</div>
-		@field.Description() {
-			{ children... }
-		}
-	}
 }
 
 func Mount()   { lifecycle.Mount("settings") }
