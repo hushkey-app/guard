@@ -1,264 +1,179 @@
 #cloud-config
 #
-# The other end of the wire: a valkey box that sends guard metrics AND logs.
+# A valkey box that reports to guard: metrics, host metrics, logs, and a health
+# endpoint the cluster page can dial.
 #
-# redis_exporter is a Prometheus exporter and nothing else — it answers /metrics
-# and has no idea what a log record is. So a box running it sends guard exactly
-# one signal, and the missing two are not a guard limitation and not a plugin
-# setting: nothing on the box was ever reading the log. This file is the second
-# reader.
+# WHAT DOES NOT ARRIVE, AND CANNOT. Traces. A datastore emits none, ever — redis
+# spans are produced by the CLIENT library in your application, carry
+# db.system=redis, and arrive from that service. No receiver here would change
+# it, and there is deliberately no traces pipeline below: one with nothing
+# feeding it is a lie on the page.
 #
-#   metrics   valkey → redis_exporter (loopback :9121) → prometheus receiver
-#   logs      valkey → journald or its logfile → journald/filelog receiver
-#   traces    nothing. A datastore emits none, ever. Redis spans are produced by
-#             the CLIENT library in your application, carry db.system=redis, and
-#             arrive from that service. There is no box-side fix for this and no
-#             configuration here that would change it.
+# WHAT ARRIVES BUT LOOKS LIKE NOTHING. This box turns persistence off, so valkey
+# writes its startup banner and then, on a healthy day, NOTHING for weeks — no
+# RDB saves to report, no errors. `start_at: end` then correctly reads past the
+# banner and ships zero lines, which is indistinguishable from a broken pipeline
+# and has been mistaken for one. That is why journald is a second logs receiver
+# below: systemd's view of the unit — started, stopped, OOM-killed — keeps
+# arriving on the days valkey itself has nothing to say, and an OOM kill is the
+# one event you cannot afford to learn about from silence.
 #
-# Both pipelines leave through one otlphttp exporter, which is the point: one
-# endpoint, one credential, one thing to revoke.
+#   echo "1:M 1 Jan 2026 00:00:00.000 * test" >> /var/log/valkey/valkey-server.log
 #
-# WHAT THIS ASSUMES
-#
-#   * Debian or Ubuntu, systemd, and valkey (or redis) ALREADY INSTALLED and
-#     running. This file provisions the telemetry half only. It does not install
-#     the datastore, because the version and the tuning of that are the reason
-#     the box exists and are not provisioning's to decide.
-#   * The collector reaches guard's OTLP port. On a VPC that is guard's private
-#     address; guard has to be bound to it (0.0.0.0:4318, not 127.0.0.1) or the
-#     connection is refused from anywhere but guard's own box.
-#
-# WHAT IT DOES NOT DO
-#
-#   * It does not touch the firewall, for the same reason guard's own cloud-init
-#     does not: two allowlists that have to agree is how somebody gets locked out
-#     editing one over the other.
-#   * It does not edit valkey.conf. Where valkey logs is DETECTED and the
-#     collector is configured to match — an empty `logfile` means journald, a
-#     path means that file. Rewriting somebody's datastore config to suit the
-#     log shipper is the wrong way round.
-#   * It does not start the collector with a credential it has not proved. The
-#     bootstrap POSTs an empty payload to guard's /v1/logs and refuses to enable
-#     anything unless that answers 200 — because a placeholder left in an env
-#     file and a 401 at the far end look exactly like "no data", which is the
-#     failure this whole file exists to stop.
-#
-# THE SECRET IN THIS FILE. Whatever you put in guard.env below is readable from
-# the provider's instance metadata for the life of the box. It is
-# GUARD_OTEL_SECRET, which opens /v1/logs, /v1/traces and /v1/metrics and
-# NOTHING else — that is what it is for, and it is why GUARD_TOKEN must never be
-# used here. If even that is too much, leave it as REPLACE_ME, write the value
-# into /etc/otelcol-contrib/guard.env by hand after boot, and re-run
-# /usr/local/sbin/valkey-telemetry-bootstrap. Re-running it is always safe.
+# is the one-command proof that the filelog half works.
 
 package_update: true
+package_upgrade: true
 packages:
   - curl
   - ca-certificates
-  - tar
+  - valkey-server
+  - valkey-tools
 
 write_files:
-  # The credential and where it points. The only file here anybody edits.
-  - path: /etc/otelcol-contrib/guard.env
-    owner: root:root
-    permissions: "0600"
+  - path: /opt/redis-health/health.py
+    permissions: "0755"
     content: |
-      # Guard's OTLP base URL — the collector appends /v1/logs and /v1/metrics.
-      # A private address is usually right; guard must be bound to it.
-      GUARD_OTLP_ENDPOINT=http://10.19.96.7:4318
+      #!/usr/bin/env python3
+      # Liveness for the guard cluster page. It AUTHs before PINGing: an
+      # unauthenticated PING answers -NOAUTH, which proves the server is alive
+      # but also increments redis_acl_access_denied_auth_total on every probe —
+      # a metric that should mean "somebody is guessing", not "the health check
+      # ran".
+      import http.server, os, socket
 
-      # GUARD_OTEL_SECRET from Settings → Configuration, which has a Generate
-      # button. NOT GUARD_TOKEN: that one opens every write endpoint in the API
-      # as well, and it does not belong on a box guard does not own.
-      GUARD_OTEL_SECRET=REPLACE_ME
+      PW = os.environ.get("REDIS_PASSWORD", "")
 
-  # How the exporter reaches valkey. Loopback, and a password only if valkey
-  # asks for one.
-  - path: /etc/redis_exporter/redis_exporter.env
-    owner: root:root
-    permissions: "0600"
+      def ping():
+          s = None
+          try:
+              s = socket.create_connection(("127.0.0.1", 6379), timeout=2)
+              if PW:
+                  s.sendall(b"AUTH " + PW.encode() + b"\r\n")
+                  if not s.recv(64).startswith(b"+OK"):
+                      return False
+              s.sendall(b"PING\r\n")
+              return s.recv(64).startswith(b"+PONG")
+          except Exception:
+              return False
+          finally:
+              try:
+                  if s: s.close()
+              except Exception:
+                  pass
+
+      class H(http.server.BaseHTTPRequestHandler):
+          def do_GET(self):
+              if self.path != "/health":
+                  self.send_response(404); self.end_headers(); return
+              ok = ping()
+              body = b'{"status":"ok"}' if ok else b'{"status":"down"}'
+              self.send_response(200 if ok else 503)
+              self.send_header("Content-Type", "application/json")
+              self.send_header("Content-Length", str(len(body)))
+              self.end_headers()
+              self.wfile.write(body)
+          def log_message(self, *a):
+              pass
+
+      http.server.HTTPServer(("0.0.0.0", 8080), H).serve_forever()
+
+  - path: /etc/systemd/system/redis-health.service
     content: |
-      REDIS_ADDR=redis://127.0.0.1:6379
-      # requirepass, if it is set. Leave empty otherwise.
-      REDIS_PASSWORD=
-
-  # A script rather than a pile of runcmd lines: this is the thing somebody
-  # re-runs at 3am, and a script can be read, edited and run again.
-  - path: /usr/local/sbin/valkey-telemetry-bootstrap
-    owner: root:root
-    permissions: "0700"
-    content: |
-      #!/bin/sh
-      # Install redis_exporter and otelcol-contrib, and wire both signals to guard.
-      set -eu
-
-      EXPORTER_VERSION="${EXPORTER_VERSION:-v1.89.0}"
-      OTELCOL_VERSION="${OTELCOL_VERSION:-0.158.0}"
-      ENV_FILE=/etc/otelcol-contrib/guard.env
-
-      log() { echo "valkey-telemetry: $*"; }
-      die() { echo "valkey-telemetry: $*" >&2; exit 1; }
-
-      case "$(uname -m)" in
-        x86_64)  ARCH=amd64 ;;
-        aarch64) ARCH=arm64 ;;
-        *) die "unsupported architecture $(uname -m)" ;;
-      esac
-
-      # ---------------------------------------------------------------- detect
-      # Which unit the datastore runs as, and where it writes. Detected rather
-      # than assumed: the package is valkey-server on some distributions and
-      # redis-server on others, and the two write to different places.
-      UNIT=""
-      for u in valkey-server.service redis-server.service valkey.service redis.service; do
-        if systemctl cat "$u" >/dev/null 2>&1; then UNIT="$u"; break; fi
-      done
-      [ -n "$UNIT" ] || die "no valkey or redis unit on this box — install it first"
-
-      CONF=""
-      for c in /etc/valkey/valkey.conf /etc/redis/redis.conf; do
-        if [ -r "$c" ]; then CONF="$c"; break; fi
-      done
-
-      # An empty or absent `logfile` means the process writes to stdout, which
-      # under systemd means the journal. A path means that path.
-      LOGFILE=""
-      if [ -n "$CONF" ]; then
-        LOGFILE=$(awk '$1=="logfile"{ $1=""; sub(/^ /,""); gsub(/"/,""); print }' "$CONF" | tail -n1)
-      fi
-
-      if [ -n "$LOGFILE" ] && [ "$LOGFILE" != '""' ]; then
-        LOG_MODE=filelog
-        # The collector runs as its own user, so it needs the group that owns
-        # the log to be able to read it.
-        LOG_GROUP=$(stat -c '%G' "$LOGFILE" 2>/dev/null || stat -c '%G' "$(dirname "$LOGFILE")")
-      else
-        LOG_MODE=journald
-        LOG_GROUP=systemd-journal
-      fi
-      log "datastore is $UNIT, logs are $LOG_MODE${LOGFILE:+ ($LOGFILE)}"
-
-      # ------------------------------------------------------------ credential
-      # Proved before anything is enabled. A placeholder here and a 401 at the
-      # far end are indistinguishable from "the exporter is down" once the box
-      # is running, so the moment to find out is now, while somebody is looking.
-      # shellcheck disable=SC1090
-      . "$ENV_FILE"
-      [ -n "${GUARD_OTLP_ENDPOINT:-}" ] || die "GUARD_OTLP_ENDPOINT is unset in $ENV_FILE"
-      case "${GUARD_OTEL_SECRET:-}" in
-        ""|REPLACE_ME) die "GUARD_OTEL_SECRET is still a placeholder in $ENV_FILE — set it and re-run this script" ;;
-      esac
-
-      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-        -X POST "$GUARD_OTLP_ENDPOINT/v1/logs" \
-        -H 'Content-Type: application/json' \
-        -H "Authorization: Bearer $GUARD_OTEL_SECRET" \
-        -d '{"resourceLogs":[]}' || echo 000)
-      case "$code" in
-        200) log "guard accepted the credential at $GUARD_OTLP_ENDPOINT" ;;
-        401) die "guard answered 401 — the secret in $ENV_FILE is not GUARD_OTEL_SECRET or GUARD_TOKEN on the guard box" ;;
-        000) die "could not reach $GUARD_OTLP_ENDPOINT — check the address, and that guard binds 0.0.0.0:4318 rather than 127.0.0.1" ;;
-        *)   die "guard answered $code at $GUARD_OTLP_ENDPOINT/v1/logs" ;;
-      esac
-
-      work=$(mktemp -d)
-      trap 'rm -rf "$work"' EXIT
-
-      # -------------------------------------------------------- redis_exporter
-      # Verified against the release's own sha256sums.txt. A shipper installed
-      # from an unverified tarball is a worse problem than missing metrics.
-      TAR="redis_exporter-$EXPORTER_VERSION.linux-$ARCH.tar.gz"
-      BASE="https://github.com/oliver006/redis_exporter/releases/download/$EXPORTER_VERSION"
-      curl -fsSL "$BASE/$TAR" -o "$work/$TAR" || die "could not download $TAR"
-      curl -fsSL "$BASE/sha256sums.txt" -o "$work/sha256sums.txt" || die "could not download redis_exporter checksums"
-      want=$(awk -v f="$TAR" '$2==f || $2=="*"f {print $1}' "$work/sha256sums.txt")
-      have=$(sha256sum "$work/$TAR" | cut -d' ' -f1)
-      [ -n "$want" ] || die "$TAR is not listed in sha256sums.txt"
-      [ "$want" = "$have" ] || die "checksum mismatch on $TAR"
-
-      tar -xzf "$work/$TAR" -C "$work"
-      install -m 0755 "$work/redis_exporter-$EXPORTER_VERSION.linux-$ARCH/redis_exporter" /usr/local/bin/redis_exporter
-
-      if ! id redis_exporter >/dev/null 2>&1; then
-        nologin=/usr/sbin/nologin
-        [ -x "$nologin" ] || nologin=/sbin/nologin
-        useradd --system --no-create-home --shell "$nologin" redis_exporter
-      fi
-      chown root:redis_exporter /etc/redis_exporter/redis_exporter.env
-      chmod 0640 /etc/redis_exporter/redis_exporter.env
-
-      # Loopback only. Nothing outside this box has any business reading it —
-      # the collector scrapes it from here, and an exporter on a public
-      # interface is an unauthenticated description of your datastore.
-      cat > /etc/systemd/system/redis_exporter.service <<'UNIT'
       [Unit]
-      Description=redis_exporter
-      After=network-online.target
+      Description=Valkey health endpoint
+      After=network-online.target valkey-server.service
       Wants=network-online.target
 
       [Service]
-      User=redis_exporter
-      EnvironmentFile=/etc/redis_exporter/redis_exporter.env
-      ExecStart=/usr/local/bin/redis_exporter --web.listen-address=127.0.0.1:9121
-      Restart=on-failure
-      RestartSec=5
-      NoNewPrivileges=true
-      ProtectSystem=strict
-      ProtectHome=true
-      PrivateTmp=true
-      PrivateDevices=true
-      ProtectKernelTunables=true
-      ProtectControlGroups=true
-      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-      CapabilityBoundingSet=
+      EnvironmentFile=/etc/redis-exporter/env
+      ExecStart=/usr/bin/python3 /opt/redis-health/health.py
+      Restart=always
+      RestartSec=3
+      DynamicUser=yes
+      NoNewPrivileges=yes
 
       [Install]
       WantedBy=multi-user.target
-      UNIT
-      log "redis_exporter $EXPORTER_VERSION installed on 127.0.0.1:9121"
 
-      # -------------------------------------------------------- otelcol-contrib
-      # Contrib, not the core distribution: journald and filelog are contrib
-      # receivers, and core would start fine and read nothing.
-      DEB="otelcol-contrib_${OTELCOL_VERSION}_linux_${ARCH}.deb"
-      OBASE="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$OTELCOL_VERSION"
-      curl -fsSL "$OBASE/$DEB" -o "$work/$DEB" || die "could not download $DEB"
-      curl -fsSL "$OBASE/$DEB.sha256" -o "$work/$DEB.sha256" || die "could not download the collector checksum"
-      want=$(cut -d' ' -f1 "$work/$DEB.sha256")
-      have=$(sha256sum "$work/$DEB" | cut -d' ' -f1)
-      [ "$want" = "$have" ] || die "checksum mismatch on $DEB"
-      DEBIAN_FRONTEND=noninteractive apt-get install -y "$work/$DEB" >/dev/null
-      log "otelcol-contrib $OTELCOL_VERSION installed"
+  - path: /etc/sysctl.d/99-valkey.conf
+    content: |
+      vm.overcommit_memory = 1
+      net.core.somaxconn = 512
 
-      # The queue survives a restart at either end. Guard is restarted by its own
-      # dashboard whenever configuration is saved, and logs dropped during that
-      # window would be the ones explaining whatever prompted the change.
-      install -d -o otelcol-contrib -g otelcol-contrib -m 0750 /var/lib/otelcol-contrib/queue
+  # Proving the credential is its own script because it is the thing somebody
+  # runs at 3am, after pasting the secret in by hand. Re-running it is safe.
+  - path: /usr/local/sbin/otelcol-verify
+    permissions: "0700"
+    content: |
+      #!/bin/sh
+      # Prove the token against guard, then enable the collector.
+      set -eu
+      ENDPOINT="${GUARD_OTLP_ENDPOINT:-http://10.19.96.7:4318}"
 
-      # The receiver half, which is the only part that depends on the detection
-      # above. Everything below it is the same either way.
-      if [ "$LOG_MODE" = journald ]; then
-        LOGS_RECEIVER=journald
-        RECEIVER_BLOCK=$(cat <<EOF
-        journald:
-          units: [$UNIT]
-          priority: info
-          # Not the whole journal. Without this the first start ships months of
-          # history to guard and every restart re-ships whatever it has kept.
-          start_at: end
-      EOF
-      )
-      else
-        LOGS_RECEIVER=filelog
-        RECEIVER_BLOCK=$(cat <<EOF
+      . /etc/otelcol/env
+      case "${GUARD_OTEL_SECRET:-}" in
+        ""|REPLACE_ME) echo "GUARD_OTEL_SECRET is still a placeholder in /etc/otelcol/env" >&2; exit 1 ;;
+      esac
+
+      # An empty ExportLogsServiceRequest is a legitimate OTLP call that guard
+      # answers 200. It proves the route and the token and writes no record.
+      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        -X POST "$ENDPOINT/v1/logs" \
+        -H 'Content-Type: application/json' \
+        -H "Authorization: Bearer $GUARD_OTEL_SECRET" \
+        -d '{"resourceLogs":[]}' || echo 000)
+
+      case "$code" in
+        200) : ;;
+        401) echo "guard answered 401 — that value is neither GUARD_OTEL_SECRET nor GUARD_TOKEN on the guard box" >&2; exit 1 ;;
+        000) echo "could not reach $ENDPOINT — check the address, and that guard binds 0.0.0.0:4318 rather than 127.0.0.1" >&2; exit 1 ;;
+        *)   echo "guard answered $code at $ENDPOINT/v1/logs" >&2; exit 1 ;;
+      esac
+
+      # Validated before starting. A bad config exits at start, and on a box
+      # nobody is watching that reads as silence.
+      /usr/local/bin/otelcol-contrib validate --config=/etc/otelcol/config.yaml
+
+      systemctl enable --now otelcol
+      systemctl restart otelcol
+      echo "otelcol is running; guard accepted the credential at $ENDPOINT"
+
+  - path: /etc/otelcol/config.yaml
+    permissions: "0644"
+    content: |
+      extensions:
+        # The queue outlives a restart at either end. Guard is restarted by its
+        # own dashboard whenever configuration is saved, and the records dropped
+        # in that window are the ones explaining whatever prompted the change.
+        file_storage/queue:
+          directory: /var/lib/otelcol/queue
+
+      receivers:
+        prometheus:
+          config:
+            scrape_configs:
+              - job_name: redis
+                scrape_interval: 30s
+                static_configs:
+                  - targets: ["127.0.0.1:9121"]
+        # Valkey's own log lines, so /logs on guard has something from this box.
         filelog:
-          include: [$LOGFILE]
+          include: [/var/log/valkey/valkey-server.log]
           start_at: end
           operators:
             # 12345:M 18 Aug 2026 01:02:03.456 * Ready to accept connections
+            #
+            # Unparsed, every record reaches guard as a raw string stamped with
+            # the time it was RECEIVED and no severity — so a warning sorts
+            # beside a startup notice and the timestamp is the collector's,
+            # not valkey's. A line that does not match is still sent (on_error
+            # defaults to send), so a format change degrades rather than drops.
             - type: regex_parser
-              regex: '^(?P<pid>\d+):(?P<role>[A-Za-z]) (?P<ts>\d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2}\.\d{3}) (?P<lvl>[.\-*#]) (?P<msg>.*)\$'
+              regex: '^(?P<pid>\d+):(?P<role>[A-Za-z]) (?P<ts>\d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2}\.\d{3}) (?P<lvl>[.\-*#]) (?P<msg>.*)$'
               timestamp:
+                # Valkey writes no offset, so this is read as UTC. True on this
+                # box; check `timedatectl` before assuming it on another.
                 parse_from: attributes.ts
                 layout: '02 Jan 2006 15:04:05.000'
               severity:
@@ -271,56 +186,43 @@ write_files:
             - type: move
               from: attributes.msg
               to: body
-      EOF
-      )
-      fi
-
-      cat > /etc/otelcol-contrib/guard.yaml <<EOF
-      # Written by valkey-telemetry-bootstrap. Edits here are kept until the
-      # script is re-run, which rewrites this file.
-      #
-      # Two pipelines, one exporter. Traces are absent on purpose: valkey emits
-      # none, and a spans pipeline with nothing feeding it is a lie on the page.
-
-      extensions:
-        file_storage/queue:
-          directory: /var/lib/otelcol-contrib/queue
-
-      receivers:
-        prometheus:
-          config:
-            scrape_configs:
-              # The job name becomes service.name at guard, so this is the word
-              # the dashboard groups by. Change it and yesterday's metrics are a
-              # different service.
-              - job_name: valkey
-                scrape_interval: 30s
-                static_configs:
-                  - targets: ["127.0.0.1:9121"]
-
-      $RECEIVER_BLOCK
+        # The second logs receiver, and the one that still speaks on a quiet
+        # day. Persistence is off on this box, so the logfile above can go weeks
+        # without a line — while systemd is still recording every start, stop,
+        # failure and OOM kill of the unit. Valkey logs to a FILE here, not to
+        # stdout, so these two never duplicate each other.
+        journald:
+          units: [valkey-server.service, redis-exporter.service, redis-health.service]
+          priority: info
+          start_at: end
+        # The box itself — CPU, memory, disk, load. Guard's cluster page gets
+        # these over SSH when it has a login; this is the same numbers without
+        # one.
+        hostmetrics:
+          collection_interval: 60s
+          scrapers:
+            cpu:
+            memory:
+            load:
+            filesystem:
 
       processors:
-        # Logs arrive with no service identity — the journal knows a unit, not a
-        # service. Set it to the same word the scrape job uses so both signals
-        # land on one service in guard.
-        resource/service:
+        batch:
+        resource:
           attributes:
             - key: service.name
-              value: valkey
+              value: redis
               action: upsert
-        resourcedetection:
-          detectors: [env, system]
-          system:
-            hostname_sources: [os]
-        batch:
-          timeout: 5s
+            - key: service.instance.id
+              value: pack-redis-vps-main
+              action: upsert
 
       exporters:
         otlphttp/guard:
-          endpoint: \${env:GUARD_OTLP_ENDPOINT}
+          # Base URL — the collector appends /v1/metrics and /v1/logs itself.
+          endpoint: http://10.19.96.7:4318
           headers:
-            authorization: Bearer \${env:GUARD_OTEL_SECRET}
+            Authorization: "Bearer ${env:GUARD_OTEL_SECRET}"
           retry_on_failure:
             enabled: true
           sending_queue:
@@ -331,69 +233,168 @@ write_files:
         extensions: [file_storage/queue]
         pipelines:
           metrics:
-            receivers: [prometheus]
-            processors: [resourcedetection, batch]
+            receivers: [prometheus, hostmetrics]
+            processors: [resource, batch]
             exporters: [otlphttp/guard]
           logs:
-            receivers: [$LOGS_RECEIVER]
-            processors: [resource/service, resourcedetection, batch]
+            receivers: [filelog, journald]
+            processors: [resource, batch]
             exporters: [otlphttp/guard]
-      EOF
-      chown root:otelcol-contrib /etc/otelcol-contrib/guard.yaml
-      chmod 0640 /etc/otelcol-contrib/guard.yaml
 
-      # A drop-in rather than the package's own config.yaml and conf file: those
-      # are conffiles, and the next collector upgrade would prompt about them or
-      # quietly win. SupplementaryGroups is what makes the log readable at all —
-      # without it the receiver starts, reports nothing wrong, and ships zero
-      # records, which is the exact shape of the problem being fixed here.
-      install -d -m 0755 /etc/systemd/system/otelcol-contrib.service.d
-      cat > /etc/systemd/system/otelcol-contrib.service.d/guard.conf <<EOF
+  - path: /etc/systemd/system/redis-exporter.service
+    content: |
+      [Unit]
+      Description=Redis/Valkey Prometheus exporter
+      After=network-online.target valkey-server.service
+      Wants=network-online.target
+
       [Service]
-      EnvironmentFile=$ENV_FILE
-      Environment=OTELCOL_OPTIONS=--config=/etc/otelcol-contrib/guard.yaml
-      SupplementaryGroups=$LOG_GROUP
-      EOF
+      EnvironmentFile=/etc/redis-exporter/env
+      # Loopback: the collector on this box is the only scraper, and /metrics
+      # describes the keyspace to anyone who can read it.
+      ExecStart=/usr/local/bin/redis_exporter -web.listen-address=127.0.0.1:9121 -redis.addr=127.0.0.1:6379
+      Restart=always
+      RestartSec=3
+      DynamicUser=yes
+      NoNewPrivileges=yes
 
-      systemctl daemon-reload
+      [Install]
+      WantedBy=multi-user.target
 
-      # Validated before anything is restarted. A collector with a bad config
-      # exits at start, and on a box nobody is watching that reads as silence.
-      otelcol-contrib validate --config=/etc/otelcol-contrib/guard.yaml \
-        || die "the generated collector config did not validate"
+  - path: /etc/systemd/system/otelcol.service
+    content: |
+      [Unit]
+      Description=OpenTelemetry Collector (redis + host -> Guard)
+      After=network-online.target redis-exporter.service
+      Wants=network-online.target
 
-      systemctl enable --now redis_exporter.service >/dev/null
-      systemctl restart otelcol-contrib.service
-      systemctl enable otelcol-contrib.service >/dev/null
+      [Service]
+      # No leading dash: a missing credentials file must stop the unit, not
+      # start it with an empty bearer token that 401s every batch for a week.
+      EnvironmentFile=/etc/otelcol/env
+      ExecStart=/usr/local/bin/otelcol-contrib --config=/etc/otelcol/config.yaml
+      Restart=always
+      RestartSec=3
+      DynamicUser=yes
+      # Where the sending queue lives. DynamicUser has no home and cannot make
+      # this itself; StateDirectory hands it /var/lib/otelcol already owned.
+      StateDirectory=otelcol
+      # Reading valkey's log needs a group; DynamicUser gets a private UID that
+      # is in none of them by default. systemd-journal is the same problem for
+      # the journald receiver — without it that receiver starts, reports nothing
+      # wrong, and ships zero records, which is the exact shape of the bug this
+      # file exists to avoid.
+      SupplementaryGroups=adm systemd-journal
+      NoNewPrivileges=yes
 
-      log "metrics and logs are going to $GUARD_OTLP_ENDPOINT"
+      [Install]
+      WantedBy=multi-user.target
 
 runcmd:
-  - [/usr/local/sbin/valkey-telemetry-bootstrap]
-  - - sh
-    - -c
-    - |
-      cat <<'NEXT'
-      ==============================================================
-      valkey telemetry is wired to guard.
+  - sysctl --system
+  - >
+    bash -c 'echo never > /sys/kernel/mm/transparent_hugepage/enabled || true'
+  - >
+    bash -c 'CONF=/etc/valkey/valkey.conf;
+    [ -f "$CONF" ] || CONF=/etc/redis/redis.conf;
+    PW=$(openssl rand -base64 32 | tr -d "/+=" | head -c 32);
+    sed -i "s/^bind .*/bind 127.0.0.1 10.19.96.6/" "$CONF";
+    sed -i "s/^protected-mode .*/protected-mode yes/" "$CONF";
+    sed -i "s/^# *requirepass .*/requirepass $PW/" "$CONF";
+    grep -q "^requirepass" "$CONF" || echo "requirepass $PW" >> "$CONF";
+    sed -i "s/^save /# save /" "$CONF";
+    grep -q "^appendonly" "$CONF" && sed -i "s/^appendonly .*/appendonly no/" "$CONF" || echo "appendonly no" >> "$CONF";
+    grep -q "^logfile" "$CONF" && sed -i "s|^logfile .*|logfile /var/log/valkey/valkey-server.log|" "$CONF" || echo "logfile /var/log/valkey/valkey-server.log" >> "$CONF";
+    printf "\n# --- cache tuning ---\nmaxmemory 700mb\nmaxmemory-policy allkeys-lru\ntimeout 300\ntcp-keepalive 60\n" >> "$CONF";
+    install -m 600 /dev/null /root/.valkey_pw;
+    echo "$PW" > /root/.valkey_pw'
+  # The password, written once and read by both the exporter and the health
+  # probe. 0600 root: systemd loads it as root before dropping privileges.
+  - >
+    bash -c 'install -d -m 700 /etc/redis-exporter;
+    printf "REDIS_PASSWORD=%s\n" "$(cat /root/.valkey_pw)" > /etc/redis-exporter/env;
+    chmod 600 /etc/redis-exporter/env'
+  - >
+    bash -c 'systemctl enable valkey-server 2>/dev/null || systemctl enable redis-server;
+    systemctl restart valkey-server 2>/dev/null || systemctl restart redis-server'
+  - systemctl daemon-reload
+  - systemctl enable --now redis-health
+  # Verified against the release's own sha256sums.txt. A shipper installed from
+  # an unverified tarball is a worse problem than a missing metric.
+  - >
+    bash -c 'set -e; ARCH=$(dpkg --print-architecture);
+    VER=1.89.0;
+    N="redis_exporter-v${VER}.linux-${ARCH}.tar.gz";
+    B="https://github.com/oliver006/redis_exporter/releases/download/v${VER}";
+    curl -fsSL -o /tmp/$N "$B/$N";
+    curl -fsSL -o /tmp/re-sums "$B/sha256sums.txt";
+    W=$(grep " $N$" /tmp/re-sums | cut -d" " -f1);
+    H=$(sha256sum /tmp/$N | cut -d" " -f1);
+    [ -n "$W" ] && [ "$W" = "$H" ] || { echo "redis_exporter checksum mismatch"; exit 1; };
+    tar -xzf /tmp/$N -C /tmp;
+    install -m 755 /tmp/redis_exporter-v${VER}.linux-${ARCH}/redis_exporter /usr/local/bin/redis_exporter;
+    rm -rf /tmp/$N /tmp/re-sums /tmp/redis_exporter-v${VER}.linux-${ARCH}'
+  - systemctl enable --now redis-exporter
+  # Contrib, not the core distribution: filelog and journald are contrib
+  # receivers, and core would start fine and read nothing.
+  - >
+    bash -c 'set -e; ARCH=$(dpkg --print-architecture);
+    VER=0.158.0;
+    N="otelcol-contrib_${VER}_linux_${ARCH}.tar.gz";
+    B="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${VER}";
+    curl -fsSL -o /tmp/$N "$B/$N";
+    curl -fsSL -o /tmp/oc-sum "$B/$N.sha256";
+    W=$(cut -d" " -f1 /tmp/oc-sum);
+    H=$(sha256sum /tmp/$N | cut -d" " -f1);
+    [ -n "$W" ] && [ "$W" = "$H" ] || { echo "otelcol checksum mismatch"; exit 1; };
+    tar -xzf /tmp/$N -C /tmp otelcol-contrib;
+    install -m 755 /tmp/otelcol-contrib /usr/local/bin/otelcol-contrib;
+    rm -f /tmp/$N /tmp/oc-sum /tmp/otelcol-contrib'
+  # 0755 so the collector's DynamicUser can read config.yaml; the credential
+  # beside it stays 0600 and is read by systemd as root.
+  - >
+    bash -c 'install -d -m 755 /etc/otelcol;
+    printf "GUARD_OTEL_SECRET=REPLACE_ME\n" > /etc/otelcol/env;
+    chmod 600 /etc/otelcol/env'
+  # Enabled only once the placeholder is gone AND guard has accepted the
+  # credential. A collector that starts with a fake token looks healthy and
+  # drops every batch — the loudest thing to do is not start. The empty payload
+  # is a legitimate OTLP request that guard answers 200, so it proves the token
+  # and the route without writing a record.
+  - >
+    bash -c 'if grep -q REPLACE_ME /etc/otelcol/env; then
+      echo "otelcol NOT enabled: put the real GUARD_OTEL_SECRET in /etc/otelcol/env, then re-run: /usr/local/sbin/otelcol-verify";
+      exit 0;
+    fi;
+    /usr/local/sbin/otelcol-verify'
+  # The host firewall is not the perimeter — the Vultr firewall group is, and it
+  # filters the public interface only. Everything open from the VPC; 22 left for
+  # the group to gate.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow from 10.19.96.0/24 comment 'vpc — gated at the provider'
+  - ufw allow 22/tcp comment 'ssh — restricted in the Vultr firewall group'
+  - ufw --force enable
 
-        metrics   redis_exporter :9121 → prometheus receiver, 30s
-        logs      the valkey unit → journald or filelog receiver
-        traces    none, and none possible from this box. They come
-                  from the application calling valkey, with
-                  db.system=redis on its client spans.
+final_message: |
+  valkey, health endpoint, exporter and collector are installed.
 
-      Both land as service.name=valkey.
+  otelcol is deliberately NOT running. Finish it:
 
-      If the dashboard shows nothing:
-        journalctl -u otelcol-contrib -n 50 --no-pager
-        journalctl -u redis_exporter -n 20 --no-pager
-        curl -s 127.0.0.1:9121/metrics | head
+    printf 'GUARD_OTEL_SECRET=<value from guard Settings -> Configuration>\n' > /etc/otelcol/env
+    chmod 600 /etc/otelcol/env
+    /usr/local/sbin/otelcol-verify
 
-      GET /api/summary on guard has a cumulative `received`; it is
-      the arbiter of whether anything has ever arrived.
+  That proves the token against guard before enabling anything.
 
-      Re-run /usr/local/sbin/valkey-telemetry-bootstrap after
-      editing /etc/otelcol-contrib/guard.env. It is safe every time.
-      ==============================================================
-      NEXT
+  Metrics arrive within 30s. LOGS MAY LOOK MISSING AND NOT BE: persistence is
+  off here, so valkey's own logfile can stay silent for weeks. journald is the
+  second receiver for exactly that reason. To prove the filelog half:
+
+    echo "1:M 1 Jan 2026 00:00:00.000 * test" >> /var/log/valkey/valkey-server.log
+
+  Traces will never arrive from this box. They come from the application
+  calling valkey, with db.system=redis on its client spans.
+
+  Port 22 is open at this host by design; the Vultr firewall group restricts it.
+  Confirm that group is not 0.0.0.0/0.

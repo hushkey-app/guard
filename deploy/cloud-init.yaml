@@ -1,53 +1,47 @@
 #cloud-config
 #
-# A box that comes up running guard, with nothing to configure here.
+# A box that comes up running guard, with nothing to configure on the machine.
 #
-# Everything guard reads is now a row in guard's own database, edited from
+# Everything guard reads is a row in guard's own database now, edited from
 # Settings → Configuration and Settings → Security — the tokens, the OAuth
-# credentials, retention, the alert destinations. So provisioning has nothing to
-# decide: this file installs the two binaries and the machinery that keeps them
-# updated, and the first person to open the dashboard does the rest.
+# credentials, retention, the alert destinations. So provisioning installs the
+# two binaries and the machinery that keeps them updated, and the first person to
+# open the dashboard does the rest. No env file, and nothing here to keep in step
+# with a page.
 #
-# That is the whole reason this file exists again. An earlier version of it set
-# up nginx, opened ports and wrote an env file, and every one of those was a
-# decision belonging to whoever runs the machine — drifting from the copy here
-# the moment they made it differently. What is left is the part that is the same
-# on every box.
+# It comes in two shapes, decided by two lines at the top of the script below:
 #
-#   * The units and the updater are FETCHED from the repository, not copied into
-#     this file. One shape of a systemd unit written down twice is one that is
-#     eventually wrong in the copy nobody is looking at.
-#   * The first install goes down the updater's own path — same download, same
-#     checksum, same health gate. A first-boot special case is a code path that
-#     stops being exercised the moment it works.
-#   * No firewall is touched. The perimeter is the provider's (a Vultr firewall
-#     group, filtering the public interface), and two allowlists that have to
+#   GUARD_DOMAIN empty      guard answers :4318 directly — the dashboard and
+#                           OTLP on one port. Nothing else is installed.
+#   GUARD_DOMAIN set        nginx in front of it on 80/443 for that name, and a
+#                           certbot certificate that issues itself once DNS
+#                           points here. Guard still answers :4318 on the
+#                           private interface, because a collector on another
+#                           box posts to the address, not to the domain.
+#
+# Written for the Ubuntu cloud images: apt, useradd, systemd. A second package
+# manager in here would be a branch nobody has ever run, which reads as support
+# for a distro this has never been tested on.
+#
+# WHAT IT DELIBERATELY DOES NOT DO
+#
+#   * No firewall. The public perimeter is the provider's — a Vultr firewall
+#     group filtering the public interface — and two allowlists that have to
 #     agree is how somebody gets locked out editing one over the other.
+#   * No secrets. OAuth credentials and tokens are typed into the dashboard,
+#     not into user data, which sits in plain text in a provider's console.
+#   * It does not close the door. Until sign-in is configured from Settings →
+#     Security, anyone who can reach guard can do anything — which is what makes
+#     the first run possible at all. So either the firewall group does not
+#     publish it yet, or sign-in gets configured in the same sitting.
 #
-# TWO THINGS THIS DOES NOT DO, both deliberately:
+# The units and the updater are FETCHED from the repository rather than written
+# out here. A systemd unit written down twice is one that is eventually wrong in
+# the copy nobody is looking at — which is how a box ends up with guard bound to
+# localhost and a collector on the next machine unable to reach it.
 #
-#   * It does not close the door. Guard answers on :4318 for the dashboard AND
-#     for OTLP, and until sign-in is configured from Settings → Security anyone
-#     who can reach that port can do anything — that is what makes the first run
-#     possible at all. So either the provider's firewall group does not expose
-#     4318 to the internet yet, or you configure sign-in in the same sitting.
-#   * It does not put a TLS terminator in front. If this box is public, that is
-#     yours to add; guard is happy behind anything, and needs
-#     GUARD_AUTH_BASE_URL set from the dashboard when it is.
-#
-# Written for the Ubuntu cloud images, and it says so rather than pretending
-# otherwise: apt, useradd, systemd. A second package manager in here would be a
-# branch nobody has ever run, which is worse than not having it — it reads as
-# support for a distro this has never been tested on.
-#
-# Pin the ref the units come from by editing GUARD_REF below. Re-running
-# /usr/local/sbin/guard-bootstrap by hand is safe and is how you pick up a
+# Re-running /usr/local/sbin/guard-bootstrap is safe, and is how a box picks up a
 # change to a unit.
-
-# No `packages:` and no `package_update:` on purpose. Either one makes cloud-init
-# run an apt update before anything else happens, which on a small box is minutes
-# of boot spent arriving at the curl that was already installed. The script below
-# asks for what it needs and installs only what is missing.
 
 write_files:
   # A script rather than a pile of runcmd lines: this is the thing somebody
@@ -60,6 +54,14 @@ write_files:
       # Install guard's units, the updater, and the release this box wants.
       set -eu
 
+      # ----------------------------------------------------------------- edit me
+      # The public name for this box, and the address Let's Encrypt should send
+      # expiry warnings to. Set both, or leave both empty for a box with no nginx
+      # and no certificate — guard then answers :4318 itself.
+      GUARD_DOMAIN=""
+      GUARD_TLS_EMAIL=""
+      # ------------------------------------------------------------------------
+
       GUARD_REPO="${GUARD_REPO:-hushkey-app/guard}"
       # Which ref the units and the updater are read from. A tag pins them to a
       # release; main takes whatever is current.
@@ -68,10 +70,10 @@ write_files:
 
       log() { echo "guard-bootstrap: $*"; }
 
-      # curl is on the Ubuntu cloud images this is written for, so this asks
-      # rather than installing unconditionally: `packages:` in a cloud-config
-      # triggers an apt update on every boot, which is minutes on a small box,
-      # to arrive at what was already there.
+      # curl is on the Ubuntu cloud images, so this asks rather than installing
+      # unconditionally: a `packages:` block in a cloud-config triggers an apt
+      # update on every boot, which is minutes on a small box, to arrive at what
+      # was already there.
       if ! command -v curl >/dev/null 2>&1; then
         log "installing curl"
         apt-get update -qq && apt-get install -y -qq curl ca-certificates
@@ -80,35 +82,32 @@ write_files:
       # The user everything runs as. No login shell, no password: it owns a
       # database and answers a port.
       #
-      # --user-group is not decoration. Whether useradd also makes a group of
-      # the same name depends on USERGROUPS_ENAB in /etc/login.defs, which
-      # differs between images — and every `install -o guard -g guard` below
-      # fails on an image where it did not, taking the whole provision with it.
+      # --user-group is not decoration. Whether useradd also makes a group of the
+      # same name depends on USERGROUPS_ENAB in /etc/login.defs, which differs
+      # between images — and every `install -o guard -g guard` below fails on one
+      # where it did not, taking the whole provision with it under set -e.
       if ! id guard >/dev/null 2>&1; then
         nologin=/usr/sbin/nologin
         [ -x "$nologin" ] || nologin=/sbin/nologin
         useradd --system --user-group --home-dir /var/lib/guard --create-home --shell "$nologin" guard
         log "created the guard user"
       fi
-      # An image that made the user without the group, or a half-finished
-      # earlier run: cheaper to check than to debug.
       getent group guard >/dev/null 2>&1 || groupadd --system guard
-      usermod -g guard guard 2>/dev/null || true
 
       # The database, its WAL, and guard.db.key beside them. Guard generates the
-      # key on first start; it is not in any artifact and joining a box to an
-      # existing database means putting that key here first.
+      # key on first start; it is in no artifact and no backup guard makes, and
+      # joining a box to an existing database means putting that key here first.
       install -d -o guard -g guard -m 0750 /var/lib/guard
 
-      # /etc/guard is root's. Guard writes exactly one file in it — version,
-      # which is what the dashboard's Update button sets — and cannot touch
-      # guard.env beside it. That split is the whole permission model, and it is
-      # why the file is created here rather than by guard: the directory it
-      # lives in is not guard's to add to.
+      # /etc/guard is root's, with one file handed to the guard user: version,
+      # which is what the dashboard's Update button writes. Guard cannot touch
+      # anything else here — that split is the whole permission model, and it is
+      # why the file is made here rather than by guard, whose ReadWritePaths let
+      # it write the file but not create it.
       install -d -o root -g root -m 0755 /etc/guard
       # Written as `latest` rather than left empty. Absent means latest to the
-      # updater and an empty file does not: it would read as a version, and the
-      # download URL would have a blank where the tag goes.
+      # updater; an empty file does not — it reads as a version, and the download
+      # URL then has a blank where the tag goes.
       if [ ! -s /etc/guard/version ]; then
         printf 'latest\n' > /etc/guard/version
         chown guard:guard /etc/guard/version
@@ -116,7 +115,7 @@ write_files:
       fi
 
       # The units and the updater, from the repository. Fetched to a temporary
-      # file first so a half-downloaded unit never lands in /etc/systemd.
+      # directory first so a half-downloaded unit never lands in /etc/systemd.
       work=$(mktemp -d)
       trap 'rm -rf "$work"' EXIT
       for f in guard.service guard-vault.service guard-update.service guard-update.timer guard-update; do
@@ -136,8 +135,8 @@ write_files:
       # difference between a box that heals itself and a box somebody has to
       # visit. GitHub rate-limits, releases move, a health check can be slow on a
       # cold small instance — and with the timer armed afterwards, any of those
-      # left a box with no binary AND no timer, which is a box that never tries
-      # again. Armed first, the same failure costs fifteen minutes.
+      # left a box with no binary AND no timer, which never tries again. Armed
+      # first, the same failure costs fifteen minutes.
       #
       # --now is the other half: `enable` alone arms it for the next boot, and
       # provisioning reaches this line long after timers.target has passed, so
@@ -157,30 +156,144 @@ write_files:
         exit 1
       fi
 
-      log "guard is on $(/usr/local/bin/guard -version), the dashboard is on :4318"
+      # The public name, if this box has one. Everything from here is nginx and a
+      # certificate; a box with GUARD_DOMAIN empty is finished above.
+      if [ -n "$GUARD_DOMAIN" ]; then
+        if ! command -v nginx >/dev/null 2>&1 || ! command -v certbot >/dev/null 2>&1; then
+          log "installing nginx and certbot"
+          apt-get update -qq
+          apt-get install -y -qq nginx certbot python3-certbot-nginx dnsutils
+        fi
+
+        # Plain HTTP only. certbot rewrites this file when it issues, adding the
+        # 443 server and the redirect — so writing the TLS half here would mean
+        # two authors for one file, and the second one wins at three in the
+        # morning. Guard is on the loopback because nginx is what the internet
+        # talks to; the collectors on other machines post to this box's address
+        # on :4318 directly, which is why the unit does not bind loopback only.
+        cat > /etc/nginx/sites-available/guard <<NGINX
+      server {
+          listen 80;
+          listen [::]:80;
+          server_name $GUARD_DOMAIN;
+
+          # An OTLP batch is bigger than nginx's default 1m, and a collector
+          # pointed at the public name would get a 413 nothing explains.
+          client_max_body_size 32m;
+
+          location / {
+              proxy_pass http://127.0.0.1:4318;
+              proxy_http_version 1.1;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Connection "upgrade";
+              proxy_buffering off;
+          }
+      }
+      NGINX
+        ln -sf /etc/nginx/sites-available/guard /etc/nginx/sites-enabled/guard
+        rm -f /etc/nginx/sites-enabled/default
+        nginx -t
+        systemctl enable nginx >/dev/null
+        systemctl restart nginx
+        log "nginx is proxying $GUARD_DOMAIN to :4318"
+
+        # The certificate issues itself, on a timer, once DNS points here. A
+        # certbot run inside this script would be a certbot run against a name
+        # that does not resolve yet — which is the normal case, because the A
+        # record is usually typed after the box exists.
+        cat > /usr/local/bin/guard-tls-setup <<TLS
+      #!/bin/sh
+      # Issue the certificate for this box, once that is possible. Idempotent:
+      # it stops trying the moment a certificate exists.
+      set -e
+      DOMAIN="$GUARD_DOMAIN"
+      EMAIL="$GUARD_TLS_EMAIL"
+
+      [ -d "/etc/letsencrypt/live/\$DOMAIN" ] && { systemctl disable --now guard-tls.timer >/dev/null 2>&1 || true; exit 0; }
+
+      # Does the name resolve at all? Not "does it resolve to this box" — behind
+      # Cloudflare's proxy it never will, and a check that compares the answer to
+      # this machine's address would keep a proxied domain from ever being
+      # issued. Let's Encrypt is the thing that decides whether the challenge
+      # reaches us; this only avoids asking when there is plainly no record yet.
+      [ -n "\$(dig +short "\$DOMAIN" @1.1.1.1 | tail -n1)" ] || {
+        echo "guard-tls-setup: \$DOMAIN does not resolve yet — will try again"
+        exit 1
+      }
+
+      certbot --nginx -d "\$DOMAIN" -m "\$EMAIL" --agree-tos --non-interactive
+      echo "guard-tls-setup: issued for \$DOMAIN — Cloudflare SSL/TLS can go to Full (strict)"
+      systemctl disable --now guard-tls.timer >/dev/null 2>&1 || true
+      TLS
+        chmod 0755 /usr/local/bin/guard-tls-setup
+
+        cat > /etc/systemd/system/guard-tls.service <<'UNIT'
+      [Unit]
+      Description=issue guard's certificate once DNS points here
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/guard-tls-setup
+      UNIT
+
+        # Fifteen minutes, not five. A failed issuance is rate-limited by Let's
+        # Encrypt — five per hour for the same name — and a five-minute retry
+        # spends that budget in half an hour, on a box whose DNS is not ready
+        # yet, leaving nothing for the attempt that would have worked.
+        cat > /etc/systemd/system/guard-tls.timer <<'UNIT'
+      [Unit]
+      Description=retry until the certificate is issued
+
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=15min
+
+      [Install]
+      WantedBy=timers.target
+      UNIT
+        systemctl daemon-reload
+        systemctl enable --now guard-tls.timer >/dev/null
+        log "TLS will issue itself within fifteen minutes of DNS pointing here"
+      fi
+
+      # What actually answers, rather than what was installed.
+      for pair in "guard 4318" "guard-vault 4319"; do
+        name=${pair% *}; port=${pair#* }
+        if curl -fsS -o /dev/null "http://127.0.0.1:$port/healthz"; then
+          log "$name answers on $port"
+        else
+          log "$name is NOT answering on $port — journalctl -u $name"
+        fi
+      done
+
+      log "guard is on $(/usr/local/bin/guard -version)"
 
 runcmd:
   - [/usr/local/sbin/guard-bootstrap]
-  # What is left to do, in the log the provider shows you. Everything here is a
-  # page in the dashboard rather than a file on this box.
-  - - sh
-    - -c
-    - |
-      cat <<'NEXT'
-      ==============================================================
-      guard is installed. The rest is the dashboard, on :4318
 
-        Settings → Security        sign in with Google or Apple, and
-                                   the members allowed in. Until this
-                                   is set, the port is open to anyone
-                                   who can reach it.
-        Settings → Configuration   the collector secret and the API
-                                   token, both with a Generate button
-        Settings → Alerts          where alerts are posted
-        Settings → Data storage    retention and the event cap
+final_message: |
+  guard and guard-vault are provisioned. The OK / NOT ANSWERING lines are in
+  /var/log/cloud-init-output.log.
 
-      Each save says "restart to apply", and the restart is a button.
-      A version can be pinned in /etc/guard/version (`latest`, or a
-      tag); guard-update.timer checks every fifteen minutes.
-      ==============================================================
-      NEXT
+  What is left, and none of it is a gap in this file:
+
+    1. Point the A record at this box. If a domain was set above, TLS issues
+       itself within fifteen minutes of that — `certbot certificates` confirms
+       it, and Cloudflare can then go to Full (strict).
+
+    2. Open the dashboard and configure it. Sign-in and the members allowed in
+       are Settings → Security; the collector secret and the API token are
+       Settings → Configuration, both with a Generate button; alert
+       destinations are Settings → Alerts; retention is Settings → Data
+       storage. Each save says "restart to apply", and the restart is a button.
+
+       Until sign-in is configured, anyone who can reach this box can do
+       anything — so do this before publishing the port.
+
+    3. Copy /var/lib/guard/guard.db.key off the box. It is in no release and no
+       backup this file makes, and without it the database restores as
+       unreadable secrets.

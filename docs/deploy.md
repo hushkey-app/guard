@@ -91,11 +91,35 @@ every one of them drifting from the copy here the moment somebody made it
 differently. What is left is the part that is the same on every box: a user, two
 directories, the units, the updater, and the first install.
 
+It comes in two shapes, decided by two lines at the top of the script it writes:
+
+| `GUARD_DOMAIN` | what you get |
+|---|---|
+| empty | guard answers :4318 directly — dashboard and OTLP on one port, nothing else installed |
+| set | nginx on 80/443 for that name, and a certificate that issues itself once DNS points here |
+
+The second is not optional decoration: a box reached through a domain has to have
+something listening on 443, and a provision that installs guard perfectly while
+leaving nothing in front of it is a box that looks broken from every browser.
+Guard still answers :4318 on the box's own address either way, because a
+collector on another machine posts to the address rather than to the domain —
+that is the whole reason the unit does not bind loopback.
+
 - **The units and the updater are fetched from the repository**, not inlined into
   the file. A systemd unit written down twice is one that is eventually wrong in
-  the copy nobody is looking at. `GUARD_REF` at the top pins which ref they come
-  from; re-running `/usr/local/sbin/guard-bootstrap` is how a box picks up a
-  change to one.
+  the copy nobody is looking at — which is how a box ends up with guard bound to
+  localhost for nginx's sake and a collector on the next machine unable to reach
+  it. `GUARD_REF` at the top pins which ref they come from; re-running
+  `/usr/local/sbin/guard-bootstrap` is how a box picks up a change to one.
+- **The certificate issues itself, on a timer, and stops.** Certbot inside the
+  provisioning run is certbot against a name that does not resolve yet, because
+  the A record is usually typed after the box exists. The timer retries every
+  fifteen minutes — not five, because a failed issuance counts against Let's
+  Encrypt's five-an-hour for that name, and a five-minute retry spends the budget
+  before DNS is ready — and disables itself once the certificate is there. It
+  asks only whether the name resolves at all, never whether it resolves to this
+  box: behind Cloudflare's proxy it never will, and a check that compared the two
+  would keep a proxied domain from ever being issued.
 - **No firewall is touched.** The public perimeter is the provider's — a Vultr
   firewall group filtering the public interface — and two allowlists that have to
   agree is how somebody gets locked out editing one over the other.
