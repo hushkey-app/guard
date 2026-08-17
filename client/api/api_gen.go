@@ -7,17 +7,18 @@ package apiclient
 
 import (
 	"context"
-	"github.com/hushkey-app/guard/internal/access"
 	"github.com/hushkey-app/guard/internal/cloud"
+	"github.com/hushkey-app/guard/internal/config"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vultr"
-	access2 "github.com/hushkey-app/guard/server/apis/access"
 	"github.com/hushkey-app/guard/server/apis/cloud/accounts"
 	"github.com/hushkey-app/guard/server/apis/cloud/storage"
 	"github.com/hushkey-app/guard/server/apis/cluster"
+	"github.com/hushkey-app/guard/server/apis/cluster/env"
 	"github.com/hushkey-app/guard/server/apis/cluster/monitors"
 	"github.com/hushkey-app/guard/server/apis/cluster/provider"
+	config2 "github.com/hushkey-app/guard/server/apis/config"
 	"github.com/hushkey-app/guard/server/apis/contract"
 	"github.com/hushkey-app/guard/server/apis/members"
 	"github.com/hushkey-app/guard/server/apis/registries"
@@ -34,11 +35,6 @@ import (
 type Client struct{ *api.Transport }
 
 func New(baseURL string) *Client { return &Client{Transport: api.NewTransport(baseURL)} }
-
-// AccessCredentials calls GET /api/access.
-func (c *Client) AccessCredentials(ctx context.Context) (access.State, error) {
-	return api.Call[access.State](ctx, c.Transport, "GET", "/api/access", nil, nil)
-}
 
 // AddCloudAccount calls POST /api/cloud/accounts.
 func (c *Client) AddCloudAccount(ctx context.Context, body model.ProviderAccount) (model.ProviderAccount, error) {
@@ -68,11 +64,6 @@ func (c *Client) CheckClusterNow(ctx context.Context) ([]model.Node, error) {
 // CheckClusterSSH calls POST /api/cluster/ssh.
 func (c *Client) CheckClusterSSH(ctx context.Context, body contract.NodeRequest) (model.Run, error) {
 	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/ssh", nil, body)
-}
-
-// ClearCredential calls POST /api/access/clear.
-func (c *Client) ClearCredential(ctx context.Context, body access2.Request) (access.State, error) {
-	return api.Call[access.State](ctx, c.Transport, "POST", "/api/access/clear", nil, body)
 }
 
 // CloudAccounts calls GET /api/cloud/accounts.
@@ -108,6 +99,11 @@ func (c *Client) ClusterRuns(ctx context.Context, query cluster.RunQuery) ([]mod
 // ClusterTopology calls GET /api/cluster/topology.
 func (c *Client) ClusterTopology(ctx context.Context) (model.ClusterTopology, error) {
 	return api.Call[model.ClusterTopology](ctx, c.Transport, "GET", "/api/cluster/topology", nil, nil)
+}
+
+// Configuration calls GET /api/config.
+func (c *Client) Configuration(ctx context.Context) (config.State, error) {
+	return api.Call[config.State](ctx, c.Transport, "GET", "/api/config", nil, nil)
 }
 
 // CreateObjectStorage calls POST /api/cloud/storage.
@@ -236,9 +232,9 @@ func (c *Client) Facets(ctx context.Context) (model.Facets, error) {
 	return api.Call[model.Facets](ctx, c.Transport, "GET", "/api/facets", nil, nil)
 }
 
-// GenerateCredential calls POST /api/access.
-func (c *Client) GenerateCredential(ctx context.Context, body access2.Request) (access.State, error) {
-	return api.Call[access.State](ctx, c.Transport, "POST", "/api/access", nil, body)
+// GenerateCredential calls POST /api/config/generate.
+func (c *Client) GenerateCredential(ctx context.Context, body config2.Name) (config.State, error) {
+	return api.Call[config.State](ctx, c.Transport, "POST", "/api/config/generate", nil, body)
 }
 
 // Health calls GET /healthz.
@@ -256,6 +252,11 @@ func (c *Client) ImportSecrets(ctx context.Context, body model.Import) (model.Im
 	return api.Call[model.ImportResult](ctx, c.Transport, "POST", "/api/secrets/import", nil, body)
 }
 
+// InjectMachineEnvironment calls POST /api/cluster/env/inject.
+func (c *Client) InjectMachineEnvironment(ctx context.Context, body env.Target) (env.Injected, error) {
+	return api.Call[env.Injected](ctx, c.Transport, "POST", "/api/cluster/env/inject", nil, body)
+}
+
 // LinkMachineToCloud calls PUT /api/cluster/provider/link.
 func (c *Client) LinkMachineToCloud(ctx context.Context, body model.ProviderLink) (model.Node, error) {
 	return api.Call[model.Node](ctx, c.Transport, "PUT", "/api/cluster/provider/link", nil, body)
@@ -269,6 +270,11 @@ func (c *Client) LinkStorageObject(ctx context.Context, body storage.LinkRequest
 // Logs calls GET /api/logs.
 func (c *Client) Logs(ctx context.Context, query model.Filter) ([]model.Event, error) {
 	return api.Call[[]model.Event](ctx, c.Transport, "GET", "/api/logs", query, nil)
+}
+
+// MachineEnvironment calls GET /api/cluster/env.
+func (c *Client) MachineEnvironment(ctx context.Context, query env.Query) (env.Saved, error) {
+	return api.Call[env.Saved](ctx, c.Transport, "GET", "/api/cluster/env", query, nil)
 }
 
 // MachineInstance calls GET /api/cluster/provider.
@@ -375,9 +381,9 @@ func (c *Client) RequestUpdate(ctx context.Context, body update.Request) (releas
 	return api.Call[release.State](ctx, c.Transport, "POST", "/api/update", nil, body)
 }
 
-// RestartGuard calls POST /api/access/restart.
-func (c *Client) RestartGuard(ctx context.Context) (access.State, error) {
-	return api.Call[access.State](ctx, c.Transport, "POST", "/api/access/restart", nil, nil)
+// RestartGuard calls POST /api/config/restart.
+func (c *Client) RestartGuard(ctx context.Context) (config.State, error) {
+	return api.Call[config.State](ctx, c.Transport, "POST", "/api/config/restart", nil, nil)
 }
 
 // RestoreMachineSnapshot calls POST /api/cluster/provider/restore.
@@ -420,6 +426,11 @@ func (c *Client) SaveClusterMonitor(ctx context.Context, body model.Monitor) (mo
 // SaveEventDestination calls PUT /api/webhooks.
 func (c *Client) SaveEventDestination(ctx context.Context, body model.Webhook) (model.Webhook, error) {
 	return api.Call[model.Webhook](ctx, c.Transport, "PUT", "/api/webhooks", nil, body)
+}
+
+// SaveMachineEnvironment calls PUT /api/cluster/env.
+func (c *Client) SaveMachineEnvironment(ctx context.Context, body env.Vars) (env.Saved, error) {
+	return api.Call[env.Saved](ctx, c.Transport, "PUT", "/api/cluster/env", nil, body)
 }
 
 // SaveSecret calls PUT /api/secrets/values.
@@ -496,6 +507,11 @@ func (c *Client) Trace(ctx context.Context, id string) (model.Trace, error) {
 // UpdateClusterNode calls PUT /api/cluster/{id}.
 func (c *Client) UpdateClusterNode(ctx context.Context, id string, body model.Node) (model.Node, error) {
 	return api.Call[model.Node](ctx, c.Transport, "PUT", api.Path("/api/cluster/{id}", id), nil, body)
+}
+
+// UpdateConfiguration calls PUT /api/config.
+func (c *Client) UpdateConfiguration(ctx context.Context, body config2.Values) (config.State, error) {
+	return api.Call[config.State](ctx, c.Transport, "PUT", "/api/config", nil, body)
 }
 
 // UpdateSettings calls PUT /api/settings.

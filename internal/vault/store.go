@@ -89,6 +89,46 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// Config is guard's stored configuration, opened.
+//
+// The vault reads two of those settings — where it listens, and how often it
+// records a key's use — so a form on the dashboard that showed them while this
+// process kept reading only the unit file would be a form that lies about half
+// its rows. It is a read like every other one here: this store has no method
+// that changes a setting, and the table it reads is guard's to write.
+//
+// A row that will not decrypt is skipped rather than failing the read, for the
+// same reason guard skips it: one unreadable timeout must not stop the process
+// that hands out database passwords at boot.
+func (s *Store) Config() (map[string]string, error) {
+	// A database written by a guard older than this table is not an error: the
+	// vault's whole promise is that it keeps serving while guard is somewhere
+	// else in its release cycle, which includes being one version behind.
+	var table string
+	if err := s.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='config'`).Scan(&table); err != nil {
+		return map[string]string{}, nil
+	}
+	rows, err := s.db.Query(`SELECT name, value FROM config`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := map[string]string{}
+	for rows.Next() {
+		var name string
+		var sealed []byte
+		if err := rows.Scan(&name, &sealed); err != nil {
+			return nil, err
+		}
+		value, err := s.secrets.Open(sealed)
+		if err != nil {
+			continue
+		}
+		values[name] = value
+	}
+	return values, rows.Err()
+}
+
 // A Holder is what a token turned out to be: which key, and which environment
 // it may read. Nothing about the token itself, because nothing needs it again.
 type Holder struct {

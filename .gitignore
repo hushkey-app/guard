@@ -7,3 +7,4 @@
 .howl/
 /client/styles/app.sources.css
 /guard-vault
+/.env

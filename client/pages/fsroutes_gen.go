@@ -14,10 +14,11 @@ import (
 	p7 "github.com/hushkey-app/guard/client/pages/settings/alerts"
 	p8 "github.com/hushkey-app/guard/client/pages/settings/cloud"
 	p9 "github.com/hushkey-app/guard/client/pages/settings/cluster"
-	p10 "github.com/hushkey-app/guard/client/pages/settings/members"
-	p11 "github.com/hushkey-app/guard/client/pages/storage"
-	p12 "github.com/hushkey-app/guard/client/pages/traces"
-	p13 "github.com/hushkey-app/guard/client/pages/views"
+	p10 "github.com/hushkey-app/guard/client/pages/settings/config"
+	p11 "github.com/hushkey-app/guard/client/pages/settings/members"
+	p12 "github.com/hushkey-app/guard/client/pages/storage"
+	p13 "github.com/hushkey-app/guard/client/pages/traces"
+	p14 "github.com/hushkey-app/guard/client/pages/views"
 	"github.com/mirairoad/howl-go/core/router"
 )
 
@@ -35,9 +36,10 @@ func FsClientRoutes() []router.Route {
 		{Pattern: "/settings/alerts", Label: "Alerts", Page: p7.Page, Head: p7.Head, Mount: p7.Mount, Unmount: p7.Unmount, Layouts: nil, Client: true, Raw: false},
 		{Pattern: "/settings/cloud", Label: "Cloud", Page: p8.Page, Head: p8.Head, Mount: p8.Mount, Unmount: p8.Unmount, Layouts: nil, Client: true, Raw: false},
 		{Pattern: "/settings/cluster", Label: "Cluster", Page: p9.Page, Head: p9.Head, Mount: p9.Mount, Unmount: p9.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/settings/members", Label: "Members", Page: p10.Page, Head: p10.Head, Mount: p10.Mount, Unmount: p10.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/storage", Label: "Storage", Page: p11.Page, Head: p11.Head, Mount: p11.Mount, Unmount: p11.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/traces", Label: "Traces", Page: p12.Page, Head: p12.Head, Mount: p12.Mount, Unmount: p12.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/views", Label: "Views", Page: p13.Page, Head: p13.Head, Mount: p13.Mount, Unmount: p13.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/settings/config", Label: "Config", Page: p10.Page, Head: p10.Head, Mount: p10.Mount, Unmount: p10.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/settings/members", Label: "Members", Page: p11.Page, Head: p11.Head, Mount: p11.Mount, Unmount: p11.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/storage", Label: "Storage", Page: p12.Page, Head: p12.Head, Mount: p12.Mount, Unmount: p12.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/traces", Label: "Traces", Page: p13.Page, Head: p13.Head, Mount: p13.Mount, Unmount: p13.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/views", Label: "Views", Page: p14.Page, Head: p14.Head, Mount: p14.Mount, Unmount: p14.Unmount, Layouts: nil, Client: true, Raw: false},
 	}
 }

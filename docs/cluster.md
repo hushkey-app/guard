@@ -196,9 +196,10 @@ Separate on purpose, and this is the whole design:
   a variable — a redeploy that reset the clock would silence the alarm at
   precisely the moment it was due to fire.
 - **Delivery does not travel over the thing being reported on.** The alert is
-  always a line in guard's log, and additionally a JSON `POST` to
-  `GUARD_ALERT_WEBHOOK` if one is set — its own HTTP client, not the SSH
-  runner whose jobs are failing. A stale job is reported once and then repeated
+  always a line in guard's log, and additionally a JSON `POST` to the destination
+  the command names (**Settings → Alerts**) — its own HTTP client, not the SSH
+  runner whose jobs are failing. A command that names none is logged and nothing
+  else. A stale job is reported once and then repeated
   every six hours (`GUARD_ALERT_REPEAT`) until it succeeds; a success clears
   the flag, so the next failure is announced afresh.
 - **A delivery that failed is not a delivery.** Anything but a 2xx leaves the
@@ -225,15 +226,15 @@ a `text` beside them — so the same URL works for a chat hook that renders
 ```
 
 Some receivers need a credential and some do not — a Slack or Discord incoming
-webhook has none, because the URL *is* the secret. `GUARD_ALERT_TOKEN` is for
-the ones that do:
+webhook has none, because the URL *is* the secret. A stored destination carries
+the token for the ones that do:
 
-| Receiver | Configuration |
+| Receiver | The destination holds |
 |---|---|
-| Slack / Discord incoming webhook | `GUARD_ALERT_WEBHOOK` only |
-| Your own endpoint / a paging service | `+ GUARD_ALERT_TOKEN=xxx` → `Authorization: Bearer xxx` |
-| Something naming its own scheme | `GUARD_ALERT_TOKEN="Bot xxx"` → sent as written |
-| Something with its own header | `+ GUARD_ALERT_HEADER=X-Api-Key` → the token verbatim, there |
+| Slack / Discord incoming webhook | the URL only |
+| Your own endpoint / a paging service | `+ token: xxx` → `Authorization: Bearer xxx` |
+| Something naming its own scheme | `token: "Bot xxx"` → sent as written |
+| Something with its own header | `+ header: X-Api-Key` → the token verbatim, there |
 
 A bare token becomes a Bearer credential; one that already contains a space is
 sent unchanged, because `Bearer Bot xxx` is what nothing wants. With a custom
@@ -388,6 +389,71 @@ finished configuring, and this one is not. No run history: the copy has never
 run anything. And it arrives **paused**, because until you change the
 address it is pointing at the machine it was copied from.
 
+## The machine's environment
+
+Every machine has a box of `KEY=value` lines under **Settings → Cluster**, and two
+buttons under it.
+
+**Save** stores them in guard. Nothing happens on the machine — this is somebody's
+intent, typed or pasted once, and a locked machine may still be edited here.
+
+**Inject on machine** puts them on the box. One SSH command writes both places
+Linux takes an environment from:
+
+```
+/etc/environment                               logins, PAM, anything shell
+/etc/systemd/system.conf.d/10-guard-env.conf   every systemd service
+```
+
+Both, because "the machine's environment" is a different file depending on what is
+reading it: a box whose apps are all systemd units gets nothing from
+`/etc/environment` alone. A `systemctl daemon-reexec` follows so the manager
+re-reads its defaults. **Services already running keep the environment they
+started with** — restarting one is one of the machine's stored commands, and guard
+says that after every inject rather than implying the change is live everywhere.
+
+Containers are the exception worth knowing: docker does not pass the host's
+environment in, so a containerised app still needs its `env_file` or `-e`. What
+this gives that case is the file to point at.
+
+### The paths are fixed, and that is the feature
+
+There is nothing to declare and no path to fill in first. A list of files to
+manage is what turns "put these variables on that box" into a chore, and every
+extra option is a decision somebody has to make before they can do the thing they
+came to do.
+
+### What is safe about it
+
+- **Guard writes what guard rendered.** The inject request carries a node id and
+  nothing else: the variables come from the database, the paths are constants, and
+  the login comes off the machine. There is no shape of that call that writes
+  chosen content to a chosen place.
+- **Values travel as base64.** An environment is full of passwords with quotes and
+  dollars in them, and every bug in a thing like this is a quoting bug. Nothing a
+  value contains reaches the command line.
+- **Each file is replaced atomically, and the old one is kept** as `.guard-bak`
+  beside it — written to a temporary name in the same directory and renamed over
+  the target, so nothing ever reads half an environment, and putting it back is one
+  `mv` for somebody who cannot reach guard.
+- **The values are sealed at rest**, with the keeper the SSH passwords use. They
+  are shown in the box in the clear, because a box of masked fields is not an
+  editor, and every endpoint here is admin — including the read.
+- **The lock refuses the inject, not the save.** Editing guard's copy changes
+  nothing on the machine; writing to the machine is the thing a locked machine does
+  not allow.
+- **A value is written back the way it will be read.** The box is rendered by the
+  same function that writes the file, so a value containing ` #` or a quote comes
+  back quoted rather than truncated by the next save.
+
+### Saved, and on the machine
+
+The machine list carries a count and two dates — never the values, because that
+list is fetched every three seconds. When what is stored is newer than what was
+injected, the line goes amber and says so: **"saved since"** is the state this
+pair of dates exists to make visible, and it is the difference between a variable
+being in guard and being on the box.
+
 ## What is stored
 
 `cluster_nodes` gains `domain`, `health_path`, `ssh_address`, `ssh_password`
@@ -420,6 +486,10 @@ an action that has never run counts from), `stale_after_s`, `last_ok_ns` and
 `alerted_ns`. `cluster_runs` is the history — one row per run, fifty kept per
 command, carrying the outcome, the trigger and the last 8 KB of output. It is
 deleted with its command and with its machine.
+
+`cluster_env` is one row per variable per machine — key, position, and the value
+sealed with the keeper the SSH passwords use. `cluster_env_state` is the two dates
+beside it: when the set was last saved, and when it was last written to the box.
 
 ## Confirmations
 

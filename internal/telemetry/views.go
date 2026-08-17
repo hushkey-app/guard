@@ -46,10 +46,10 @@ type TraceSpan = model.TraceSpan
 // people mean, and splitting one concept across two panels because a dependency
 // was upgraded would be worse than surprising.
 var indexedAttributes = []struct {
-	Column   string
-	Label    string
+	Column    string
+	Label     string
 	Canonical string
-	Keys     []string
+	Keys      []string
 }{
 	{Column: "attr_http_route", Label: "HTTP route", Canonical: "http.route", Keys: []string{"http.route"}},
 	{Column: "attr_http_method", Label: "HTTP method", Canonical: "http.request.method", Keys: []string{"http.request.method", "http.method"}},

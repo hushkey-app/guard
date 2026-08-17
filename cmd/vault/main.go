@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/hushkey-app/guard/internal/build"
+	"github.com/hushkey-app/guard/internal/config"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vault"
 	"github.com/mirairoad/howl-go/core/console"
@@ -73,6 +74,23 @@ func serve(args []string) error {
 		return err
 	}
 	defer store.Close()
+
+	// The two settings on the configuration page that belong to this process.
+	// Applied the same way guard applies its own: stored values into the
+	// environment, then the flags nobody typed are re-derived from it. A page
+	// that showed a listen address this binary was not reading would be a page
+	// that lies, and the vault is the one guard restarts *last*.
+	if _, err := config.Apply(store); err != nil {
+		slog.Warn("could not read stored configuration", slog.Any("err", err))
+	}
+	typed := map[string]bool{}
+	flags.Visit(func(f *flag.Flag) { typed[f.Name] = true })
+	if !typed["addr"] {
+		*addr = env("GUARD_VAULT_ADDR", ":4319")
+	}
+	if !typed["touch"] {
+		*touch = envDuration("GUARD_VAULT_TOUCH", time.Minute)
+	}
 
 	mux := http.NewServeMux()
 	(&vault.Server{Store: store, Touch: *touch}).Register(mux)

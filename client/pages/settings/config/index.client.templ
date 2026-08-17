@@ -1,0 +1,139 @@
+// The configuration page: every environment variable guard reads, as a form.
+//
+// There is deliberately almost no markup here. One field per variable would be
+// forty fields to keep in step with internal/config's catalogue, and the first
+// time somebody added a variable and forgot the template, the page would be
+// quietly wrong about what guard is configured with. So the groups and the rows
+// are drawn by client/public/config.js from what GET /api/config answers, and
+// what lives here is the page furniture and the two <template> elements it
+// clones — which is how the rest of the dashboard keeps real shadcn markup out
+// of JavaScript string concatenation.
+package config
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/alert"
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
+)
+
+templ Head() {
+	<title>Configuration — Guard</title>
+	<meta name="description" content="Every environment variable Guard reads, stored in Guard's own database."/>
+}
+
+templ Page() {
+	<section class="space-y-8">
+		@ui.PageHeading("Workspace", "Configuration", "Everything Guard reads from the environment, kept where you can change it.")
+		<div class="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
+			@components.SettingsNav("/settings/config")
+			<div class="min-w-0 space-y-6">
+				<div>
+					<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Environment</p>
+					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Settings</h2>
+					<p class="mt-2 text-muted-foreground">
+						A value saved here is stored in Guard's database and put into Guard's environment at the next start — so it outranks the same name in a unit file, and it takes a restart to come into force.
+					</p>
+				</div>
+				<div data-config-ignored hidden>
+					@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+						@alert.Title() {
+							Started with GUARD_CONFIG_IGNORE
+						}
+						@alert.Description() {
+							This process is reading the environment alone. Saving still works, and nothing saved will be used until that variable is removed and Guard is restarted.
+						}
+					}
+				</div>
+				<div data-config-groups class="space-y-6">
+					<p data-config-loading class="text-sm text-muted-foreground">Loading…</p>
+				</div>
+				<div class="sticky bottom-4 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card/95 p-4 shadow-lg backdrop-blur">
+					@button.Button(button.Props{Attributes: templ.Attributes{"data-config-save": true, "type": "button"}}) {
+						Save changes
+					}
+					@button.Button(button.Props{Variant: button.VariantOutline, Attributes: templ.Attributes{"data-config-restart": true, "type": "button", "hidden": true}}) {
+						Restart Guard
+					}
+					<span data-config-status class="text-sm text-muted-foreground"></span>
+				</div>
+				@alert.Alert() {
+					@alert.Title() {
+						Two of these cannot be stored here
+					}
+					@alert.Description() {
+						<code class="font-mono">GUARD_DB_PATH</code> and <code class="font-mono">GUARD_SECRET_KEY</code> are what Guard needs to open and decrypt this database, so they cannot live inside it — they are shown read-only, from the environment. Retention and the event cap are on the <a href="/settings" class="underline">Data storage</a> page, because those apply the moment they are saved rather than at the next start.
+					}
+				}
+				@components.ConfirmDialog()
+				@group()
+				@row()
+			</div>
+		</div>
+	</section>
+}
+
+// group is one titled section of the form. Cloned per group by config.js.
+templ group() {
+	<template data-config-group-template>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					<span data-config-group-name></span>
+				}
+			}
+			@card.Content() {
+				<div data-config-group-rows class="space-y-5"></div>
+			}
+		}
+	</template>
+}
+
+// row is one variable: what it is called, where its value came from, and the
+// input that changes it. The three inputs are all here rather than built in
+// JavaScript, so Tailwind sees every class one of them needs.
+templ row() {
+	<template data-config-row-template>
+		<div data-config-row class="space-y-2">
+			<div class="flex flex-wrap items-baseline gap-2">
+				<label data-config-label class="text-sm font-medium"></label>
+				<code data-config-name class="font-mono text-xs text-muted-foreground"></code>
+				<span data-config-source class="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"></span>
+				<span data-config-pending hidden class="rounded-full border border-border px-2 py-0.5 text-[11px] text-warning">
+					saved · restart to apply
+				</span>
+			</div>
+			<div class="flex items-stretch gap-2">
+				@input.Input(input.Props{
+					Class:      "min-w-0 flex-1 font-mono",
+					Attributes: templ.Attributes{"data-config-input": true, "autocomplete": "off", "spellcheck": "false"},
+				})
+				<!-- Only the two opaque tokens get these, and config.js hides them
+				     everywhere else: a Generate beside an OAuth client secret would
+				     mint a value Google has never heard of. -->
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Class:      "shrink-0",
+					Attributes: templ.Attributes{"data-config-copy": true, "type": "button", "hidden": true},
+				}) {
+					Copy
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Class:      "shrink-0",
+					Attributes: templ.Attributes{"data-config-generate": true, "type": "button", "hidden": true},
+				}) {
+					Generate
+				}
+			</div>
+			<textarea data-config-textarea hidden rows="6" class="cn-input min-h-[8rem] w-full font-mono text-xs" autocomplete="off" spellcheck="false"></textarea>
+			<p data-config-help class="text-xs text-muted-foreground"></p>
+		</div>
+	</template>
+}
+
+func Mount()   { lifecycle.Mount("settings-config") }
+func Unmount() { lifecycle.Unmount("settings-config") }

@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/hushkey-app/guard/client/pages"
-	"github.com/hushkey-app/guard/internal/access"
 	"github.com/hushkey-app/guard/internal/auth"
 	"github.com/hushkey-app/guard/internal/build"
 	"github.com/hushkey-app/guard/internal/cluster"
+	"github.com/hushkey-app/guard/internal/config"
 	"github.com/hushkey-app/guard/internal/ingest"
 	"github.com/hushkey-app/guard/internal/notify"
 	"github.com/hushkey-app/guard/internal/release"
@@ -26,8 +26,8 @@ import (
 	"github.com/hushkey-app/guard/internal/telemetry"
 	"github.com/hushkey-app/guard/internal/viewalerts"
 	"github.com/hushkey-app/guard/server/apis"
-	apiaccess "github.com/hushkey-app/guard/server/apis/access"
 	apicollector "github.com/hushkey-app/guard/server/apis/collector"
+	apiconfig "github.com/hushkey-app/guard/server/apis/config"
 	apiprober "github.com/hushkey-app/guard/server/apis/prober"
 	apirunner "github.com/hushkey-app/guard/server/apis/runner"
 	apischeduler "github.com/hushkey-app/guard/server/apis/scheduler"
@@ -58,9 +58,6 @@ func main() {
 	// on a timer are dumps and syncs, and a backup killed at the two minutes a
 	// pressed button gets is a backup that has never once worked.
 	scheduleTimeout := flag.Duration("schedule-timeout", envDuration("GUARD_SCHEDULE_TIMEOUT", cluster.DefaultScheduleTimeout), "how long a scheduled command may take")
-	alertWebhook := flag.String("alert-webhook", env("GUARD_ALERT_WEBHOOK", ""), "URL to POST staleness alerts to; alerts are logged either way")
-	alertToken := flag.String("alert-token", env("GUARD_ALERT_TOKEN", ""), "credential for the alert webhook; sent as a Bearer token unless it names its own scheme")
-	alertHeader := flag.String("alert-header", env("GUARD_ALERT_HEADER", ""), "header the alert token goes in (default Authorization)")
 	alertInterval := flag.Duration("alert-interval", envDuration("GUARD_ALERT_INTERVAL", 5*time.Minute), "how often to check that scheduled jobs are still succeeding")
 	alertRepeat := flag.Duration("alert-repeat", envDuration("GUARD_ALERT_REPEAT", 6*time.Hour), "how long a stale job stays quiet after it has been reported")
 	monitorInterval := flag.Duration("monitor-interval", envDuration("GUARD_MONITOR_INTERVAL", 30*time.Second), "how often the machine rules are evaluated")
@@ -68,7 +65,6 @@ func main() {
 	updateRepo := flag.String("update-repo", env("GUARD_UPDATE_REPO", release.DefaultRepo), "the GitHub repository to watch for releases; empty watches nothing")
 	updateInterval := flag.Duration("update-interval", envDuration("GUARD_UPDATE_INTERVAL", 15*time.Minute), "how often to ask GitHub for the newest release")
 	updateState := flag.String("update-state", env("GUARD_UPDATE_STATE", release.DefaultStatePath), "the file deploy/guard-update reads to know which version this box should be on")
-	envFile := flag.String("env-file", env("GUARD_ENV_FILE", access.DefaultPath), "the env file guard may write its own credentials into; read by the unit after guard.env")
 	// What this binary is, without starting it. The updater on the box asks the
 	// file on disk rather than keeping its own note of what it installed, which
 	// is the note that goes stale the one time somebody copies a binary by hand.
@@ -88,6 +84,34 @@ func main() {
 		log.Fatal(err)
 	}
 	defer store.Close()
+
+	// Guard's own configuration, from guard's own database, put into this
+	// process's environment before anything reads it. Everything below still
+	// asks os.Getenv and knows nothing about the table — see internal/config
+	// for why that is the whole design rather than a shortcut.
+	//
+	// Only the flags nobody typed are re-derived, and that ordering is the
+	// escape hatch: `guard -update-repo=""` beats a stored value, which is what
+	// somebody needs on the day the dashboard stored something that will not
+	// start. (`GUARD_CONFIG_IGNORE=1` is the bigger hammer, and skips the lot.)
+	settings, err := config.Load(store)
+	if err != nil {
+		log.Fatal(err)
+	}
+	typed := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { typed[f.Name] = true })
+	redo(typed, "cluster-interval", clusterInterval, func() time.Duration { return envDuration("GUARD_CLUSTER_INTERVAL", 30*time.Second) })
+	redo(typed, "cluster-timeout", clusterTimeout, func() time.Duration { return envDuration("GUARD_CLUSTER_TIMEOUT", 5*time.Second) })
+	redo(typed, "ssh-timeout", sshTimeout, func() time.Duration { return envDuration("GUARD_SSH_TIMEOUT", remote.DefaultTimeout) })
+	redo(typed, "schedule-timeout", scheduleTimeout, func() time.Duration { return envDuration("GUARD_SCHEDULE_TIMEOUT", cluster.DefaultScheduleTimeout) })
+	redo(typed, "alert-interval", alertInterval, func() time.Duration { return envDuration("GUARD_ALERT_INTERVAL", 5*time.Minute) })
+	redo(typed, "alert-repeat", alertRepeat, func() time.Duration { return envDuration("GUARD_ALERT_REPEAT", 6*time.Hour) })
+	redo(typed, "monitor-interval", monitorInterval, func() time.Duration { return envDuration("GUARD_MONITOR_INTERVAL", 30*time.Second) })
+	redo(typed, "view-alert-interval", viewAlertInterval, func() time.Duration { return envDuration("GUARD_VIEW_ALERT_INTERVAL", time.Minute) })
+	redo(typed, "update-repo", updateRepo, func() string { return env("GUARD_UPDATE_REPO", release.DefaultRepo) })
+	redo(typed, "update-interval", updateInterval, func() time.Duration { return envDuration("GUARD_UPDATE_INTERVAL", 15*time.Minute) })
+	redo(typed, "update-state", updateState, func() string { return env("GUARD_UPDATE_STATE", release.DefaultStatePath) })
+
 	public, err := fs.Sub(publicFS, "client/public")
 	if err != nil {
 		log.Fatal(err)
@@ -224,15 +248,6 @@ func main() {
 		Sender:   sender,
 		Interval: *alertInterval,
 		Repeat:   *alertRepeat,
-		// The environment's destination, used by any job that names no stored
-		// one. It predates the named destinations and still works, because an
-		// instance configured with it should not go quiet on an upgrade.
-		Fallback: notify.Destination{
-			Name:   "GUARD_ALERT_WEBHOOK",
-			URL:    *alertWebhook,
-			Token:  *alertToken,
-			Header: *alertHeader,
-		},
 	}
 	go watch.Run(proberCtx)
 	// And the rules over what the cluster page already measures — the health
@@ -269,28 +284,22 @@ func main() {
 	}
 	go updates.Run(proberCtx)
 	apiupdate.Use(updates)
-	// The two credentials guard is reached with, and the one file guard may
-	// write them into. Rotating one has always meant an SSH session, an env
-	// file and `systemctl restart`, which is why in practice neither is ever
-	// rotated; this is those steps behind a button, and nothing else about
-	// them changes — they still arrive from the environment, at a start.
+	// How a change to the stored configuration becomes a change to the running
+	// process: guard exits, and its supervisor starts it again against the new
+	// environment. It runs unprivileged with NoNewPrivileges and cannot ask
+	// systemd for anything, so stopping and being brought back is the honest
+	// way for a service to restart itself — offered only where something will
+	// do the bringing back, which is what INVOCATION_ID answers.
 	//
-	// Restarting is exiting. Guard runs unprivileged with NoNewPrivileges and
-	// cannot ask systemd for anything, so the honest way for a service to be
-	// restarted is to stop and be brought back — which is offered only where
-	// something will do the bringing back. os.Exit rather than an unwind for
-	// the same reason the normal path is log.Fatal: nothing here has a
-	// shutdown to run, and SQLite in WAL mode is crash-consistent by design.
-	keys := &access.Keys{
-		Path:    *envFile,
-		Running: access.Credentials{Token: token, Secret: otelSecret},
-	}
-	if access.Supervised() {
-		keys.Restart = func() {
+	// os.Exit rather than an unwind, for the same reason the normal path here is
+	// log.Fatal: nothing in this process has a shutdown to run, and SQLite in
+	// WAL mode is crash-consistent by design.
+	if config.Supervised() {
+		settings.Restartable(func() {
 			time.AfterFunc(500*time.Millisecond, func() { os.Exit(0) })
-		}
+		})
 	}
-	apiaccess.Use(keys)
+	apiconfig.Use(settings)
 	// What the members endpoints need to know that only the environment can
 	// answer: whether sign-in is on, and which admins came from it.
 	apisignin.Use(sessions)
@@ -313,7 +322,13 @@ func main() {
 	// than being squeezed through the typed layer as base64. Immutable for an
 	// hour — a machine's icon changes about once a year, and the dashboard asks
 	// for every node's every three seconds.
-	mux.HandleFunc("GET /api/cluster/{id}/icon", func(w http.ResponseWriter, r *http.Request) {
+	//
+	// `/icon/{id}` rather than `/{id}/icon`: the second form claims every
+	// two-segment path under /api/cluster, so ServeMux refuses to register any
+	// `/api/cluster/<thing>/{id}` beside it — "/api/cluster/env/icon" matches
+	// both and neither is more specific. The panic is at startup, which is the
+	// good version of that mistake, and the fix is to put the literal first.
+	mux.HandleFunc("GET /api/cluster/icon/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
 			http.Error(w, "not found", http.StatusNotFound)
@@ -340,6 +355,19 @@ func main() {
 // list. howl-go itself has no user model and no opinion about tokens, sessions
 // or scopes, which is the only way it can stay out of the way of an application
 // that has all three.
+
+// redo re-derives one flag from the environment, now that the stored
+// configuration is part of it.
+//
+// Skipped for a flag somebody actually typed: the command line is the one place
+// that outranks the database, because it is the only one available when the
+// database holds a value that stops guard from starting.
+func redo[T any](typed map[string]bool, name string, target *T, from func() T) {
+	if typed[name] {
+		return
+	}
+	*target = from()
+}
 
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {

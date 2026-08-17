@@ -83,6 +83,12 @@ type Node struct {
 	// with the node because the settings page draws them together, and a second
 	// request per node to list two buttons is a request per node too many.
 	Actions []NodeAction `json:"actions,omitempty"`
+	// Env is what guard knows about this machine's environment: how many
+	// variables are kept for it, when they were last saved and when they were
+	// last put on the box. Not the values — the list every machine carries is
+	// read three times a second by the dashboard, and a fleet's worth of
+	// passwords does not belong in it. The editor asks for one machine's.
+	Env NodeEnvState `json:"env"`
 	// Group is the box this machine sits in — "VPC-1", "staging", "the rack in
 	// the office". Free text, because guard cannot know whether the boundary
 	// that matters to somebody is a VPC, a region, a customer or a floor, and a

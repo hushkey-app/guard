@@ -2,15 +2,30 @@
 
 MODULE := github.com/hushkey-app/guard
 
+# What this checkout actually is, stamped into both binaries.
+#
+# `git describe` answers with the tag when the tree is exactly one, and
+# tag-commits-sha (plus -dirty) when it is not — so a local build says which
+# commit it is instead of impersonating whichever release number was last
+# hardcoded in internal/build. That constant is now `0.0.0-dev`, which is what
+# an unstamped `go run .` reports: not a version anybody released.
+#
+# The release workflow stamps the tag itself; this is the local half. Override
+# with VERSION= to build a binary claiming a specific one.
+VERSION ?= $(shell git describe --tags --dirty --always --abbrev=7 2>/dev/null || echo 0.0.0-dev)
+# One token, no spaces: this also goes through GOFLAGS for `make dev`, which the
+# go tool splits on whitespace.
+STAMP := -ldflags=-X=$(MODULE)/internal/build.Version=$(VERSION)
+
 all: wasm
-	go build -o guard .
-	go build -o guard-vault ./cmd/vault
+	go build $(STAMP) -o guard .
+	go build $(STAMP) -o guard-vault ./cmd/vault
 
 # The secrets server, on its own. A second binary rather than a flag on the
 # first: an application asking for its database password at boot must not be
 # waiting on the dashboard's release.
 vault:
-	go build -o guard-vault ./cmd/vault
+	go build $(STAMP) -o guard-vault ./cmd/vault
 
 generate: apis
 	go run github.com/mirairoad/howl-go/core/cmd/fsroutes -module $(MODULE)/client/pages
@@ -52,6 +67,7 @@ seed:
 # they are only served when somebody remembered to start them is one where that
 # promise is never actually exercised. GUARD_VAULT_ADDR= makes it stay away.
 dev: GUARD_VAULT_ADDR ?= :4319
+dev: export GOFLAGS = $(STAMP)
 dev:
 	@trap 'kill 0' EXIT INT TERM; \
 	if [ -n "$(GUARD_VAULT_ADDR)" ]; then \
@@ -90,6 +106,7 @@ css:
 		'@source "../public/members.js";' \
 		'@source "../public/alerts.js";' \
 		'@source "../public/secrets.js";' \
+		'@source "../public/config.js";' \
 		"@source \"$$SHADCN_TEMPL_PATH/components/**/*.templ\";" \
 		> client/styles/app.sources.css
 	.howl/tailwind/node_modules/.bin/tailwindcss -i client/styles/app.css -o client/public/app.css --minify

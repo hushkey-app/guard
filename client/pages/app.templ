@@ -130,10 +130,14 @@ templ App(title, head string) {
 				}
 				<!-- Who made it and which build is answering. The version is the
 				     same string the OpenAPI document reports, so a bug report
-				     naming what the sidebar says names something real. -->
+				     naming what the sidebar says names something real.
+				     A release is `v0.1.0`; a local build is what `git describe`
+				     said, which is longer and says which commit — so it is
+				     truncated with the whole of it on hover rather than
+				     shortened here into something that is not the version. -->
 				<div class="mt-3 flex items-center justify-between gap-2 px-2 text-[.65rem] text-muted-foreground">
-					<span>Guard by <span class="font-medium text-foreground">Hushkey</span></span>
-					<span class="font-mono tabular-nums">{ build.Tag() }</span>
+					<span class="shrink-0">Guard by <span class="font-medium text-foreground">Hushkey</span></span>
+					<span title={ build.Tag() } class="truncate font-mono tabular-nums">{ build.Tag() }</span>
 				</div>
 			</aside>
 			<div class="flex min-h-screen flex-col lg:pl-64">

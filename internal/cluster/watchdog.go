@@ -41,11 +41,6 @@ type WatchStore interface {
 type Watchdog struct {
 	Store  WatchStore
 	Sender notify.Sender
-	// Fallback is where an alert goes when the action names no destination —
-	// the GUARD_ALERT_WEBHOOK an instance was configured with before there
-	// were named ones. Zero-valued means "log only", which is a complete
-	// answer for a guard on somebody's laptop.
-	Fallback notify.Destination
 	// Interval is how often to look. Cheap — it is one query and some
 	// subtraction — so it can be far finer than the budgets it enforces.
 	Interval time.Duration
@@ -144,33 +139,34 @@ func (w *Watchdog) Round(ctx context.Context) []notify.Event {
 	return raised
 }
 
-// deliver sends one event to the action's destination, or to the fallback.
-// Reports whether the alert can be considered told.
+// deliver sends one event to the destination the action names. Reports whether
+// the alert can be considered told.
+//
+// A command that names no destination is logged and nothing else — and that
+// counts as told, because otherwise every pass would re-log it. There is no
+// instance-wide fallback: destinations are named things somebody added on
+// /settings/alerts, and a second, invisible one configured by an environment
+// variable was a second answer to "where do alerts go".
 func (w *Watchdog) deliver(ctx context.Context, webhookID int64, event notify.Event) bool {
-	destination := w.Fallback
-	if webhookID > 0 {
-		stored, err := w.Store.DestinationFor(webhookID)
-		if err != nil {
-			w.Log.Error("staleness alert has no reachable destination",
-				slog.Int64("webhook", webhookID), slog.Any("err", err))
-			return false
-		}
-		destination = stored
-	}
-	if destination.URL == "" {
-		// Nowhere configured. The log line above is the whole delivery, and
-		// the alert counts as told: otherwise every pass would re-log it.
+	if webhookID <= 0 {
 		return true
 	}
-	err := w.Sender.Send(ctx, destination, event)
-	if webhookID > 0 {
-		failure := ""
-		if err != nil {
-			failure = err.Error()
-		}
-		if recordErr := w.Store.RecordDelivery(webhookID, time.Now(), failure); recordErr != nil {
-			w.Log.Error("delivery not recorded", slog.Any("err", recordErr))
-		}
+	destination, err := w.Store.DestinationFor(webhookID)
+	if err != nil {
+		w.Log.Error("staleness alert has no reachable destination",
+			slog.Int64("webhook", webhookID), slog.Any("err", err))
+		return false
+	}
+	if destination.URL == "" {
+		return true
+	}
+	err = w.Sender.Send(ctx, destination, event)
+	failure := ""
+	if err != nil {
+		failure = err.Error()
+	}
+	if recordErr := w.Store.RecordDelivery(webhookID, time.Now(), failure); recordErr != nil {
+		w.Log.Error("delivery not recorded", slog.Any("err", recordErr))
 	}
 	if err != nil {
 		w.Log.Error("staleness alert not delivered",

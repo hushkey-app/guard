@@ -19,6 +19,7 @@ internal/cluster/stats.go     the host sampling — one fixed read-only command 
 internal/cluster/scheduler.go the stored commands that carry a schedule
 internal/cluster/watchdog.go  "no successful run in too long" — its own loop, its own delivery
 internal/cluster/monitors.go  the rules over what the cluster page measures
+internal/envfile/             a machine's environment, put on the machine
 internal/notify/              one POST of JSON to a named destination — every watcher's way out
 internal/viewalerts/          the saved views that carry a rule, run on a timer
 internal/remote/ssh.go        running one stored command on one machine
@@ -26,7 +27,7 @@ internal/secrets/secrets.go   AES-GCM at rest, for the SSH passwords and the sto
 internal/telemetry/vault.go   the secrets: environments, values, the keys that read them
 internal/vault/               the second binary's half: read the file, answer a key
 cmd/vault/                    guard-vault — secrets served while guard is down
-internal/access/access.go     the two tokens guard is reached with: generate, write the env file, exit
+internal/config/config.go     every GUARD_* variable: the catalogue, stored, applied at startup
 internal/auth/               sign in with Google or Apple, and who is allowed in
 client/pages/                 the dashboard — howl-go filesystem routes
 client/ui/ui.templ            shared page furniture (nav, stats, filter bar, pagination)
@@ -39,6 +40,7 @@ client/public/registries.js   the registries drill
 client/public/cloud.js        the cloud accounts, the machine link, the provider strip
 client/public/storage.js      the object storage page
 client/public/secrets.js      the secrets page: environments, pairs, keys, .env import
+client/public/config.js       the configuration page: the catalogue as a form
 client/styles/app.css         stylesheet source — compiles to client/public/app.css
 ```
 
@@ -158,6 +160,17 @@ The three rules that are load-bearing:
   container — and a provider API answers for the power switch; neither knows the
   disk is full. Memory is total minus *available*; CPU is a rate, so the first
   sample has none and says so rather than showing 0%.
+- **A machine has an environment, and two presses.** A box of `KEY=value` lines
+  per machine (`cluster_env`, sealed like the SSH passwords): **Save** stores it in
+  guard and touches nothing, **Inject** writes it to the box. Fixed paths, no files
+  to declare — `/etc/environment` and a systemd drop-in, then `daemon-reexec`, so
+  everything on the machine that takes an environment takes the same one; services
+  already running keep theirs until restarted, and guard says so. The inject
+  request carries a node id and nothing else — variables from the database, paths
+  from `internal/envfile`, login off the machine — so no call can write chosen
+  content to a chosen place. Values go over as base64, each file is replaced
+  atomically with the old one kept as `.guard-bak`, and the lock refuses the
+  inject rather than the save. Read `docs/cluster.md` before changing any of it.
 - **`POST /api/cluster/run` takes an action id, never a command**, and reads the
   machine off the action. Everything that runs was stored first, and every run
   is logged. A machine can also be **locked**: one way, confirmed by typing its
@@ -177,7 +190,8 @@ The three rules that are load-bearing:
   fire on the day the dump did not. It reads `last_ok_ns` from the database —
   the last *success*, not the last run — so it still speaks when the scheduler
   is wedged, and it delivers through its own HTTP client
-  (`GUARD_ALERT_WEBHOOK`) rather than the machinery it is reporting on. Every
+  (a named destination, never the SSH runner) rather than the machinery it is
+  reporting on. Every
   run lands in `cluster_runs`, fifty per command, read from **History** on the
   card. Read `docs/cluster.md` before changing any of it.
 
@@ -185,7 +199,9 @@ The three rules that are load-bearing:
 
 Everything guard tells the outside world leaves through `internal/notify`: one
 POST of JSON to a **named destination** (`webhooks` table, token sealed like an
-SSH password, `GUARD_ALERT_WEBHOOK` still honoured as the unnamed fallback).
+SSH password). There is no environment variable for one, on purpose: a second,
+invisible destination no page could show would be a second answer to "where do
+alerts go". A rule naming none is logged and nothing else.
 Guard speaks no messaging app's API on purpose — read `docs/alerts.md` before
 changing any of it.
 
@@ -442,17 +458,15 @@ working; only the secret is safe to hand to a collector on somebody else's box.
 Set neither and ingest is unauthenticated — those three routes sit outside
 sign-in by construction, because a collector cannot authenticate with Google, so
 guard says so at startup rather than leaving it to be found. Both can be
-generated from Settings → Credentials, which writes `GUARD_ENV_FILE`
-(`/etc/guard/env.d/tokens.env`) and restarts guard into it. `GUARD_SECRET_KEY` is the key the SSH passwords and the stored
+generated from Settings → Configuration, which stores them like every other
+setting and restarts guard into them. `GUARD_SECRET_KEY` is the key the SSH passwords and the stored
 secrets are sealed with — unset, guard generates `<db>.key` beside the database, which is
 part of the backup and never part of the repository. **`guard-vault` will not generate
 one**: without the key it refuses to start rather than answering with values it cannot
 decrypt. `GUARD_VAULT_ADDR` (:4319) and `GUARD_VAULT_TOUCH` (1m, how often one key's use
 is recorded) configure it. `GUARD_SSH_TIMEOUT` bounds one command run,
-`GUARD_SCHEDULE_TIMEOUT` one scheduled run (30m). `GUARD_ALERT_WEBHOOK` is where a
-staleness alert is POSTed — unset, it is logged and nothing else — with
-`GUARD_ALERT_TOKEN` sent as `Authorization: Bearer` unless it names its own scheme,
-or in `GUARD_ALERT_HEADER` verbatim when the receiver wants its own header.
+`GUARD_SCHEDULE_TIMEOUT` one scheduled run (30m). Alerts go to the destinations
+named on Settings → Alerts and to no environment variable.
 `GUARD_ALERT_INTERVAL` (5m) is how often the budgets are checked,
 `GUARD_MONITOR_INTERVAL` (30s) how often the machine rules are, and
 `GUARD_ALERT_REPEAT` (6h) how long anything firing stays quiet between repeats.
@@ -463,6 +477,54 @@ Sign-in adds `GUARD_GOOGLE_CLIENT_ID`/`GUARD_GOOGLE_CLIENT_SECRET`, the four
 (the addresses that are always admins), `GUARD_AUTH_BASE_URL` (pin it behind a proxy —
 the redirect URI is compared as a string at both providers) and `GUARD_AUTH_SESSION_TTL`.
 All optional; set none and nobody is asked to sign in.
+
+## Configuration
+
+Everything guard reads from the environment is also a row in guard's own
+database, editable from **Settings → Configuration** — read `docs/config.md`
+before changing any of it. One rule carries it: **stored values are applied to
+the process environment at startup, and nothing else changes.** Every reader
+above `internal/config` still calls `os.Getenv` or takes a flag, so a deployment
+that sets everything in its unit file behaves exactly as it did.
+
+- **Precedence is decided once**: an explicit flag, then a stored value, then the
+  environment, then the default. The flag wins because it is the escape hatch;
+  the stored value outranks the environment because a button that silently loses
+  to a line in a unit file is worse than no button. `main` re-derives only the
+  flags nobody typed (`flag.Visit`), and the page names each value's source.
+- **The catalogue is `config.Entries`**, and the page is drawn from
+  `GET /api/config` — so adding a variable to guard is one entry there and
+  nothing else. No template to edit, no endpoint to write, and no chance of a
+  page that is wrong about what guard reads.
+- **`GUARD_DB_PATH` and `GUARD_SECRET_KEY` can never be stored**: anything needed
+  to open and decrypt the database cannot live inside it. Both are shown
+  read-only, and the key's value is never sent to a browser at all — unlike the
+  two tokens, which are shown in full and have a Generate button.
+- **Retention and the event cap stay on the storage page.** They are rows in
+  `settings`, applied when saved rather than at the next start; a second place to
+  type them would be a second answer.
+- **A save is all or nothing, and validated** — a duration that will not parse,
+  an unknown name, or half a provider's sign-in credentials refuses the whole
+  thing and writes nothing. Guard treats half a sign-in configuration as fatal at
+  startup on purpose, so the moment to say so is while somebody is still looking
+  at the field. Values are sealed at rest with the keeper the SSH passwords use.
+- **Writing is not applying.** A process has its environment from its start, so
+  a saved row says "restart to apply" and the restart is a second press. Guard
+  restarts by **exiting** — unprivileged, `NoNewPrivileges`, no systemctl — and
+  offers the button only where `INVOCATION_ID` says a supervisor will bring it
+  back. `guard-vault` applies its own two settings the same way, from a read.
+- **In development the environment is a `.env`.** A development build (the same
+  `build.IsDevelopment` the update card uses) reads `.env` from the working
+  directory at startup and rewrites guard's own lines there on every save, so
+  `make dev` gives a real file that docker compose or direnv can read too. A real
+  environment variable beats the file, lines guard does not own are preserved, it
+  is 0600, and it is off for a released build. `GUARD_DOTENV` names another file or
+  `0` turns it off.
+- **`GUARD_CONFIG_IGNORE=1` is the way back**: guard starts from the environment
+  alone, the page says so, and saving still works. Without it, a stored value
+  that stops guard from starting could only be fixed from the dashboard that is
+  not running. One unreadable stored value is skipped rather than fatal, for the
+  same reason.
 
 ## Deploying
 
@@ -480,17 +542,20 @@ restarts. `/etc/guard/version` pins a box (`latest`, or a tag).
   binary is kept beside the new one, so going back is a rename; a running binary
   cannot be written over, so installing is a rename too.
 - `-version` on both binaries is what the updater asks — never a state file
-  that can drift from what is actually installed.
-- **Settings → Credentials** (`internal/access`) rotates `GUARD_TOKEN` and
-  `GUARD_OTEL_SECRET` without an SSH session: guard writes one env file of its
-  own, `/etc/guard/env.d/tokens.env`, read by the unit **after** `guard.env` so
-  a dashboard rotation wins over a name set by hand. Both values come back in
-  the clear — the endpoints are `admin`, reads included, and the point of the
-  card is pasting the secret into a collector on another box. Writing is not
-  applying: a process has its environment from its start, so the card says
-  "restart to apply" and the restart is a second press. Guard restarts by
-  **exiting** — unprivileged, `NoNewPrivileges`, no systemctl — and offers the
-  button only where `INVOCATION_ID` says a supervisor will bring it back.
+  that can drift from what is actually installed. A release stamps the tag; the
+  Makefile stamps `git describe --tags --dirty` (and passes it through `GOFLAGS`
+  for `make dev`), so a local build reports the commit it came from rather than
+  impersonating a release. `internal/build.Version` defaults to `0.0.0-dev`, and
+  `build.IsDevelopment` keeps the sidebar's update card quiet for anything that
+  is not a published tag — that card compares by difference, and a working tree
+  differs from every release by construction.
+- **`GUARD_TOKEN` and `GUARD_OTEL_SECRET` are rotated from the configuration
+  page**, not from an SSH session: they are the only two rows carrying a
+  **Generate** button, because they are the only values guard itself issues — an
+  OAuth secret comes from Google, an alert token from the receiver, and
+  `GUARD_SECRET_KEY` must never be minted from a button because it orphans every
+  sealed row. Generating stores like any other save and copies to the clipboard;
+  the restart is the second press.
 - **The sidebar's Update card** (`internal/release`, `ui.UpdateCard`) polls the
   releases API server-side every 15m and writes `/etc/guard/version` when
   pressed — it installs nothing, which is why the card says "requested" rather

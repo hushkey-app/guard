@@ -26,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/hushkey-app/guard/internal/build"
 )
 
 // DefaultRepo is where guard looks for itself.
@@ -48,9 +50,20 @@ type State struct {
 	// ordering: GitHub's "latest release" is the most recently published one,
 	// not the highest version, so republishing an older tag is how a fleet is
 	// rolled back and this must not argue with that.
-	Available bool   `json:"available"`
-	URL       string `json:"url,omitempty"`
-	Notes     string `json:"notes,omitempty"`
+	//
+	// Never true for a development build. Difference is the right test between
+	// two releases and the wrong one against a working tree, which differs from
+	// every release by construction — so the card would otherwise sit in the
+	// sidebar of every checkout offering to "update" a binary that is ahead of
+	// the release it names.
+	Available bool `json:"available"`
+	// Development says this binary is not a published release: a commit past a
+	// tag, a dirty tree, or nothing stamped. The sidebar stays quiet; the page
+	// can still say what is running, which is the version somebody wants to see
+	// while developing.
+	Development bool   `json:"development"`
+	URL         string `json:"url,omitempty"`
+	Notes       string `json:"notes,omitempty"`
 	// Wanted is what /etc/guard/version asks for, if anything. Once it names
 	// the new release the button has done its job and the page says so — the
 	// installing happens somewhere else, on a timer, and may be minutes away.
@@ -99,6 +112,12 @@ func (w *Watch) State() State {
 	state.Current = w.Current
 	state.Managed = w.manageable()
 	state.Wanted = w.wanted()
+	state.Development = build.IsDevelopment(state.Current)
+	// Decided here rather than at check time, because whether this binary is a
+	// release does not depend on what GitHub last answered.
+	if state.Development {
+		state.Available = false
+	}
 	return state
 }
 
