@@ -5,6 +5,7 @@ package pages
 
 import (
 	p0 "github.com/hushkey-app/guard/client/pages/cluster"
+	p15 "github.com/hushkey-app/guard/client/pages/cluster/id.dyn"
 	p1 "github.com/hushkey-app/guard/client/pages/login"
 	p2 "github.com/hushkey-app/guard/client/pages/logs"
 	p3 "github.com/hushkey-app/guard/client/pages/metrics"
@@ -41,5 +42,6 @@ func FsClientRoutes() []router.Route {
 		{Pattern: "/storage", Label: "Storage", Page: p12.Page, Head: p12.Head, Mount: p12.Mount, Unmount: p12.Unmount, Layouts: nil, Client: true, Raw: false},
 		{Pattern: "/traces", Label: "Traces", Page: p13.Page, Head: p13.Head, Mount: p13.Mount, Unmount: p13.Unmount, Layouts: nil, Client: true, Raw: false},
 		{Pattern: "/views", Label: "Views", Page: p14.Page, Head: p14.Head, Mount: p14.Mount, Unmount: p14.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/cluster/{id}", Label: "Id", Page: p15.Page, Head: p15.Head, Mount: p15.Mount, Unmount: p15.Unmount, Layouts: nil, Client: true, Raw: false},
 	}
 }

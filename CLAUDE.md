@@ -160,6 +160,16 @@ The three rules that are load-bearing:
   container — and a provider API answers for the power switch; neither knows the
   disk is full. Memory is total minus *available*; CPU is a rate, so the first
   sample has none and says so rather than showing 0%.
+- **One machine has its own page**, `/cluster/{id}`
+  (`client/pages/cluster/id.dyn/`, `GET /api/cluster/{id}`): the same card the
+  list draws, always open, plus the two things a list has no room for — a command
+  line and a terminal pane. **`POST /api/cluster/exec` is the one endpoint that
+  takes a command rather than an action id** — a deliberate exception, because the
+  lines people actually run start as lines they type once. It is admin, **refused
+  on a locked machine** (whose stored commands still run), and logged into the same
+  `cluster_runs` history, which now carries the command for rows no action backs.
+  The pane keeps the last output, the exit code and the duration; it selects and
+  copies like a terminal, and **History** shows the last runs in the same place.
 - **A machine has an environment, and two presses.** A box of `KEY=value` lines
   per machine (`cluster_env`, sealed like the SSH passwords): **Save** stores it in
   guard and touches nothing, **Inject** writes it to the box. Fixed paths, no files
@@ -172,7 +182,8 @@ The three rules that are load-bearing:
   atomically with the old one kept as `.guard-bak`, and the lock refuses the
   inject rather than the save. Read `docs/cluster.md` before changing any of it.
 - **`POST /api/cluster/run` takes an action id, never a command**, and reads the
-  machine off the action. Everything that runs was stored first, and every run
+  machine off the action. (The command line on `/cluster/{id}` is the one
+  exception, through its own endpoint — see above.) Everything that runs was stored first, and every run
   is logged. A machine can also be **locked**: one way, confirmed by typing its
   name, after which the login is frozen and the command list is closed — no
   adding, editing or removing, from the page or the API. The only way past it is

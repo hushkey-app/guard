@@ -91,6 +91,11 @@ func (c *Client) ClusterMonitors(ctx context.Context) (monitors.Catalogue, error
 	return api.Call[monitors.Catalogue](ctx, c.Transport, "GET", "/api/cluster/monitors", nil, nil)
 }
 
+// ClusterNode calls GET /api/cluster/{id}.
+func (c *Client) ClusterNode(ctx context.Context, id string) (model.Node, error) {
+	return api.Call[model.Node](ctx, c.Transport, "GET", api.Path("/api/cluster/{id}", id), nil, nil)
+}
+
 // ClusterRuns calls GET /api/cluster/runs.
 func (c *Client) ClusterRuns(ctx context.Context, query cluster.RunQuery) ([]model.Run, error) {
 	return api.Call[[]model.Run](ctx, c.Transport, "GET", "/api/cluster/runs", query, nil)
@@ -401,6 +406,11 @@ func (c *Client) RevealObjectStorageKeys(ctx context.Context, body storage.Targe
 func (c *Client) RevokeSecretKey(ctx context.Context, id string) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/secrets/keys/{id}", id), nil, nil)
 	return err
+}
+
+// RunACommand calls POST /api/cluster/exec.
+func (c *Client) RunACommand(ctx context.Context, body cluster.Command) (model.Run, error) {
+	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/exec", nil, body)
 }
 
 // RunClusterAction calls POST /api/cluster/run.

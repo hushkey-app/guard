@@ -7,7 +7,7 @@
 import { adminHeaders, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
-import { clusterNodes, refreshCluster } from "./cluster.js";
+import { clusterNodes, refreshCluster, refreshMachine } from "./cluster.js";
 import { refreshRegistries } from "./registries.js";
 import { refreshCloud } from "./cloud.js";
 import { refreshStorage } from "./storage.js";
@@ -514,6 +514,8 @@ async function refreshPage({ facets = false } = {}) {
   if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
   if (qs("[data-view-grid]")) work.push(refreshViews());
   if (qs("[data-cluster-rows]") || qs("[data-topology]") || qs("[data-cluster-cards]")) work.push(refreshCluster());
+  // One machine's own page reads one machine, on the same tick as everything else.
+  if (qs("[data-machine-card]")) work.push(refreshMachine());
   // Forced only alongside a facets refresh — a mount or an explicit click —
   // because behind this one is a provider's API, not guard's database.
   if (qs("[data-registry-overview]")) work.push(refreshRegistries(facets));

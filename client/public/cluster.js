@@ -791,7 +791,17 @@ function cardFor(template, node) {
   const status = node.enabled ? node.status : "paused";
   qs("[data-node-dot]", item).style.background = node.enabled ? colours[node.status] : "var(--warning)";
   qs("[data-node-dot]", item).title = status;
-  qs("[data-node-name]", item).textContent = node.name;
+  // The name is the way in to the machine's own page. A link rather than the
+  // whole row, because the row is a disclosure — clicking it opens the fold, and
+  // a row that navigated instead would take away the quick look.
+  const name = qs("[data-node-name]", item);
+  name.replaceChildren();
+  const nameLink = el("a", "truncate font-medium hover:underline", node.name);
+  nameLink.href = `/cluster/${node.id}`;
+  // data-nav-link is what closes the mobile drawer on navigation, and what marks
+  // this as one of guard's own links rather than an outbound one.
+  nameLink.dataset.navLink = "true";
+  name.append(nameLink);
 
   const badge = qs("[data-node-badge]", item);
   badge.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${tones[status]}`;
@@ -1813,4 +1823,196 @@ document.addEventListener("click", (event) => {
     const node = nodes.find((candidate) => String(candidate.id) === item.dataset.nodeId);
     if (node) injectEnv(item, node).catch((failure) => say(item, failure.message));
   }
+});
+
+// The machine page: /cluster/{id}.
+//
+// It draws the same card the list draws — from the same template, through the same
+// fillers — so a section added to a machine appears here without being written
+// twice. What this page adds is what a list has no room for: a command line for
+// this machine and a terminal under it.
+//
+// One machine is one request. The list endpoint could be filtered in the browser,
+// but a page somebody keeps open on one box should not be re-reading forty
+// machines, their host stats and their tags every three seconds.
+export async function refreshMachine() {
+  const host = qs("[data-machine-card]");
+  const page = qs("[data-machine]");
+  if (!host || !page) return;
+  const id = Number(page.dataset.machine);
+  if (!id) return;
+  try {
+    await swr(`cluster.machine.${id}`, () => request(`/api/cluster/${id}`), (node, cached) => {
+      // The one machine this page is about lives in the same array every renderer
+      // here reads, so Run, Inject and the cloud strip find it without being told.
+      nodes = nodes.filter((candidate) => candidate.id !== node.id).concat(node);
+      drawMachine(host, node, cached);
+    });
+  } catch (failure) {
+    host.replaceChildren(el("p", "p-4 text-sm text-destructive", failure.message));
+  }
+}
+
+function drawMachine(host, node, cached) {
+  const template = qs("[data-cluster-card-template]");
+  if (!template) return;
+  // Typing guard, the same one the list has: this card carries an environment box
+  // and a cadence field, and rebuilding it under somebody mid-word is the one
+  // thing a three-second refresh must not do.
+  if (host.dataset.drawn === String(node.id) && (typing() || dirty.size)) return;
+
+  const card = cardFor(template, node);
+  // Always open. A page about one machine that starts folded is a page that makes
+  // you click to see what you came for.
+  qs("[data-card-body]", card).hidden = false;
+  const toggle = qs("[data-card-toggle]", card);
+  if (toggle) toggle.hidden = true;
+  const head = qs("[data-card-head]", card);
+  if (head) head.classList.remove("cursor-pointer", "hover:bg-muted/30");
+  host.replaceChildren(card);
+  host.dataset.drawn = String(node.id);
+
+  const title = qs("[data-machine-name]");
+  if (title) title.textContent = node.name;
+  const note = qs("[data-machine-note]");
+  if (note) {
+    note.textContent = [
+      node.group || "Ungrouped",
+      node.enabled ? node.status : "paused",
+      node.locked ? "locked" : "",
+      cached ? "from your last visit" : "",
+    ].filter(Boolean).join(" · ");
+  }
+  const hint = qs("[data-machine-hint]");
+  if (hint) {
+    hint.textContent = node.locked
+      ? "Locked — only this machine's stored commands can be run."
+      : !node.has_password || !node.ssh_address
+        ? "This machine has no stored SSH login."
+        : "Runs as the user in this machine's SSH address. Every run is logged.";
+  }
+  for (const control of qsa("[data-machine-run]")) {
+    control.disabled = !!node.locked || !node.has_password || !node.ssh_address;
+  }
+  // The card's own output pane is redundant here — this page has a terminal — and
+  // two panes showing different things is worse than one.
+  const pane = qs("[data-node-output]", card);
+  if (pane) pane.remove();
+}
+
+function terminal(head, body) {
+  const line = qs("[data-machine-output-head]");
+  const pane = qs("[data-machine-output]");
+  if (!pane) return;
+  if (line) line.textContent = head;
+  pane.textContent = body;
+  // Scrolled to the bottom on every write, because that is what a terminal does
+  // and the interesting end of a command's output is the end.
+  pane.scrollTop = pane.scrollHeight;
+}
+
+// Run the line as typed.
+//
+// One request: POST /api/cluster/exec, which is the one endpoint in guard that
+// takes a command rather than an action id. It is admin, refused on a locked
+// machine, and logged into the same history the stored commands write to — so this
+// is a faster door beside the vetted list rather than a way around it.
+async function runCommand(node) {
+  const input = qs("[data-machine-command]");
+  const command = input.value.trim();
+  if (!command) {
+    terminal("Nothing to run", "Type a command.");
+    input.focus();
+    return;
+  }
+  const yes = await ask({
+    title: `Run this on ${node.name}?`,
+    body: "It runs on the machine now, as the user in its SSH address, and the run is logged.",
+    detail: command,
+    confirm: "Run it",
+  });
+  if (!yes) return;
+  terminal(`${command} — running…`, "");
+  const result = await request("/api/cluster/exec", {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ node_id: node.id, command }),
+  });
+  const took = `${number.format(Math.round(result.duration_ms))} ms`;
+  const ending = result.error
+    ? `failed · ${result.error}`
+    : result.exit_code === 0 ? `ok · ${took}` : `exit ${result.exit_code} · ${took}`;
+  terminal(`${command} — ${ending}`, result.output || "(no output)");
+  // The line stays in the box: the next command is usually a variation of the
+  // last one, and retyping it is the thing a terminal never makes you do.
+  input.select();
+}
+
+// The pane selects and copies like a terminal, and this copies the whole of it —
+// the reason to run `docker ps` from here is usually to paste a line of it
+// somewhere else.
+async function copyOutput() {
+  const pane = qs("[data-machine-output]");
+  if (!pane || !pane.textContent.trim()) return;
+  try {
+    await navigator.clipboard.writeText(pane.textContent);
+    const head = qs("[data-machine-output-head]");
+    if (head) head.textContent = "Copied.";
+  } catch {
+    // The clipboard is refused on an insecure origin, which is exactly where a
+    // guard on a laptop lives. Select it instead of failing silently.
+    const range = document.createRange();
+    range.selectNodeContents(pane);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+}
+
+async function machineHistory(node) {
+  terminal("History — loading…", "");
+  const runs = await request(`/api/cluster/runs?node=${node.id}&limit=25`, { headers: adminHeaders() });
+  if (!runs.length) {
+    terminal("History", "Nothing has run on this machine yet.");
+    return;
+  }
+  const lines = runs.map((entry) => [
+    new Date(entry.ran_at).toLocaleString(),
+    entry.action_name || "(removed command)",
+    entry.trigger || "manual",
+    entry.outcome || (entry.error || entry.exit_code ? "failed" : "ok"),
+    entry.duration_ms ? `${number.format(Math.round(entry.duration_ms))} ms` : "—",
+  ].join("  ") + (entry.error ? ` · ${entry.error}` : ""));
+  terminal(`History — the last ${runs.length} run${runs.length === 1 ? "" : "s"}`, lines.join("\n"));
+}
+
+function machineNode() {
+  const page = qs("[data-machine]");
+  if (!page) return null;
+  return nodes.find((candidate) => candidate.id === Number(page.dataset.machine)) || null;
+}
+
+document.addEventListener("click", (event) => {
+  if (!qs("[data-machine]")) return;
+  const run = event.target.closest("[data-machine-run]");
+  if (run && !run.disabled) {
+    const node = machineNode();
+    if (node) runCommand(node).catch((failure) => terminal("Failed", failure.message));
+    return;
+  }
+  if (event.target.closest("[data-machine-copy]")) { copyOutput(); return; }
+  if (event.target.closest("[data-machine-history]")) {
+    const node = machineNode();
+    if (node) machineHistory(node).catch((failure) => terminal("Failed", failure.message));
+    return;
+  }
+  if (event.target.closest("[data-machine-clear]")) terminal("", "Nothing has run from this page yet.");
+});
+
+document.addEventListener("keydown", (event) => {
+  // Enter in the command box runs it, because a command line where you have to
+  // reach for the mouse is not one.
+  if (event.key !== "Enter" || !event.target.matches("[data-machine-command]")) return;
+  const control = qs("[data-machine-run]");
+  if (control && !control.disabled) control.click();
 });

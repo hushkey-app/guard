@@ -832,3 +832,51 @@ func TestAlertFlagClearsOnTheNextSuccess(t *testing.T) {
 		t.Fatal("a success left the alert flag standing")
 	}
 }
+
+// The command line on a machine's page: a run with no stored action behind it.
+func TestARunWithNoStoredCommandBehindIt(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+	password := "hunter2"
+	node, err := store.SaveNode(Node{
+		Name: "VPS-1", URL: "http://localhost:8000", Enabled: true,
+		SSHAddress: "guard@10.0.0.5:22", Password: &password,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The login comes through the lock-checked target, which is the whole reason
+	// that method exists.
+	if _, err := store.ExecTarget(node.ID); err != nil {
+		t.Fatalf("an unlocked machine should answer: %v", err)
+	}
+
+	if err := store.RecordExec(node.ID, model.Run{
+		Command: "docker ps", RanAt: time.Now(), Output: "CONTAINER ID", Trigger: model.TriggerManual,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := store.Runs(node.ID, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("the machine's history has %d rows", len(runs))
+	}
+	// It is one history: a typed line has to be in it, or "what has been running
+	// on this box" is wrong in exactly the case somebody is asking about. The row
+	// carries the command itself, because there is no action to read it from.
+	if runs[0].Command != "docker ps" || runs[0].ActionName != "command line" {
+		t.Fatalf("the row reads as %+v", runs[0])
+	}
+
+	// And a locked machine refuses: its stored commands still run, but nothing
+	// typed does, or the lock would be decoration.
+	node.Locked = true
+	if _, err := store.SaveNode(node); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ExecTarget(node.ID); err == nil {
+		t.Fatal("a locked machine must refuse a typed command")
+	}
+}
