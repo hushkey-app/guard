@@ -80,8 +80,37 @@ checkout and the replace together — that also unblocks
 
 ## A new box
 
-Provisioning is yours — this repository ships the units, the updater and the
-list below, and no opinion about how they get onto a machine. What a box needs:
+`deploy/cloud-init.yaml` is the whole of it: paste it into the provider's user
+data field and the box comes up serving the dashboard on :4318, with nothing to
+configure on the machine.
+
+That is only possible because guard's configuration moved into guard's database.
+An earlier cloud-init here set up nginx, opened ports and wrote an env file, and
+was deleted for being a set of decisions this repository does not get to make —
+every one of them drifting from the copy here the moment somebody made it
+differently. What is left is the part that is the same on every box: a user, two
+directories, the units, the updater, and the first install.
+
+- **The units and the updater are fetched from the repository**, not inlined into
+  the file. A systemd unit written down twice is one that is eventually wrong in
+  the copy nobody is looking at. `GUARD_REF` at the top pins which ref they come
+  from; re-running `/usr/local/sbin/guard-bootstrap` is how a box picks up a
+  change to one.
+- **No firewall is touched.** The public perimeter is the provider's — a Vultr
+  firewall group filtering the public interface — and two allowlists that have to
+  agree is how somebody gets locked out editing one over the other.
+- **It does not close the door, and says so.** Guard answers :4318 for the
+  dashboard *and* for OTLP, and with no sign-in configured anyone who can reach
+  the port can do anything — which is what makes the first run possible. So
+  either the firewall group does not expose 4318 yet, or sign-in is configured in
+  the same sitting, from Settings → Security.
+
+Then the dashboard: sign-in and members, the two tokens (both have a Generate
+button), the alert destinations, retention. Each save says "restart to apply",
+and the restart is a button.
+
+What that file does, if you would rather do it by hand — or want to know what it
+did:
 
 - **A `guard` user** and `/var/lib/guard` for the database, its WAL and the key.
 - **`/etc/guard` owned by root**, with `version` handed to the guard user. That
@@ -199,6 +228,16 @@ The file can then be deleted.
   thirty seconds to answer `/healthz`. If it does not, the previous binary is
   put back and restarted — kept beside the new one, so going back is a rename
   rather than a download. If guard fails, the vault is never touched.
+- **Answering is not enough — it has to answer as the new version.** After the
+  health check passes, the installed binary is asked `-version` and must say the
+  tag that was wanted. Two real failures hide behind a healthy port: an install
+  that did not land (so the *old* binary is what answered), and something else
+  listening on 4318 entirely. Both used to read as a successful deploy, and a
+  deploy that quietly did nothing is worse than one that failed loudly.
+- **Every step is checked by hand, not left to `set -e`.** `swap` is called as
+  `swap … || die …`, and a command in an `||` list runs with `-e` suspended —
+  inside the function body too. So a failed `mv` there would not have stopped
+  anything.
 - **A rename, never a copy over.** A running binary cannot be written over
   (`ETXTBSY`), and rename is atomic, so there is no moment where the file on
   disk is half a binary.

@@ -1,0 +1,152 @@
+#cloud-config
+#
+# A box that comes up running guard, with nothing to configure here.
+#
+# Everything guard reads is now a row in guard's own database, edited from
+# Settings → Configuration and Settings → Security — the tokens, the OAuth
+# credentials, retention, the alert destinations. So provisioning has nothing to
+# decide: this file installs the two binaries and the machinery that keeps them
+# updated, and the first person to open the dashboard does the rest.
+#
+# That is the whole reason this file exists again. An earlier version of it set
+# up nginx, opened ports and wrote an env file, and every one of those was a
+# decision belonging to whoever runs the machine — drifting from the copy here
+# the moment they made it differently. What is left is the part that is the same
+# on every box.
+#
+#   * The units and the updater are FETCHED from the repository, not copied into
+#     this file. One shape of a systemd unit written down twice is one that is
+#     eventually wrong in the copy nobody is looking at.
+#   * The first install goes down the updater's own path — same download, same
+#     checksum, same health gate. A first-boot special case is a code path that
+#     stops being exercised the moment it works.
+#   * No firewall is touched. The perimeter is the provider's (a Vultr firewall
+#     group, filtering the public interface), and two allowlists that have to
+#     agree is how somebody gets locked out editing one over the other.
+#
+# TWO THINGS THIS DOES NOT DO, both deliberately:
+#
+#   * It does not close the door. Guard answers on :4318 for the dashboard AND
+#     for OTLP, and until sign-in is configured from Settings → Security anyone
+#     who can reach that port can do anything — that is what makes the first run
+#     possible at all. So either the provider's firewall group does not expose
+#     4318 to the internet yet, or you configure sign-in in the same sitting.
+#   * It does not put a TLS terminator in front. If this box is public, that is
+#     yours to add; guard is happy behind anything, and needs
+#     GUARD_AUTH_BASE_URL set from the dashboard when it is.
+#
+# Pin the ref the units come from by editing GUARD_REF below. Re-running
+# /usr/local/sbin/guard-bootstrap by hand is safe and is how you pick up a
+# change to a unit.
+
+package_update: true
+packages:
+  - curl
+  - ca-certificates
+
+write_files:
+  # A script rather than a pile of runcmd lines: this is the thing somebody
+  # re-runs at 3am, and a script can be read, edited and run again.
+  - path: /usr/local/sbin/guard-bootstrap
+    owner: root:root
+    permissions: "0700"
+    content: |
+      #!/bin/sh
+      # Install guard's units, the updater, and the release this box wants.
+      set -eu
+
+      GUARD_REPO="${GUARD_REPO:-hushkey-app/guard}"
+      # Which ref the units and the updater are read from. A tag pins them to a
+      # release; main takes whatever is current.
+      GUARD_REF="${GUARD_REF:-main}"
+      RAW="https://raw.githubusercontent.com/$GUARD_REPO/$GUARD_REF/deploy"
+
+      log() { echo "guard-bootstrap: $*"; }
+
+      # The user everything runs as. No login shell, no password: it owns a
+      # database and answers a port.
+      if ! id guard >/dev/null 2>&1; then
+        nologin=/usr/sbin/nologin
+        [ -x "$nologin" ] || nologin=/sbin/nologin
+        useradd --system --home-dir /var/lib/guard --create-home --shell "$nologin" guard
+        log "created the guard user"
+      fi
+
+      # The database, its WAL, and guard.db.key beside them. Guard generates the
+      # key on first start; it is not in any artifact and joining a box to an
+      # existing database means putting that key here first.
+      install -d -o guard -g guard -m 0750 /var/lib/guard
+
+      # /etc/guard is root's. Guard writes exactly one file in it — version,
+      # which is what the dashboard's Update button sets — and cannot touch
+      # guard.env beside it. That split is the whole permission model, and it is
+      # why the file is created here rather than by guard: the directory it
+      # lives in is not guard's to add to.
+      install -d -o root -g root -m 0755 /etc/guard
+      # Written as `latest` rather than left empty. Absent means latest to the
+      # updater and an empty file does not: it would read as a version, and the
+      # download URL would have a blank where the tag goes.
+      if [ ! -s /etc/guard/version ]; then
+        printf 'latest\n' > /etc/guard/version
+        chown guard:guard /etc/guard/version
+        chmod 0644 /etc/guard/version
+      fi
+
+      # The units and the updater, from the repository. Fetched to a temporary
+      # file first so a half-downloaded unit never lands in /etc/systemd.
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+      for f in guard.service guard-vault.service guard-update.service guard-update.timer guard-update; do
+        curl -fsSL "$RAW/$f" -o "$work/$f" || { echo "guard-bootstrap: could not fetch $f from $GUARD_REF" >&2; exit 1; }
+      done
+      install -m 0755 "$work/guard-update" /usr/local/bin/guard-update
+      install -m 0644 "$work/guard.service" "$work/guard-vault.service" \
+        "$work/guard-update.service" "$work/guard-update.timer" /etc/systemd/system/
+      systemctl daemon-reload
+      log "units installed from $GUARD_REPO@$GUARD_REF"
+
+      # Enabled, but not started: there is no binary yet. The updater below
+      # restarts both services, which is what starts them the first time.
+      systemctl enable guard.service guard-vault.service >/dev/null
+
+      # The first install is an ordinary update: it reads /etc/guard/version,
+      # downloads the release, verifies it against SHA256SUMS, installs guard
+      # first and then the vault, and rolls either back if it does not answer
+      # /healthz within thirty seconds.
+      log "installing the release"
+      GUARD_REPO="$GUARD_REPO" /usr/local/bin/guard-update
+
+      # --now is load-bearing. `enable` alone arms the timer for the next boot,
+      # and a provisioning script reaches this line long after timers.target has
+      # passed — so the box would come up correct and then never take another
+      # release. It fails silently and looks exactly like success.
+      systemctl enable --now guard-update.timer >/dev/null
+      log "the update timer is armed"
+
+      log "guard is on $(/usr/local/bin/guard -version), the dashboard is on :4318"
+
+runcmd:
+  - [/usr/local/sbin/guard-bootstrap]
+  # What is left to do, in the log the provider shows you. Everything here is a
+  # page in the dashboard rather than a file on this box.
+  - - sh
+    - -c
+    - |
+      cat <<'NEXT'
+      ==============================================================
+      guard is installed. The rest is the dashboard, on :4318
+
+        Settings → Security        sign in with Google or Apple, and
+                                   the members allowed in. Until this
+                                   is set, the port is open to anyone
+                                   who can reach it.
+        Settings → Configuration   the collector secret and the API
+                                   token, both with a Generate button
+        Settings → Alerts          where alerts are posted
+        Settings → Data storage    retention and the event cap
+
+      Each save says "restart to apply", and the restart is a button.
+      A version can be pinned in /etc/guard/version (`latest`, or a
+      tag); guard-update.timer checks every fifteen minutes.
+      ==============================================================
+      NEXT
