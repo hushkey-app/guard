@@ -246,7 +246,18 @@ write_files:
         exit 1
       }
 
-      certbot --nginx -d "\$DOMAIN" -m "\$EMAIL" --agree-tos --non-interactive
+      # An address, or an explicit refusal to give one — certbot accepts no third
+      # option, and an empty -m is an error rather than a default. Without this
+      # branch, a domain set with the email left blank fails here every fifteen
+      # minutes on a box that looks otherwise correct.
+      if [ -n "\$EMAIL" ]; then
+        register="-m \$EMAIL"
+      else
+        register="--register-unsafely-without-email"
+        echo "guard-tls-setup: no address given, so nothing will warn you before this certificate expires"
+      fi
+
+      certbot --nginx -d "\$DOMAIN" \$register --agree-tos --non-interactive
       echo "guard-tls-setup: issued for \$DOMAIN — Cloudflare SSL/TLS can go to Full (strict)"
       systemctl disable --now guard-tls.timer >/dev/null 2>&1 || true
       TLS
