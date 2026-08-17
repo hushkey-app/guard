@@ -7,10 +7,23 @@ somebody has to remember the name of, and a restart typed by hand. The value
 that ends up in that file is usually copied out of a document listing the names,
 so guard may as well *be* that document.
 
-**Settings → Configuration** is every variable guard reads, as a form. The
-catalogue is `internal/config`'s `Entries`; the page is drawn from what
-`GET /api/config` answers, so adding a variable to guard adds a field to the
-page and nothing else — there is no template to edit and no endpoint to write.
+**Settings → Configuration** is the handful of those somebody actually changes, as
+a form. The catalogue is `internal/config`'s `Entries`; the page is drawn from what
+`GET /api/config` answers, so adding a row is one entry there and nothing else.
+
+The first version listed all thirty-odd `GUARD_*` variables, on the theory that a
+form which is the complete list can never be wrong. It was wrong in the other
+direction: a wall of fields where the two you came for were wherever they happened
+to fall, and most of them — a prober's idle wait, how often the release API is
+polled, how often one key's use is recorded — are values nobody has wanted to change
+and that have a sane default in the code. Everything cut is **still read from the
+environment and still overridable by a flag**, exactly as before; the table at the
+bottom of this file is the list.
+
+`GUARD_TOKEN` is the pointed absence. It was a row with a Generate button, and it
+was a trap: generate one and the only thing that can read it back is the page it
+just locked you out of. The token that protects the dashboard goes in the unit
+file, where it has always been.
 
 ## The one rule
 

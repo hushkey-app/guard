@@ -85,18 +85,11 @@ function patchRow(row, value) {
     node.value = value.value || "";
     node.dataset.dirty = "false";
   }
-  // Read-only rather than absent: "where is this configured" is a question the
-  // page should answer even for the two values it cannot change.
-  node.readOnly = Boolean(value.bootstrap);
-  if (value.hidden) {
-    node.value = value.is_set ? "•".repeat(32) : "";
-    node.placeholder = "never shown";
-  }
   // A row guard can mint gets the two buttons that used to be a card of their
   // own: Generate, and a Copy for pasting the result into a collector on another
   // box.
   const generate = qs("[data-config-generate]", row);
-  if (generate) generate.hidden = !value.generatable || value.bootstrap;
+  if (generate) generate.hidden = !value.generatable;
   const copy = qs("[data-config-copy]", row);
   if (copy) copy.hidden = !value.generatable || !value.is_set;
   // Clearing is the one thing an empty box cannot mean for a secret, so it gets a
@@ -105,9 +98,7 @@ function patchRow(row, value) {
   const clear = qs("[data-config-clear]", row);
   if (clear) clear.hidden = !value.secret || !value.is_set;
   const source = qs("[data-config-source]", row);
-  source.textContent = value.bootstrap
-    ? `read-only · ${value.source}`
-    : value.secret
+  source.textContent = value.secret
       ? value.is_set ? `set · ${value.source === "stored" ? "stored here" : "from the environment"}` : "not set"
       : value.source === "stored" ? "stored here" : value.source === "environment" ? "from the environment" : "default";
   qs("[data-config-pending]", row).hidden = !value.pending;
@@ -255,7 +246,7 @@ function changed() {
   const values = {};
   for (const row of qsa("[data-config-row]")) {
     const value = known.get(row.dataset.configFor);
-    if (!value || value.bootstrap || value.hidden) continue;
+    if (!value) continue;
     const typed = field(row).value;
     // An empty box is "leave it alone" for a secret and "remove it" for
     // everything else, which is the whole difference between a value you can read

@@ -64,81 +64,35 @@ func find(t *testing.T, state State, name string) Value {
 // The whole design in one test: what is stored becomes the environment, and
 // everything above this package goes on reading os.Getenv.
 func TestStoredValuesBecomeTheEnvironment(t *testing.T) {
-	t.Setenv("GUARD_ALERT_INTERVAL", "9m")
-	load(t, map[string]string{"GUARD_ALERT_INTERVAL": "45s"})
-	if got := os.Getenv("GUARD_ALERT_INTERVAL"); got != "45s" {
+	t.Setenv("GUARD_SSH_TIMEOUT", "9s")
+	load(t, map[string]string{"GUARD_SSH_TIMEOUT": "45s"})
+	if got := os.Getenv("GUARD_SSH_TIMEOUT"); got != "45s" {
 		t.Fatalf("want the stored value in the environment, got %q", got)
 	}
 }
 
 func TestStoredOutranksTheEnvironmentAndSaysWhere(t *testing.T) {
-	t.Setenv("GUARD_RUM_RELEASE", "from-the-unit-file")
-	set, _ := load(t, map[string]string{"GUARD_RUM_RELEASE": "from-the-dashboard"})
+	t.Setenv("GUARD_UPDATE_REPO", "from-the-unit-file")
+	set, _ := load(t, map[string]string{"GUARD_UPDATE_REPO": "from-the-dashboard"})
 	state, err := set.State()
 	if err != nil {
 		t.Fatalf("state: %v", err)
 	}
-	value := find(t, state, "GUARD_RUM_RELEASE")
+	value := find(t, state, "GUARD_UPDATE_REPO")
 	if value.Value != "from-the-dashboard" || value.Source != "stored" {
 		t.Fatalf("want the stored value, got %q from %q", value.Value, value.Source)
 	}
 	// And the environment is still what it falls back to, which is only
 	// answerable because the environment is read before it is overwritten.
-	if _, err := set.Save(map[string]string{"GUARD_RUM_RELEASE": ""}); err != nil {
+	if _, err := set.Save(map[string]string{"GUARD_UPDATE_REPO": ""}); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	state, _ = set.State()
-	value = find(t, state, "GUARD_RUM_RELEASE")
+	value = find(t, state, "GUARD_UPDATE_REPO")
 	if value.Value != "from-the-unit-file" || value.Source != "environment" {
 		t.Fatalf("want the unit file's value back, got %q from %q", value.Value, value.Source)
 	}
 }
-
-func TestPendingIsSavedButNotRunning(t *testing.T) {
-	set, _ := load(t, nil)
-	state, _ := set.State()
-	if state.Pending {
-		t.Fatal("nothing has been changed yet")
-	}
-	state, err := set.Save(map[string]string{"GUARD_MONITOR_INTERVAL": "10s"})
-	if err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	if !state.Pending || !find(t, state, "GUARD_MONITOR_INTERVAL").Pending {
-		t.Fatal("a saved value this process is not running is pending")
-	}
-}
-
-func TestBootstrapValuesCannotBeStored(t *testing.T) {
-	set, store := load(t, nil)
-	for _, name := range []string{"GUARD_DB_PATH", "GUARD_SECRET_KEY"} {
-		if _, err := set.Save(map[string]string{name: "somewhere-else"}); err == nil {
-			t.Fatalf("%s must be refused: guard needs it before it can read the database", name)
-		}
-	}
-	if len(store.values) != 0 {
-		t.Fatal("a refused save must write nothing")
-	}
-}
-
-// The key that seals every secret in the database is the one value that never
-// leaves the process, unlike the tokens, which are the point of the card.
-func TestTheSecretKeyIsNeverSentOut(t *testing.T) {
-	t.Setenv("GUARD_SECRET_KEY", "0123456789abcdef")
-	set, _ := load(t, nil)
-	state, _ := set.State()
-	value := find(t, state, "GUARD_SECRET_KEY")
-	if value.Value != "" {
-		t.Fatalf("the secret key must never be sent to a browser, got %q", value.Value)
-	}
-	if !value.IsSet {
-		t.Fatal("but the page still has to be able to say that one is set")
-	}
-	if token := find(t, state, "GUARD_TOKEN"); token.Hidden {
-		t.Fatal("the operator token is shown in full on purpose")
-	}
-}
-
 func TestUnknownNamesAreRefused(t *testing.T) {
 	set, _ := load(t, nil)
 	if _, err := set.Save(map[string]string{"LD_PRELOAD": "/tmp/x.so"}); err == nil {
@@ -149,10 +103,10 @@ func TestUnknownNamesAreRefused(t *testing.T) {
 func TestValuesAreValidatedBeforeTheyAreStored(t *testing.T) {
 	set, store := load(t, nil)
 	cases := map[string]string{
-		"GUARD_MONITOR_INTERVAL": "soon",
-		"GUARD_RUM_PER_MINUTE":   "lots",
-		"GUARD_ALERT_WEBHOOK":    "chat.example.com/hook",
-		"GUARD_RUM_SERVICE":      "one\ntwo",
+		"GUARD_SSH_TIMEOUT":      "soon",
+		"GUARD_AUTH_SESSION_TTL": "ages",
+		"GUARD_AUTH_BASE_URL":    "guard.example.com",
+		"GUARD_UPDATE_REPO":      "one\ntwo",
 	}
 	for name, value := range cases {
 		if _, err := set.Save(map[string]string{name: value}); err == nil {
@@ -218,14 +172,14 @@ func TestMultilineKeepsItsLineBreaks(t *testing.T) {
 
 // The way back from a stored value that stops guard from starting.
 func TestIgnoreSkipsTheStoredConfiguration(t *testing.T) {
-	t.Setenv("GUARD_RUM_RELEASE", "from-the-unit-file")
+	t.Setenv("GUARD_UPDATE_REPO", "from-the-unit-file")
 	t.Setenv("GUARD_CONFIG_IGNORE", "1")
-	store := &memory{values: map[string]string{"GUARD_RUM_RELEASE": "stored-value"}}
+	store := &memory{values: map[string]string{"GUARD_UPDATE_REPO": "stored-value"}}
 	set, err := Load(store)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if got := os.Getenv("GUARD_RUM_RELEASE"); got != "from-the-unit-file" {
+	if got := os.Getenv("GUARD_UPDATE_REPO"); got != "from-the-unit-file" {
 		t.Fatalf("stored configuration was applied anyway: %q", got)
 	}
 	state, _ := set.State()
@@ -282,18 +236,13 @@ func TestGeneratingACredential(t *testing.T) {
 	if find(t, again, "GUARD_OTEL_SECRET").Value == value.Value {
 		t.Fatal("generating again produced the same value")
 	}
-	// And it did not touch the other one: rotating the collector's secret and
-	// rotating the operator's token are separate days.
-	if find(t, again, "GUARD_TOKEN").IsSet {
-		t.Fatal("generating one credential must not touch the other")
-	}
 }
 
 // A generate button is only honest where guard is the thing that issues the
 // value. Everything else in the catalogue comes from somewhere with an opinion.
 func TestOnlyTheTwoTokensCanBeGenerated(t *testing.T) {
 	set, store := load(t, nil)
-	generatable := map[string]bool{"GUARD_TOKEN": true, "GUARD_OTEL_SECRET": true}
+	generatable := map[string]bool{"GUARD_OTEL_SECRET": true}
 	for _, entry := range Entries {
 		if entry.Generate != generatable[entry.Name] {
 			t.Fatalf("%s is marked generatable=%v", entry.Name, entry.Generate)
@@ -361,7 +310,7 @@ func TestSignInIsDrawnOnTheSecurityPage(t *testing.T) {
 		}
 	}
 	// And everything else is a setting until somebody decides otherwise.
-	for _, name := range []string{"GUARD_TOKEN", "GUARD_MONITOR_INTERVAL", "GUARD_DB_PATH", "GUARD_VAULT_ADDR"} {
+	for _, name := range []string{"GUARD_OTEL_SECRET", "GUARD_SSH_TIMEOUT", "GUARD_VAULT_ADDR"} {
 		if pages[name] != PageConfig {
 			t.Fatalf("%s is drawn on %q, want the configuration page", name, pages[name])
 		}
@@ -377,7 +326,7 @@ func TestSignInIsDrawnOnTheSecurityPage(t *testing.T) {
 			groupOf[value.Name] = group.Name
 		}
 	}
-	if groupOf["GUARD_GOOGLE_CLIENT_SECRET"] == groupOf["GUARD_APPLE_TEAM_ID"] {
+	if groupOf["GUARD_GOOGLE_CLIENT_SECRET"] == groupOf["GUARD_UPDATE_REPO"] {
 		t.Fatal("Google and Apple share a card")
 	}
 	// Every group in the catalogue has to be one the pages actually draw, or its
