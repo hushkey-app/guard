@@ -177,6 +177,15 @@ write_files:
         exit 1
       fi
 
+      # An address with no name to put it against is the one combination that
+      # silently does nothing: no nginx, no certificate, and an email nobody
+      # reads. Said out loud here, because from the outside it looks exactly like
+      # a box that came up perfectly — which it did, next to a domain that
+      # answers nothing.
+      if [ -z "$GUARD_DOMAIN" ] && [ -n "$GUARD_TLS_EMAIL" ]; then
+        log "an address is set but no domain, so no nginx and no certificate — guard answers :4318 itself"
+      fi
+
       # The public name, if this box has one. Everything from here is nginx and a
       # certificate; a box with GUARD_DOMAIN empty is finished above.
       if [ -n "$GUARD_DOMAIN" ]; then
