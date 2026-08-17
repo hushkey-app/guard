@@ -66,12 +66,22 @@ function buildRow(value) {
     input.placeholder = value.default || "not set";
     if (value.kind === "number") input.inputMode = "numeric";
   }
+  // A secret is typed and not read back, so a single-line one is a password box.
+  // A multi-line one is not: `type` is read-only on a textarea, and a .p8 nobody
+  // can see while pasting it is a .p8 pasted wrong.
+  if (value.secret && value.kind !== "multiline") field(row).type = "password";
   return row;
 }
 
 function patchRow(row, value) {
   const node = field(row);
-  if (!touched(node)) {
+  // A secret never comes back, so there is nothing to patch into the box: it
+  // stays empty, and the placeholder is what says whether one is stored. Writing
+  // dots in would be a value somebody tries to copy.
+  if (value.secret) {
+    node.placeholder = value.is_set ? "set — paste a new one to replace it" : "not set";
+    if (!touched(node)) node.value = "";
+  } else if (!touched(node)) {
     node.value = value.value || "";
     node.dataset.dirty = "false";
   }
@@ -89,10 +99,17 @@ function patchRow(row, value) {
   if (generate) generate.hidden = !value.generatable || value.bootstrap;
   const copy = qs("[data-config-copy]", row);
   if (copy) copy.hidden = !value.generatable || !value.is_set;
+  // Clearing is the one thing an empty box cannot mean for a secret, so it gets a
+  // button: without it there would be no way to take Google's credentials back
+  // out, and the pair rule refuses removing the id on its own.
+  const clear = qs("[data-config-clear]", row);
+  if (clear) clear.hidden = !value.secret || !value.is_set;
   const source = qs("[data-config-source]", row);
   source.textContent = value.bootstrap
     ? `read-only · ${value.source}`
-    : value.source === "stored" ? "stored here" : value.source === "environment" ? "from the environment" : "default";
+    : value.secret
+      ? value.is_set ? `set · ${value.source === "stored" ? "stored here" : "from the environment"}` : "not set"
+      : value.source === "stored" ? "stored here" : value.source === "environment" ? "from the environment" : "default";
   qs("[data-config-pending]", row).hidden = !value.pending;
 }
 
@@ -165,6 +182,15 @@ function changed() {
     const value = known.get(row.dataset.configFor);
     if (!value || value.bootstrap || value.hidden) continue;
     const typed = field(row).value;
+    // An empty box is "leave it alone" for a secret and "remove it" for
+    // everything else, which is the whole difference between a value you can read
+    // back and one you cannot: a page that treated empty as a removal here would
+    // delete somebody's client secret the first time they saved a neighbouring
+    // field.
+    if (value.secret) {
+      if (typed) values[value.name] = typed;
+      continue;
+    }
     if (typed !== (value.value || "")) values[value.name] = typed;
   }
   return values;
@@ -195,6 +221,51 @@ async function generateValue(row) {
     // it somewhere, and the value is on screen either way.
     const value = known.get(name)?.value;
     if (value) navigator.clipboard?.writeText(value).catch(() => {});
+  } catch (error) {
+    status(error.message);
+  }
+}
+
+// What has to go with a value when it goes.
+//
+// A provider's credentials are all-or-nothing — guard treats half a configuration
+// as fatal at startup and refuses to store one — so "remove the client secret" can
+// only mean "turn this provider off". A Remove that sent one name and came back
+// with the pair error would be a button whose only outcome is an error message.
+//
+// Apple's private key is the exception in the exception: it is legal to remove it
+// when the key *file* is set, because that is where the key comes from then.
+function alsoClear(name) {
+  if (name === "GUARD_GOOGLE_CLIENT_SECRET") return ["GUARD_GOOGLE_CLIENT_ID"];
+  if (name === "GUARD_APPLE_PRIVATE_KEY") {
+    if (known.get("GUARD_APPLE_PRIVATE_KEY_FILE")?.is_set) return [];
+    return ["GUARD_APPLE_CLIENT_ID", "GUARD_APPLE_TEAM_ID", "GUARD_APPLE_KEY_ID", "GUARD_APPLE_PRIVATE_KEY_FILE"];
+  }
+  return [];
+}
+
+// Take a stored secret back out. Its own press, because an empty box means
+// "unchanged" for these rows and there has to be some way to say "gone".
+async function clearValue(row) {
+  const name = row.dataset.configFor;
+  const others = alsoClear(name).filter((other) => known.get(other)?.is_set);
+  if (!await ask({
+    title: others.length ? `Turn this provider off?` : `Remove ${name}?`,
+    body: "Guard forgets the value. Whatever it configures stops working at the next restart, and the only way back is pasting it again from the provider.",
+    detail: [name, ...others].join(", "),
+    confirm: others.length ? "Turn it off" : "Remove it",
+  })) return;
+  status(`Removing ${name}…`);
+  try {
+    const values = { [name]: "" };
+    for (const other of others) values[other] = "";
+    const state = await request("/api/config", {
+      method: "PUT",
+      headers: adminHeaders(),
+      body: JSON.stringify({ values }),
+    });
+    renderConfig(state);
+    set("config", state);
   } catch (error) {
     status(error.message);
   }
@@ -278,7 +349,9 @@ document.addEventListener("click", (event) => {
   const generate = event.target.closest("[data-config-generate]");
   if (generate) { generateValue(generate.closest("[data-config-row]")); return; }
   const copy = event.target.closest("[data-config-copy]");
-  if (copy) copyValue(copy.closest("[data-config-row]"));
+  if (copy) { copyValue(copy.closest("[data-config-row]")); return; }
+  const clear = event.target.closest("[data-config-clear]");
+  if (clear) clearValue(clear.closest("[data-config-row]"));
 });
 
 // Nothing to unmount: the marker that says "the form is built" lives on the

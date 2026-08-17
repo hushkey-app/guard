@@ -71,6 +71,30 @@ an explicit flag  >  a stored value  >  the environment  >  the default
   name set in the unit file with nothing at all, which is how somebody turns
   sign-in off by resetting a field.
 
+## Two values go in and do not come back
+
+`GUARD_GOOGLE_CLIENT_SECRET` and the `GUARD_APPLE_PRIVATE_KEY` are **write-only**:
+stored, applied, and never sent to a browser again. The row says `set` or `not
+set`, the box is empty whatever is stored, and pasting a new value replaces it.
+
+Guard is not where somebody looks up their Google client secret — the provider's
+console is — and a value on screen is a value in a screenshot, a shared tab and a
+support thread. The rest of that page is deliberately *not* treated this way: a
+team id, an admin address or a base URL has to be readable to be worked with, and
+masking those would be theatre. The two tokens guard issues itself are shown in
+full for the opposite reason — the whole point of them is being pasted into a
+collector.
+
+Two consequences worth knowing:
+
+- **An empty box means "leave it alone"** for these rows, not "remove it".
+  Otherwise saving a neighbouring field would delete somebody's client secret.
+- **Removing one is its own press.** `Remove` takes the value back out — and for a
+  provider's credentials it takes the pair with it, because guard refuses to store
+  half a configuration, so "remove the client secret" can only mean "turn Google
+  off". Apple's private key is the exception: removing it alone is allowed when the
+  key *file* is set, since that is where the key comes from then.
+
 ## What cannot be stored
 
 `GUARD_DB_PATH` and `GUARD_SECRET_KEY` are what guard needs to open and decrypt

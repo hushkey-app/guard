@@ -121,6 +121,17 @@ type Entry struct {
 	// Vault marks a value the second binary reads. It is applied there too, so
 	// the form is not quietly lying about half its rows.
 	Vault bool
+	// Secret marks a value that goes in but does not come back: the page is told
+	// whether one is set and never what it is.
+	//
+	// Different from Hidden, which is not storable at all. These two *are* stored
+	// and have to be replaceable — you paste a new one — but there is no reason to
+	// read one back. Guard is not where somebody looks up their Google client
+	// secret; the provider's console is, and a value on screen is a value in a
+	// screenshot, a shared tab and a support thread. The rest of this page is not
+	// treated this way on purpose: a team id or an admin address has to be readable
+	// to be worked with, and masking those would be theatre.
+	Secret bool
 	// Generate marks a value guard can mint: 32 random bytes as hex, the same
 	// thing `openssl rand -hex 32` produces.
 	//
@@ -204,8 +215,8 @@ var Entries = []Entry{
 		Help: "Set both halves to draw the Google button. Half a configuration is fatal at startup, on purpose.",
 	},
 	{
-		Name: "GUARD_GOOGLE_CLIENT_SECRET", Group: GroupProviders, Label: "Google client secret", Kind: KindText,
-		Help: "The other half of the Google credentials.",
+		Name: "GUARD_GOOGLE_CLIENT_SECRET", Group: GroupProviders, Label: "Google client secret", Kind: KindText, Secret: true,
+		Help: "The other half of the Google credentials. Stored, never shown again — paste a new one to replace it.",
 	},
 	{
 		Name: "GUARD_APPLE_CLIENT_ID", Group: GroupProviders, Label: "Apple services id", Kind: KindText,
@@ -218,8 +229,8 @@ var Entries = []Entry{
 		Name: "GUARD_APPLE_KEY_ID", Group: GroupProviders, Label: "Apple key id", Kind: KindText,
 	},
 	{
-		Name: "GUARD_APPLE_PRIVATE_KEY", Group: GroupProviders, Label: "Apple private key", Kind: KindMultiline,
-		Help: "The .p8 contents. Paste it whole, including the BEGIN and END lines.",
+		Name: "GUARD_APPLE_PRIVATE_KEY", Group: GroupProviders, Label: "Apple private key", Kind: KindMultiline, Secret: true,
+		Help: "The .p8 contents, whole, including the BEGIN and END lines. Stored, never shown again — paste a new one to replace it.",
 	},
 	{
 		Name: "GUARD_APPLE_PRIVATE_KEY_FILE", Group: GroupProviders, Label: "Apple private key file", Kind: KindText,
@@ -425,8 +436,11 @@ type Value struct {
 	Pending   bool `json:"pending"`
 	Bootstrap bool `json:"bootstrap,omitempty"`
 	Hidden    bool `json:"hidden,omitempty"`
-	IsSet     bool `json:"is_set"`
-	Vault     bool `json:"vault,omitempty"`
+	// Secret says the value is stored but not sent: the row shows set or not set,
+	// and a typed value replaces it.
+	Secret bool `json:"secret,omitempty"`
+	IsSet  bool `json:"is_set"`
+	Vault  bool `json:"vault,omitempty"`
 	// Generatable says the row gets a Generate button.
 	Generatable bool `json:"generatable,omitempty"`
 }
@@ -467,7 +481,7 @@ func (s *Set) State() (State, error) {
 			Name: entry.Name, Group: entry.Group, Label: entry.Label, Help: entry.Help,
 			Kind: entry.Kind, Default: entry.Default,
 			Bootstrap: entry.Bootstrap, Hidden: entry.Hidden, Vault: entry.Vault,
-			Generatable: entry.Generate,
+			Secret: entry.Secret, Generatable: entry.Generate,
 		}
 		next := entry.Default
 		switch {
@@ -479,9 +493,10 @@ func (s *Set) State() (State, error) {
 			value.Source = "default"
 		}
 		value.IsSet = next != ""
-		// A bootstrap entry reports where it came from, and a hidden one does
-		// not report the value at all.
-		if !entry.Hidden {
+		// A bootstrap entry reports where it came from; a hidden one reports
+		// nothing but whether it is set, and a secret one the same — the
+		// difference between those two is that a secret can be written.
+		if !entry.Hidden && !entry.Secret {
 			value.Value = next
 		}
 		if !entry.Bootstrap && next != s.booted[entry.Name] {

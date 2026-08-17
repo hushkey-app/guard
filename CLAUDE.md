@@ -515,6 +515,14 @@ that sets everything in its unit file behaves exactly as it did.
   for the answer to be wrong. A group with no page named lands on the
   configuration page: a new variable is a setting until somebody decides it is a
   policy. The restart button is the process's, not the page's.
+- **Two values go in and do not come back**: `GUARD_GOOGLE_CLIENT_SECRET` and
+  `GUARD_APPLE_PRIVATE_KEY` are `Secret` in the catalogue — stored and applied,
+  never sent to a browser, shown as `set`/`not set`, replaced by pasting. An empty
+  box therefore means "unchanged" for them (or a neighbouring save would delete a
+  client secret), so removing one is its own press — and it takes the provider's
+  other half with it, since guard refuses to store half a sign-in configuration.
+  Nothing else is masked: a team id or an admin address has to be readable to be
+  worked with.
 - **`GUARD_DB_PATH` and `GUARD_SECRET_KEY` can never be stored**: anything needed
   to open and decrypt the database cannot live inside it. Both are shown
   read-only, and the key's value is never sent to a browser at all — unlike the

@@ -63,6 +63,15 @@ templ configRow() {
 				}) {
 					Copy
 				}
+				<!-- Only on a stored secret: an empty box means "unchanged" there, so
+				     removing one needs a press of its own. -->
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Class:      "shrink-0 text-muted-foreground hover:text-destructive",
+					Attributes: templ.Attributes{"data-config-clear": true, "type": "button", "hidden": true},
+				}) {
+					Remove
+				}
 				@button.Button(button.Props{
 					Variant:    button.VariantOutline,
 					Class:      "shrink-0",

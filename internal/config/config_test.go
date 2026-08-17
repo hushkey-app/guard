@@ -374,3 +374,53 @@ func TestSignInIsDrawnOnTheSecurityPage(t *testing.T) {
 		}
 	}
 }
+
+// A secret goes in and does not come back. Guard is not where somebody looks up
+// their Google client secret — the provider's console is — and a value on screen is
+// a value in a screenshot.
+func TestASecretIsWriteOnly(t *testing.T) {
+	set, store := load(t, nil)
+	if _, err := set.Save(map[string]string{
+		"GUARD_GOOGLE_CLIENT_ID":     "id.apps.googleusercontent.com",
+		"GUARD_GOOGLE_CLIENT_SECRET": "the-real-secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Stored, so sign-in works.
+	if store.values["GUARD_GOOGLE_CLIENT_SECRET"] != "the-real-secret" {
+		t.Fatal("the secret was not stored")
+	}
+	state, _ := set.State()
+	secret := find(t, state, "GUARD_GOOGLE_CLIENT_SECRET")
+	if secret.Value != "" {
+		t.Fatalf("the secret came back as %q", secret.Value)
+	}
+	// But the page can say that one is set, which is the whole of what it needs.
+	if !secret.IsSet || !secret.Secret {
+		t.Fatalf("the row reads as %+v", secret)
+	}
+	// The id beside it is not treated this way: it has to be readable to be
+	// worked with, and masking it would be theatre.
+	if id := find(t, state, "GUARD_GOOGLE_CLIENT_ID"); id.Value == "" || id.Secret {
+		t.Fatalf("the client id reads as %+v", id)
+	}
+	// Replacing it is a write like any other.
+	if _, err := set.Save(map[string]string{"GUARD_GOOGLE_CLIENT_SECRET": "rotated"}); err != nil {
+		t.Fatal(err)
+	}
+	if store.values["GUARD_GOOGLE_CLIENT_SECRET"] != "rotated" {
+		t.Fatal("the secret was not replaced")
+	}
+	// And the Apple key is the other one, because a .p8 is the same kind of thing.
+	if key := find(t, state, "GUARD_APPLE_PRIVATE_KEY"); !key.Secret {
+		t.Fatal("the Apple private key should be write-only too")
+	}
+	// Nothing else on either page is: a team id, an admin address or a base URL
+	// masked would be a field nobody can check.
+	for _, entry := range Entries {
+		secret := entry.Name == "GUARD_GOOGLE_CLIENT_SECRET" || entry.Name == "GUARD_APPLE_PRIVATE_KEY"
+		if entry.Secret != secret {
+			t.Fatalf("%s is marked secret=%v", entry.Name, entry.Secret)
+		}
+	}
+}
