@@ -246,6 +246,11 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	if err := migrateClusterEnv(s.db); err != nil {
 		return err
 	}
+	// One row per machine per day, because the check history keeps only one day
+	// and the status page asks for ninety.
+	if err := migrateUptime(s.db); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO settings(id, retention_hours, max_events) VALUES(1, ?, ?)`, defaults.RetentionHours, defaults.MaxEvents); err != nil {
 		return fmt.Errorf("initialize settings: %w", err)
 	}

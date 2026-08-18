@@ -23,6 +23,7 @@ import (
 	"github.com/hushkey-app/guard/internal/notify"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/remote"
+	"github.com/hushkey-app/guard/internal/statuspage"
 	"github.com/hushkey-app/guard/internal/telemetry"
 	"github.com/hushkey-app/guard/internal/viewalerts"
 	"github.com/hushkey-app/guard/server/apis"
@@ -145,6 +146,12 @@ func main() {
 			// other through SQLite. Writes, and anything carrying an
 			// Authorization header, are passed straight through.
 			(&mw.Coalesce{}).Handler,
+			// The public status page's data, for the one path that renders it.
+			// A page cannot read the store itself — every page compiles into
+			// views.wasm too, and modernc.org/sqlite has no js/wasm build — so
+			// the value is computed here and published on the context, exactly
+			// as the login view is.
+			statuspage.Middleware(store),
 		},
 		OnError: func(w http.ResponseWriter, r *http.Request, err error) {
 			slog.Error("render failed", "path", r.URL.Path, "err", err)
