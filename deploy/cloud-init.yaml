@@ -347,7 +347,20 @@ final_message: |
        itself within fifteen minutes of that — `certbot certificates` confirms
        it, and Cloudflare can then go to Full (strict).
 
-    2. Open the dashboard and configure it. Sign-in and the members allowed in
+    2. If the domain answers 522, that is Cloudflare saying it reached this
+       box's address and got nothing back — a reachability problem, never a
+       certificate one, and Let's Encrypt's challenge travels the same path so
+       no certificate can issue until it is fixed. Three things cause it:
+
+         * the provider's firewall group does not allow 80 and 443 to this box
+         * its IPv4 and IPv6 rules are separate, and the DNS record here is an
+           AAAA — so an IPv4-only rule set is an origin nothing can reach
+         * the record still points at the machine this one replaced
+
+       `curl -s ifconfig.me` here, compared with the record in Cloudflare,
+       settles the last one. Then: systemctl start guard-tls.service
+
+    3. Open the dashboard and configure it. Sign-in and the members allowed in
        are Settings → Security; the collector secret and the API token are
        Settings → Configuration, both with a Generate button; alert
        destinations are Settings → Alerts; retention is Settings → Data
@@ -356,6 +369,6 @@ final_message: |
        Until sign-in is configured, anyone who can reach this box can do
        anything — so do this before publishing the port.
 
-    3. Copy /var/lib/guard/guard.db.key off the box. It is in no release and no
+    4. Copy /var/lib/guard/guard.db.key off the box. It is in no release and no
        backup this file makes, and without it the database restores as
        unreadable secrets.
