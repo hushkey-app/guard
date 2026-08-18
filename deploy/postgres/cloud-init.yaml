@@ -147,6 +147,11 @@ write_files:
         # in that window are the ones explaining whatever prompted the change.
         file_storage/queue:
           directory: /var/lib/otelcol
+          # StateDirectory only makes this when systemd STARTS the unit, and
+          # otelcol-verify validates before anything has ever started — so on a
+          # box where the collector has never run, validate fails on a missing
+          # directory and the gate that was meant to start it refuses instead.
+          create_directory: true
 
       receivers:
         prometheus:
