@@ -26,8 +26,8 @@ import (
 	"strconv"
 
 	"github.com/hushkey-app/guard/internal/telemetry/model"
-	"github.com/hushkey-app/guard/server/apis/store"
 	"github.com/mirairoad/howl-go/core/router"
+	"github.com/mirairoad/howl-go/core/state"
 )
 
 // dayColour is one bar. Absence is not an outage — a day guard was not watching
@@ -93,7 +93,7 @@ func serviceWords(state string) string {
 }
 
 templ Page() {
-	{{ status, err := store.Get().PublicStatus() }}
+	{{ status := state.Get[model.PublicStatus](ctx) }}
 	<!doctype html>
 	<html lang="en" class="dark style-nova">
 		<head>
@@ -107,14 +107,6 @@ templ Page() {
 		</head>
 		<body class="min-h-screen bg-background p-6 font-sans text-foreground antialiased">
 			<main class="mx-auto w-full max-w-3xl py-8">
-				if err != nil {
-					<div class="rounded-xl border border-border bg-card p-8 text-center text-card-foreground">
-						<h1 class="text-lg font-semibold">Status is unavailable</h1>
-						<p class="mt-2 text-sm text-muted-foreground">
-							This page could not be generated. That is itself worth knowing.
-						</p>
-					</div>
-				} else {
 					<div class="mb-8 flex items-center gap-3">
 						<span class="inline-block size-3 rounded-full" style={ "background:" + stateColour(status.State) }></span>
 						<h1 class="text-2xl font-semibold tracking-tight">{ stateWords(status.State) }</h1>
@@ -167,7 +159,6 @@ templ Page() {
 					<p class="mt-10 text-center text-xs text-muted-foreground">
 						Updated { status.AsOf.Format("2006-01-02 15:04 UTC") }
 					</p>
-				}
 			</main>
 		</body>
 	</html>
