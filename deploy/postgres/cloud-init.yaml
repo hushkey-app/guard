@@ -333,7 +333,14 @@ write_files:
       # that is in none of them by default. systemd-journal is the same problem
       # for the journald receiver — without it that receiver starts, reports
       # nothing wrong, and ships zero records.
-      SupplementaryGroups=adm systemd-journal
+      #
+      # `postgres` is here because of logging_collector: the files IT writes are
+      # owned postgres:postgres with log_file_mode, and the 0640 set above is
+      # worth nothing without a group that can use it. The package's own stderr
+      # log is postgres:adm, which is why adm alone looks like it should be
+      # enough and is not — the .json the receiver actually reads is the one
+      # postgres created.
+      SupplementaryGroups=adm systemd-journal postgres
       NoNewPrivileges=yes
 
       [Install]
@@ -368,7 +375,7 @@ runcmd:
     sed -i "s/^#ssl = .*/ssl = on/" "$CONF";
     sed -i "s/^#*password_encryption.*/password_encryption = scram-sha-256/" "$CONF";
     sed -i "s/^#*log_connections.*/log_connections = on/" "$CONF";
-    printf "\n# --- guard telemetry ---\nlogging_collector = on\nlog_destination = '"'"'jsonlog'"'"'\nlog_directory = '"'"'/var/log/postgresql'"'"'\nlog_filename = '"'"'postgresql-%%Y-%%m-%%d.log'"'"'\nlog_rotation_age = 1d\nlog_rotation_size = 100MB\nlog_min_duration_statement = 1000\n" >> "$CONF";
+    printf "\n# --- guard telemetry ---\nlogging_collector = on\nlog_destination = '"'"'jsonlog'"'"'\nlog_file_mode = 0640\nlog_directory = '"'"'/var/log/postgresql'"'"'\nlog_filename = '"'"'postgresql-%%Y-%%m-%%d.log'"'"'\nlog_rotation_age = 1d\nlog_rotation_size = 100MB\nlog_min_duration_statement = 1000\n" >> "$CONF";
     echo "host    pack            pack            10.19.96.0/24   scram-sha-256" >> /etc/postgresql/$PGV/main/pg_hba.conf;
     echo "host    replication     replicator      10.19.96.6/32   scram-sha-256" >> /etc/postgresql/$PGV/main/pg_hba.conf'
   - systemctl enable postgresql
