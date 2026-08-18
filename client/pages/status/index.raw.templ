@@ -1,0 +1,174 @@
+package status
+
+// The public status page.
+//
+// It is a `.raw` route, and for the same reason /login is one: the shell is the
+// sidebar, the live tick and the detail drawer, and every one of those is
+// furniture for somebody who is already inside. A status page that renders the
+// navigation of the dashboard it sits in front of is a status page that tells
+// strangers what the dashboard has in it.
+//
+// It is rendered on the server, with no JavaScript at all. That is deliberate:
+// this is the page people open when something is broken, from a phone, on a
+// train, possibly through somebody's corporate proxy — and a page that needs a
+// fetch to say "everything is fine" is a page that says nothing when the fetch
+// is the thing that is failing. It also means curl, a bot and a screen reader
+// all get the same answer.
+//
+// Everything it can show is model.PublicStatus, which is written out field by
+// field rather than filtered from Node. No address, no latency, no status code,
+// no error text: the error on a failed check reads "dial tcp 10.19.96.4:5432:
+// connect: connection refused", and a status page is a bad place to publish the
+// private network.
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/hushkey-app/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/server/apis/store"
+	"github.com/mirairoad/howl-go/core/router"
+)
+
+// dayColour is one bar. Absence is not an outage — a day guard was not watching
+// is drawn in the muted colour, never in green and never in red, because the
+// honest answer to "was it up on the 3rd" for a machine added on the 4th is
+// "we do not know".
+func dayColour(day model.PublicDay) string {
+	switch {
+	case day.Checks == 0:
+		return "var(--muted)"
+	case day.OK == day.Checks:
+		return "var(--success)"
+	case day.Uptime >= 99:
+		return "var(--warning)"
+	default:
+		return "var(--destructive)"
+	}
+}
+
+// dayTitle is the tooltip, and the only place a number appears per day.
+func dayTitle(day model.PublicDay) string {
+	if day.Checks == 0 {
+		return day.Date + " — no data"
+	}
+	return fmt.Sprintf("%s — %.2f%% of %d checks", day.Date, day.Uptime, day.Checks)
+}
+
+func stateColour(state string) string {
+	switch state {
+	case "operational":
+		return "var(--success)"
+	case "down":
+		return "var(--destructive)"
+	case "partial":
+		return "var(--warning)"
+	default:
+		return "var(--muted-foreground)"
+	}
+}
+
+func stateWords(state string) string {
+	switch state {
+	case "operational":
+		return "All Systems Operational"
+	case "down":
+		return "Some Systems Are Down"
+	case "partial":
+		return "Partially Degraded Service"
+	default:
+		return "No Systems Published"
+	}
+}
+
+func serviceWords(state string) string {
+	switch state {
+	case "operational":
+		return "Operational"
+	case "down":
+		return "Down"
+	default:
+		return "Unknown"
+	}
+}
+
+templ Page() {
+	{{ status, err := store.Get().PublicStatus() }}
+	<!doctype html>
+	<html lang="en" class="dark style-nova">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>Status</title>
+			<link rel="stylesheet" href={ router.Asset(ctx, "app.css") }/>
+			<!-- Reloads itself, because the tab somebody left open during an
+			     incident is the one that must not be showing yesterday. -->
+			<meta http-equiv="refresh" content="60"/>
+		</head>
+		<body class="min-h-screen bg-background p-6 font-sans text-foreground antialiased">
+			<main class="mx-auto w-full max-w-3xl py-8">
+				if err != nil {
+					<div class="rounded-xl border border-border bg-card p-8 text-center text-card-foreground">
+						<h1 class="text-lg font-semibold">Status is unavailable</h1>
+						<p class="mt-2 text-sm text-muted-foreground">
+							This page could not be generated. That is itself worth knowing.
+						</p>
+					</div>
+				} else {
+					<div class="mb-8 flex items-center gap-3">
+						<span class="inline-block size-3 rounded-full" style={ "background:" + stateColour(status.State) }></span>
+						<h1 class="text-2xl font-semibold tracking-tight">{ stateWords(status.State) }</h1>
+					</div>
+					<p class="mb-8 text-sm text-muted-foreground">
+						Uptime over the past { strconv.Itoa(status.Days) } days.
+					</p>
+					if len(status.Services) == 0 {
+						<div class="rounded-xl border border-border bg-card p-8 text-center text-card-foreground">
+							<p class="text-sm text-muted-foreground">
+								Nothing is published yet. A machine appears here once it is marked
+								public on its card in the dashboard.
+							</p>
+						</div>
+					}
+					<div class="space-y-6">
+						for _, service := range status.Services {
+							<section class="rounded-xl border border-border bg-card p-5 text-card-foreground">
+								<div class="flex items-baseline justify-between gap-4">
+									<h2 class="truncate text-sm font-semibold">{ service.Name }</h2>
+									<span class="shrink-0 text-xs font-medium" style={ "color:" + stateColour(service.State) }>
+										{ serviceWords(service.State) }
+									</span>
+								</div>
+								<!-- Ninety bars, laid out with inline styles rather than
+								     classes: a width or a colour assembled from a value is
+								     never emitted by Tailwind, so a class here would be a
+								     class that silently does nothing. -->
+								<div class="mt-4 flex items-stretch gap-[2px]" style="height:34px">
+									for _, day := range service.Days {
+										<div
+											class="min-w-[2px] flex-1 rounded-[2px]"
+											style={ "background:" + dayColour(day) }
+											title={ dayTitle(day) }
+										></div>
+									}
+								</div>
+								<div class="mt-2 flex items-center justify-between text-[.7rem] text-muted-foreground">
+									<span>{ strconv.Itoa(status.Days) } days ago</span>
+									if service.Watched {
+										<span>{ fmt.Sprintf("%.2f %% uptime", service.Uptime) }</span>
+									} else {
+										<span>no data yet</span>
+									}
+									<span>Today</span>
+								</div>
+							</section>
+						}
+					</div>
+					<p class="mt-10 text-center text-xs text-muted-foreground">
+						Updated { status.AsOf.Format("2006-01-02 15:04 UTC") }
+					</p>
+				}
+			</main>
+		</body>
+	</html>
+}

@@ -27,6 +27,12 @@ import (
 // and a collector cannot sign in with Google.
 var open = []string{
 	"/login",
+	// The status page and the one endpoint behind it. A status page that asks
+	// a stranger to sign in is not a status page — and this is the reason
+	// model.PublicStatus was written out field by field rather than filtered
+	// from Node: everything reachable here is reachable by anybody.
+	"/status",
+	"/api/status",
 	"/auth/",
 	"/static/",
 	"/v1/",
@@ -41,9 +47,23 @@ func assets(path string) bool {
 		path == "/favicon.ico"
 }
 
+// isOpen matches a trailing slash as a prefix and everything else exactly.
+//
+// The distinction is the whole point. "/v1/" and "/auth/" are families of
+// routes and are meant to open every one of them; "/status" and "/login" are
+// single pages, and prefix-matching them would silently open anything that
+// happened to start with the same letters — a "/status/incidents" added later,
+// or an "/api/status-internal" nobody meant to publish. A route becoming public
+// should be a line in this list, never a consequence of its name.
 func isOpen(path string) bool {
 	for _, prefix := range open {
-		if path == prefix || strings.HasPrefix(path, prefix) {
+		if strings.HasSuffix(prefix, "/") {
+			if strings.HasPrefix(path, prefix) {
+				return true
+			}
+			continue
+		}
+		if path == prefix {
 			return true
 		}
 	}

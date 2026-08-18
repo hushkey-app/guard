@@ -112,6 +112,11 @@ CREATE INDEX IF NOT EXISTS idx_cluster_snapshots_node ON cluster_snapshots(node_
 		// Where the machine is. One value, free text, laid out by rather than
 		// searched by — the difference between a group and a tag.
 		"node_group": "TEXT NOT NULL DEFAULT ''",
+		// The status page: whether this machine is on it, and what it is called
+		// there. Public defaults to 0 because the alternative publishes every
+		// machine anybody adds without thinking about it.
+		"public_name": "TEXT NOT NULL DEFAULT ''",
+		"public":      "INTEGER NOT NULL DEFAULT 0",
 		// How often to ask the machine itself, over SSH. Its own cadence,
 		// because a sample costs a handshake where a health check costs a
 		// request on a connection that was already open.
@@ -324,7 +329,8 @@ const nodeColumns = `id,name,url,domain,internal_url,health_path,ssh_address,ssh
 LENGTH(COALESCE(ssh_password,'')) > 0,locked,enabled,interval_seconds,created_at_ns,updated_at_ns,
 LENGTH(COALESCE(icon,'')) > 0,COALESCE(tags,'[]'),
 COALESCE(provider,''),COALESCE(provider_account_id,0),COALESCE(provider_instance_id,''),
-COALESCE(stats_interval_seconds,0),COALESCE(node_group,'')`
+COALESCE(stats_interval_seconds,0),COALESCE(node_group,''),
+COALESCE(public_name,''),COALESCE(public,0)`
 
 func scanNode(scan func(...any) error) (Node, error) {
 	var node Node
@@ -334,7 +340,7 @@ func scanNode(scan func(...any) error) (Node, error) {
 		&node.SSHAddress, &node.SSHFingerprint, &node.HasPassword, &node.Locked, &node.Enabled, &node.IntervalSeconds,
 		&created, &updated, &node.HasIcon, &tags,
 		&node.Provider, &node.ProviderAccountID, &node.ProviderInstanceID, &node.StatsIntervalSeconds,
-		&node.Group)
+		&node.Group, &node.PublicName, &node.Public)
 	if err != nil {
 		return node, err
 	}
@@ -571,11 +577,12 @@ func (s *Store) SaveNode(node Node) (Node, error) {
 		provider, accountID, instanceID := normaliseLink(node.Provider, node.ProviderAccountID, node.ProviderInstanceID)
 		result, err := s.db.Exec(`INSERT INTO cluster_nodes
 (name,url,domain,internal_url,health_path,ssh_address,ssh_password,locked,enabled,interval_seconds,tags,
-stats_interval_seconds,provider,provider_account_id,provider_instance_id,node_group,created_at_ns,updated_at_ns)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+stats_interval_seconds,provider,provider_account_id,provider_instance_id,node_group,public_name,public,
+created_at_ns,updated_at_ns)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			node.Name, node.URL, node.Domain, node.InternalURL, node.HealthPath, node.SSHAddress, sealedPassword,
 			node.Locked, node.Enabled, node.IntervalSeconds, tags, node.StatsIntervalSeconds,
-			provider, accountID, instanceID, node.Group, now, now)
+			provider, accountID, instanceID, node.Group, node.PublicName, node.Public, now, now)
 		if err != nil {
 			return Node{}, err
 		}
@@ -612,9 +619,11 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 	}
 
 	result, err := s.db.Exec(`UPDATE cluster_nodes SET name=?,url=?,domain=?,internal_url=?,health_path=?,
-ssh_address=?,locked=?,enabled=?,interval_seconds=?,stats_interval_seconds=?,tags=?,node_group=?,updated_at_ns=? WHERE id=?`,
+ssh_address=?,locked=?,enabled=?,interval_seconds=?,stats_interval_seconds=?,tags=?,node_group=?,
+public_name=?,public=?,updated_at_ns=? WHERE id=?`,
 		node.Name, node.URL, node.Domain, node.InternalURL, node.HealthPath, node.SSHAddress,
-		node.Locked, node.Enabled, node.IntervalSeconds, node.StatsIntervalSeconds, tags, node.Group, now, node.ID)
+		node.Locked, node.Enabled, node.IntervalSeconds, node.StatsIntervalSeconds, tags, node.Group,
+		node.PublicName, node.Public, now, node.ID)
 	if err != nil {
 		return Node{}, err
 	}
@@ -1419,6 +1428,12 @@ func (s *Store) RecordCheck(nodeID int64, check Check) error {
 	}
 	if _, err := s.db.Exec(`INSERT INTO cluster_checks(node_id,checked_at_ns,ok,status_code,latency_ms,error)
 VALUES(?,?,?,?,?,?)`, nodeID, check.CheckedAt.UnixNano(), check.OK, check.StatusCode, check.LatencyMS, check.Error); err != nil {
+		return err
+	}
+	// The rollup the status page reads, written here rather than by a nightly
+	// job: cluster_checks keeps a day, so anything that summarised it later
+	// would be summarising rows that no longer exist.
+	if err := s.recordUptimeDay(nodeID, check.CheckedAt, check.OK); err != nil {
 		return err
 	}
 	_, err := s.db.Exec(`DELETE FROM cluster_checks WHERE node_id = ? AND checked_at_ns < ?`,

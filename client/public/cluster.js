@@ -409,6 +409,8 @@ function detail(item, node) {
   // next to a machine that is plainly being checked.
   field("domain").value = node.domain || node.internal_url || "";
   field("group").value = node.group || "";
+  field("public_name").value = node.public_name || "";
+  field("public").checked = !!node.public;
   field("health_path").value = node.health_path || "";
   field("ssh_address").value = node.ssh_address || "";
   field("stats_interval").value = node.stats_interval_seconds ?? 0;
@@ -1167,6 +1169,11 @@ async function updateNode(id, changes) {
       // out of its group.
       tags: node.tags || [],
       group: node.group || "",
+      // Sent for the same reason as tags and group: the store writes the
+      // column on every save, so a pause that left it out would quietly
+      // unpublish the machine.
+      public_name: node.public_name || "",
+      public: !!node.public,
       ...changes,
     }),
   });
@@ -1191,6 +1198,10 @@ async function saveDetail(panel) {
     internal_url: "",
     health_path: field("health_path"),
     group: field("group"),
+    public_name: field("public_name"),
+    // .checked, not .value: the helper above trims a string, and a checkbox's
+    // value is the literal "on" whether or not it is ticked.
+    public: qs('[data-node-field="public"]', panel).checked,
     ssh_address: field("ssh_address"),
     // A number, and zero means off — so it is read as one rather than sent as
     // the string an <input> hands over, which the API would reject.
