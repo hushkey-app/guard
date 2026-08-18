@@ -1,0 +1,374 @@
+#cloud-config
+#
+# A box that comes up running guard, with nothing to configure on the machine.
+#
+# Everything guard reads is a row in guard's own database now, edited from
+# Settings → Configuration and Settings → Security — the tokens, the OAuth
+# credentials, retention, the alert destinations. So provisioning installs the
+# two binaries and the machinery that keeps them updated, and the first person to
+# open the dashboard does the rest. No env file, and nothing here to keep in step
+# with a page.
+#
+# It comes in two shapes, decided by two lines at the top of the script below:
+#
+#   GUARD_DOMAIN empty      guard answers :4318 directly — the dashboard and
+#                           OTLP on one port. Nothing else is installed.
+#   GUARD_DOMAIN set        nginx in front of it on 80/443 for that name, and a
+#                           certbot certificate that issues itself once DNS
+#                           points here. Guard still answers :4318 on the
+#                           private interface, because a collector on another
+#                           box posts to the address, not to the domain.
+#
+# Written for the Ubuntu cloud images: apt, useradd, systemd. A second package
+# manager in here would be a branch nobody has ever run, which reads as support
+# for a distro this has never been tested on.
+#
+# WHAT IT DELIBERATELY DOES NOT DO
+#
+#   * No firewall. The public perimeter is the provider's — a Vultr firewall
+#     group filtering the public interface — and two allowlists that have to
+#     agree is how somebody gets locked out editing one over the other.
+#   * No secrets. OAuth credentials and tokens are typed into the dashboard,
+#     not into user data, which sits in plain text in a provider's console.
+#   * It does not close the door. Until sign-in is configured from Settings →
+#     Security, anyone who can reach guard can do anything — which is what makes
+#     the first run possible at all. So either the firewall group does not
+#     publish it yet, or sign-in gets configured in the same sitting.
+#
+# The units and the updater are FETCHED from the repository rather than written
+# out here. A systemd unit written down twice is one that is eventually wrong in
+# the copy nobody is looking at — which is how a box ends up with guard bound to
+# localhost and a collector on the next machine unable to reach it.
+#
+# Re-running /usr/local/sbin/guard-bootstrap is safe, and is how a box picks up a
+# change to a unit.
+
+write_files:
+  # A script rather than a pile of runcmd lines: this is the thing somebody
+  # re-runs at 3am, and a script can be read, edited and run again.
+  - path: /usr/local/sbin/guard-bootstrap
+    owner: root:root
+    permissions: "0700"
+    content: |
+      #!/bin/sh
+      # Install guard's units, the updater, and the release this box wants.
+      set -eu
+
+      # ----------------------------------------------------------------- edit me
+      # The public name for this box, and the address Let's Encrypt should send
+      # expiry warnings to. Set both, or leave both empty for a box with no nginx
+      # and no certificate — guard then answers :4318 itself.
+      GUARD_DOMAIN="guard.hushkey.dev"
+      GUARD_TLS_EMAIL="leotermine@hushkey.app"
+      # ------------------------------------------------------------------------
+
+      GUARD_REPO="${GUARD_REPO:-hushkey-app/guard}"
+      # Which ref the units and the updater are read from. A tag pins them to a
+      # release; main takes whatever is current.
+      GUARD_REF="${GUARD_REF:-main}"
+      RAW="https://raw.githubusercontent.com/$GUARD_REPO/$GUARD_REF/deploy"
+
+      # Progress goes to a file of its own as well as to the console, because the
+      # console is where it is unreadable: cloud-init interleaves every module,
+      # and the question being asked at that point is only ever "how far did it
+      # get". tail -f /var/log/guard-bootstrap.log answers it while it runs.
+      LOGFILE=/var/log/guard-bootstrap.log
+      log() { echo "guard-bootstrap: $*" | tee -a "$LOGFILE"; }
+
+      # Nothing below may block forever. A provisioning run that hangs is worse
+      # than one that fails: it never reaches the final message, cloud-init never
+      # reports done, and the box looks identical to one that is still working.
+      #
+      #   * DPkg::Lock::Timeout, because on a fresh boot unattended-upgrades and
+      #     apt-daily hold the dpkg lock, and apt's default is to wait for it
+      #     with no limit at all. That is the most common way a first boot
+      #     "stops" — and it looks exactly like a broken script.
+      #   * noninteractive, so a package that wants to ask something takes the
+      #     default rather than waiting for a keyboard nobody is at.
+      export DEBIAN_FRONTEND=noninteractive
+      APT="apt-get -o DPkg::Lock::Timeout=600 -qq"
+      # Downloads get a ceiling and a retry: a stalled TCP connection to GitHub
+      # is a hang, and a hang here is a box that never finishes provisioning.
+      CURL="curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15 --max-time 300"
+
+      # curl is on the Ubuntu cloud images, so this asks rather than installing
+      # unconditionally: a `packages:` block in a cloud-config triggers an apt
+      # update on every boot, which is minutes on a small box, to arrive at what
+      # was already there.
+      if ! command -v curl >/dev/null 2>&1; then
+        log "installing curl"
+        $APT update && $APT install -y curl ca-certificates
+      fi
+
+      # The user everything runs as. No login shell, no password: it owns a
+      # database and answers a port.
+      #
+      # --user-group is not decoration. Whether useradd also makes a group of the
+      # same name depends on USERGROUPS_ENAB in /etc/login.defs, which differs
+      # between images — and every `install -o guard -g guard` below fails on one
+      # where it did not, taking the whole provision with it under set -e.
+      if ! id guard >/dev/null 2>&1; then
+        nologin=/usr/sbin/nologin
+        [ -x "$nologin" ] || nologin=/sbin/nologin
+        useradd --system --user-group --home-dir /var/lib/guard --create-home --shell "$nologin" guard
+        log "created the guard user"
+      fi
+      getent group guard >/dev/null 2>&1 || groupadd --system guard
+
+      # The database, its WAL, and guard.db.key beside them. Guard generates the
+      # key on first start; it is in no artifact and no backup guard makes, and
+      # joining a box to an existing database means putting that key here first.
+      install -d -o guard -g guard -m 0750 /var/lib/guard
+
+      # /etc/guard is root's, with one file handed to the guard user: version,
+      # which is what the dashboard's Update button writes. Guard cannot touch
+      # anything else here — that split is the whole permission model, and it is
+      # why the file is made here rather than by guard, whose ReadWritePaths let
+      # it write the file but not create it.
+      install -d -o root -g root -m 0755 /etc/guard
+      # Written as `latest` rather than left empty. Absent means latest to the
+      # updater; an empty file does not — it reads as a version, and the download
+      # URL then has a blank where the tag goes.
+      if [ ! -s /etc/guard/version ]; then
+        printf 'latest\n' > /etc/guard/version
+        chown guard:guard /etc/guard/version
+        chmod 0644 /etc/guard/version
+      fi
+
+      # The units and the updater, from the repository. Fetched to a temporary
+      # directory first so a half-downloaded unit never lands in /etc/systemd.
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+      for f in guard.service guard-vault.service guard-update.service guard-update.timer guard-update; do
+        $CURL "$RAW/$f" -o "$work/$f" || { echo "guard-bootstrap: could not fetch $f from $GUARD_REF" >&2; exit 1; }
+      done
+      install -m 0755 "$work/guard-update" /usr/local/bin/guard-update
+      install -m 0644 "$work/guard.service" "$work/guard-vault.service" \
+        "$work/guard-update.service" "$work/guard-update.timer" /etc/systemd/system/
+      systemctl daemon-reload
+      log "units installed from $GUARD_REPO@$GUARD_REF"
+
+      # Enabled, but not started: there is no binary yet. The updater below
+      # restarts both services, which is what starts them the first time.
+      systemctl enable guard.service guard-vault.service >/dev/null
+
+      # The timer is armed BEFORE the first install, and that order is the whole
+      # difference between a box that heals itself and a box somebody has to
+      # visit. GitHub rate-limits, releases move, a health check can be slow on a
+      # cold small instance — and with the timer armed afterwards, any of those
+      # left a box with no binary AND no timer, which never tries again. Armed
+      # first, the same failure costs fifteen minutes.
+      #
+      # --now is the other half: `enable` alone arms it for the next boot, and
+      # provisioning reaches this line long after timers.target has passed, so
+      # the box would come up correct and never take another release. That one
+      # fails silently and looks exactly like success.
+      systemctl enable --now guard-update.timer >/dev/null
+      log "the update timer is armed"
+
+      # The first install is an ordinary update: it reads /etc/guard/version,
+      # downloads the release, verifies it against SHA256SUMS, installs guard
+      # first and then the vault, and rolls either back if it does not answer
+      # /healthz within thirty seconds.
+      log "installing the release"
+      if ! GUARD_REPO="$GUARD_REPO" /usr/local/bin/guard-update; then
+        log "the first install did not finish — the timer will try again within fifteen minutes"
+        log "look at: journalctl -u guard -u guard-update, and /var/log/cloud-init-output.log"
+        exit 1
+      fi
+
+      # An address with no name to put it against is the one combination that
+      # silently does nothing: no nginx, no certificate, and an email nobody
+      # reads. Said out loud here, because from the outside it looks exactly like
+      # a box that came up perfectly — which it did, next to a domain that
+      # answers nothing.
+      if [ -z "$GUARD_DOMAIN" ] && [ -n "$GUARD_TLS_EMAIL" ]; then
+        log "an address is set but no domain, so no nginx and no certificate — guard answers :4318 itself"
+      fi
+
+      # The public name, if this box has one. Everything from here is nginx and a
+      # certificate; a box with GUARD_DOMAIN empty is finished above.
+      # In a function, so a failure in here cannot take the box down with it.
+      # Guard is installed and answering by this point, and the difference
+      # between "the dashboard is up but the domain is not wired yet" and
+      # "provisioning stopped without saying where" is the difference between a
+      # ten-second fix and an afternoon. Each step is checked by hand, because a
+      # function called from an if runs with set -e suspended.
+      public_name() {
+        if ! command -v nginx >/dev/null 2>&1 || ! command -v certbot >/dev/null 2>&1; then
+          log "installing nginx and certbot"
+          $APT update || { log "apt update failed"; return 1; }
+          # certbot and its nginx plugin live in universe. If a future image
+          # drops them, this is where it will say so rather than dying mid-file.
+          $APT install -y nginx certbot python3-certbot-nginx dnsutils \
+            || { log "could not install nginx and certbot — is universe enabled?"; return 1; }
+        fi
+
+        # Plain HTTP only. certbot rewrites this file when it issues, adding the
+        # 443 server and the redirect — so writing the TLS half here would mean
+        # two authors for one file, and the second one wins at three in the
+        # morning. Guard is on the loopback because nginx is what the internet
+        # talks to; the collectors on other machines post to this box's address
+        # on :4318 directly, which is why the unit does not bind loopback only.
+        cat > /etc/nginx/sites-available/guard <<NGINX
+      server {
+          listen 80;
+          listen [::]:80;
+          server_name $GUARD_DOMAIN;
+
+          # An OTLP batch is bigger than nginx's default 1m, and a collector
+          # pointed at the public name would get a 413 nothing explains.
+          client_max_body_size 32m;
+
+          location / {
+              proxy_pass http://127.0.0.1:4318;
+              proxy_http_version 1.1;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Connection "upgrade";
+              proxy_buffering off;
+          }
+      }
+      NGINX
+        ln -sf /etc/nginx/sites-available/guard /etc/nginx/sites-enabled/guard
+        rm -f /etc/nginx/sites-enabled/default
+        nginx -t || { log "the nginx configuration did not validate"; return 1; }
+        systemctl enable nginx >/dev/null || true
+        systemctl restart nginx || { log "nginx would not restart — systemctl status nginx"; return 1; }
+        log "nginx is proxying $GUARD_DOMAIN to :4318"
+
+        # The certificate issues itself, on a timer, once DNS points here. A
+        # certbot run inside this script would be a certbot run against a name
+        # that does not resolve yet — which is the normal case, because the A
+        # record is usually typed after the box exists.
+        cat > /usr/local/bin/guard-tls-setup <<TLS
+      #!/bin/sh
+      # Issue the certificate for this box, once that is possible. Idempotent:
+      # it stops trying the moment a certificate exists.
+      set -e
+      DOMAIN="$GUARD_DOMAIN"
+      EMAIL="$GUARD_TLS_EMAIL"
+
+      [ -d "/etc/letsencrypt/live/\$DOMAIN" ] && { systemctl disable --now guard-tls.timer >/dev/null 2>&1 || true; exit 0; }
+
+      # Does the name resolve at all? Not "does it resolve to this box" — behind
+      # Cloudflare's proxy it never will, and a check that compares the answer to
+      # this machine's address would keep a proxied domain from ever being
+      # issued. Let's Encrypt is the thing that decides whether the challenge
+      # reaches us; this only avoids asking when there is plainly no record yet.
+      [ -n "\$(dig +short "\$DOMAIN" @1.1.1.1 | tail -n1)" ] || {
+        echo "guard-tls-setup: \$DOMAIN does not resolve yet — will try again"
+        exit 1
+      }
+
+      # An address, or an explicit refusal to give one — certbot accepts no third
+      # option, and an empty -m is an error rather than a default. Without this
+      # branch, a domain set with the email left blank fails here every fifteen
+      # minutes on a box that looks otherwise correct.
+      if [ -n "\$EMAIL" ]; then
+        register="-m \$EMAIL"
+      else
+        register="--register-unsafely-without-email"
+        echo "guard-tls-setup: no address given, so nothing will warn you before this certificate expires"
+      fi
+
+      certbot --nginx -d "\$DOMAIN" \$register --agree-tos --non-interactive
+      echo "guard-tls-setup: issued for \$DOMAIN — Cloudflare SSL/TLS can go to Full (strict)"
+      systemctl disable --now guard-tls.timer >/dev/null 2>&1 || true
+      TLS
+        chmod 0755 /usr/local/bin/guard-tls-setup
+
+        cat > /etc/systemd/system/guard-tls.service <<'UNIT'
+      [Unit]
+      Description=issue guard's certificate once DNS points here
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/guard-tls-setup
+      UNIT
+
+        # Fifteen minutes, not five. A failed issuance is rate-limited by Let's
+        # Encrypt — five per hour for the same name — and a five-minute retry
+        # spends that budget in half an hour, on a box whose DNS is not ready
+        # yet, leaving nothing for the attempt that would have worked.
+        cat > /etc/systemd/system/guard-tls.timer <<'UNIT'
+      [Unit]
+      Description=retry until the certificate is issued
+
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=15min
+
+      [Install]
+      WantedBy=timers.target
+      UNIT
+        systemctl daemon-reload
+        systemctl enable --now guard-tls.timer >/dev/null || { log "the TLS timer would not start"; return 1; }
+        log "TLS will issue itself within fifteen minutes of DNS pointing here"
+      }
+
+      if [ -n "$GUARD_DOMAIN" ]; then
+        if ! public_name; then
+          log "the public name is NOT wired up — guard itself is fine on :4318"
+          log "fix what the line above names, then re-run: /usr/local/sbin/guard-bootstrap"
+        fi
+      fi
+
+      # What actually answers, rather than what was installed.
+      for pair in "guard 4318" "guard-vault 4319"; do
+        name=${pair% *}; port=${pair#* }
+        if curl -fsS -o /dev/null --max-time 10 "http://127.0.0.1:$port/healthz"; then
+          log "$name answers on $port"
+        else
+          log "$name is NOT answering on $port — journalctl -u $name"
+        fi
+      done
+
+      log "guard is on $(/usr/local/bin/guard -version)"
+
+runcmd:
+  # timeout, because cloud-init has no budget of its own: a command that never
+  # returns leaves the box provisioning forever, with no final message and no
+  # way to tell it apart from one that is simply slow. Twenty minutes is far
+  # beyond a normal run — and if it ever fires, the update timer was armed long
+  # before and finishes the job on its own.
+  - [ timeout, "1200", /usr/local/sbin/guard-bootstrap ]
+
+final_message: |
+  guard and guard-vault are provisioned. The OK / NOT ANSWERING lines are in
+  /var/log/cloud-init-output.log.
+
+  What is left, and none of it is a gap in this file:
+
+    1. Point the A record at this box. If a domain was set above, TLS issues
+       itself within fifteen minutes of that — `certbot certificates` confirms
+       it, and Cloudflare can then go to Full (strict).
+
+    2. If the domain answers 522, that is Cloudflare saying it reached this
+       box's address and got nothing back — a reachability problem, never a
+       certificate one, and Let's Encrypt's challenge travels the same path so
+       no certificate can issue until it is fixed. Three things cause it:
+
+         * the provider's firewall group does not allow 80 and 443 to this box
+         * its IPv4 and IPv6 rules are separate, and the DNS record here is an
+           AAAA — so an IPv4-only rule set is an origin nothing can reach
+         * the record still points at the machine this one replaced
+
+       `curl -s ifconfig.me` here, compared with the record in Cloudflare,
+       settles the last one. Then: systemctl start guard-tls.service
+
+    3. Open the dashboard and configure it. Sign-in and the members allowed in
+       are Settings → Security; the collector secret and the API token are
+       Settings → Configuration, both with a Generate button; alert
+       destinations are Settings → Alerts; retention is Settings → Data
+       storage. Each save says "restart to apply", and the restart is a button.
+
+       Until sign-in is configured, anyone who can reach this box can do
+       anything — so do this before publishing the port.
+
+    4. Copy /var/lib/guard/guard.db.key off the box. It is in no release and no
+       backup this file makes, and without it the database restores as
+       unreadable secrets.

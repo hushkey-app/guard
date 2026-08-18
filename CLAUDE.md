@@ -573,7 +573,16 @@ restarts. `/etc/guard/version` pins a box (`latest`, or a tag).
   schema and migrates on start.
 - **Each service is health-gated and rolls back on its own.** The previous
   binary is kept beside the new one, so going back is a rename; a running binary
-  cannot be written over, so installing is a rename too.
+  cannot be written over, so installing is a rename too. **Answering `/healthz`
+  is not enough** — the installed binary is then asked `-version` and must say
+  the wanted tag, because an install that did not land leaves the *old* binary
+  answering, and that used to read as a successful deploy.
+- **`deploy/cloud-init.yaml` is a whole box**, and it configures nothing: a user,
+  two directories, the units and the updater fetched from this repository at a
+  pinned ref, then the first install down the updater's own path. Everything else
+  is the dashboard, which is only true because guard's configuration lives in
+  guard's database. It touches no firewall — the perimeter is the provider's —
+  and says in its header that :4318 is open until sign-in is configured.
 - `-version` on both binaries is what the updater asks — never a state file
   that can drift from what is actually installed. A release stamps the tag; the
   Makefile stamps `git describe --tags --dirty` (and passes it through `GOFLAGS`

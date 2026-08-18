@@ -26,6 +26,12 @@ STATE="${GUARD_STATE_DIR:-/etc/guard}"
 GUARD_URL="${GUARD_HEALTH_URL:-http://127.0.0.1:4318/healthz}"
 VAULT_URL="${GUARD_VAULT_HEALTH_URL:-http://127.0.0.1:4319/healthz}"
 
+# Every network call gets a ceiling. This runs from a systemd timer every
+# fifteen minutes and from the first boot of a box: a stalled connection to
+# GitHub with no limit is a unit that never finishes, and on the first boot it
+# is a provisioning run that never returns.
+CURL="curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15 --max-time 300"
+
 log() { echo "guard-update: $*"; }
 die() { log "$*"; exit 1; }
 
@@ -34,7 +40,7 @@ die() { log "$*"; exit 1; }
 # automatic timer from moving a box somebody deliberately held back.
 wanted=$(cat "$STATE/version" 2>/dev/null || echo latest)
 if [ "$wanted" = "latest" ]; then
-  wanted=$(curl -fsS "https://api.github.com/repos/$REPO/releases/latest" \
+  wanted=$($CURL "https://api.github.com/repos/$REPO/releases/latest" \
     | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)
   [ -n "$wanted" ] || die "could not read the latest release — leaving this box alone"
 fi
@@ -59,9 +65,9 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 base="https://github.com/$REPO/releases/download/$wanted"
 for name in guard guard-vault; do
-  curl -fsSL "$base/$name-linux-$arch" -o "$work/$name" || die "could not download $name"
+  $CURL "$base/$name-linux-$arch" -o "$work/$name" || die "could not download $name"
 done
-curl -fsSL "$base/SHA256SUMS" -o "$work/SHA256SUMS" || die "could not download SHA256SUMS"
+$CURL "$base/SHA256SUMS" -o "$work/SHA256SUMS" || die "could not download SHA256SUMS"
 
 # Verify against the published sums, naming only the two files we took.
 ( cd "$work" && for name in guard guard-vault; do
@@ -76,27 +82,46 @@ chmod +x "$work/guard" "$work/guard-vault"
 # back. A rename rather than a copy, because a running binary cannot be written
 # over — and because rename is atomic, so there is no moment where the file on
 # disk is half a binary.
+#
+# Every step is checked by hand rather than left to `set -e`, and that is not
+# belt-and-braces: this function is called as `swap … || die …`, and a command in
+# an || list runs with -e suspended — inside the function body too. So a failed
+# mv here would not stop the script, and the health check below would then pass
+# against the binary that was already running and report the new version as
+# installed. A deploy that quietly did nothing is worse than one that failed.
 swap() {
   service=$1; file=$2; url=$3
-  [ -f "$BIN/$file" ] && cp -p "$BIN/$file" "$BIN/$file.prev"
-  mv "$work/$file" "$BIN/$file.new"
-  mv "$BIN/$file.new" "$BIN/$file"
-  systemctl restart "$service"
+  if [ -f "$BIN/$file" ]; then
+    cp -p "$BIN/$file" "$BIN/$file.prev" || { log "could not keep a copy of the running $file"; return 1; }
+  fi
+  mv "$work/$file" "$BIN/$file.new" || { log "could not write $BIN/$file.new"; return 1; }
+  mv "$BIN/$file.new" "$BIN/$file" || { log "could not put $file in place"; return 1; }
+  systemctl restart "$service" || { log "$service would not restart"; return 1; }
 
   n=0
   while [ "$n" -lt 30 ]; do
-    if curl -fsS -o /dev/null "$url"; then
-      log "$service is up on $wanted"
-      return 0
+    if curl -fsS -o /dev/null --max-time 5 "$url"; then
+      # It answers — but ask it what it is. Something else listening on that
+      # port, or an install that did not land, both look exactly like a healthy
+      # new version from here.
+      got=$("$BIN/$file" -version 2>/dev/null || echo unknown)
+      if [ "$got" = "$wanted" ]; then
+        log "$service is up on $wanted"
+        return 0
+      fi
+      log "$service answered $url but reports $got, not $wanted — rolling back"
+      break
     fi
     n=$((n + 1))
     sleep 1
   done
 
-  log "$service did not answer $url — rolling back"
+  # Either it never answered, or it answered as the wrong version — which has
+  # already said so, in words that name what it found.
+  [ "$n" -lt 30 ] || log "$service did not answer $url — rolling back"
   if [ -f "$BIN/$file.prev" ]; then
-    mv "$BIN/$file.prev" "$BIN/$file"
-    systemctl restart "$service"
+    mv "$BIN/$file.prev" "$BIN/$file" || log "could not put the previous $file back — this box needs a look"
+    systemctl restart "$service" || log "$service would not restart on the previous binary"
   fi
   return 1
 }

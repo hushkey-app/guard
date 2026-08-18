@@ -60,6 +60,18 @@ type Node struct {
 	// HasPassword is the read side. The secret itself never leaves the server —
 	// the dashboard is told that one exists, and draws dots.
 	HasPassword bool `json:"has_password,omitempty"`
+	// PublicName is what the status page calls this machine, and the reason it
+	// exists is that the two audiences want different words. "Database" is
+	// useful to a customer; "PACK-POSTGRES-VPS-MAIN" is useful to whoever has
+	// to SSH into it, and publishing the second tells a stranger your naming
+	// scheme, your provider and your topology. Empty falls back to Name — a
+	// machine published without a nickname is a decision, not a mistake.
+	PublicName string `json:"public_name,omitempty"`
+	// Public is whether this machine appears on the status page at all. Off by
+	// default, and off is the only safe default: a flag that defaulted to on
+	// would publish every machine somebody added while they were not thinking
+	// about publishing.
+	Public bool `json:"public"`
 	// SSHFingerprint is the host key guard saw the first time it connected, and
 	// insists on every time after. Shown so it can be compared with what the
 	// machine's owner says it should be.
@@ -791,4 +803,43 @@ func ValidateNodeURL(raw string) error {
 		return errors.New("url needs a host, like https://vps-1.example.com/api/health")
 	}
 	return nil
+}
+
+// PublicStatus is the status page, and the only thing an unauthenticated
+// caller can learn about the cluster.
+//
+// It is a separate type from Node rather than a filtered one on purpose. A
+// shape that starts as "Node minus the private fields" is a shape where the
+// next field added to Node is public by default, and the failure is silent —
+// an address, a group name or an error string appearing on a page anybody can
+// read. Everything here had to be written down to exist.
+type PublicStatus struct {
+	// State is the worst of the services: operational, partial, down, or
+	// unknown when nothing is published.
+	State string `json:"state"`
+	// Days is the width of the window, so the page does not hardcode it.
+	Days     int             `json:"days"`
+	Services []PublicService `json:"services"`
+	AsOf     time.Time       `json:"as_of"`
+}
+
+// PublicService is one machine as the outside world sees it: a name somebody
+// chose for strangers, a state, a percentage, and a row of days.
+type PublicService struct {
+	Name   string  `json:"name"`
+	State  string  `json:"state"`
+	Uptime float64 `json:"uptime"`
+	// Watched is false when no check has ever run in the window. It exists so
+	// the page can say "no data" instead of drawing a confident 0%.
+	Watched bool        `json:"watched"`
+	Days    []PublicDay `json:"days"`
+}
+
+// PublicDay is one bar. Checks is zero for a day guard was not watching, which
+// the page must draw as absence rather than as an outage.
+type PublicDay struct {
+	Date   string  `json:"date"`
+	Checks int64   `json:"checks"`
+	OK     int64   `json:"ok"`
+	Uptime float64 `json:"uptime"`
 }
