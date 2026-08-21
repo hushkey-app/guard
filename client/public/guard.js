@@ -15,6 +15,8 @@ import { refreshMembers } from "./members.js";
 import { refreshAlerts } from "./alerts.js";
 import { refreshSecrets } from "./secrets.js";
 import { refreshConfig } from "./config.js";
+import { refreshBackup } from "./backup.js";
+import { closeDeployStreams, refreshDeploys } from "./deploys.js";
 import { screenCleared } from "./store.js";
 
 // Which machines the signal pages are scoped to. Shared across logs, traces and
@@ -527,11 +529,19 @@ async function refreshPage({ facets = false } = {}) {
   // Guard's own configuration: it changes when somebody saves the form, never on
   // its own — so a mount and a press, not the tick.
   if (facets && qs("[data-config-groups]")) work.push(refreshConfig());
+  // What a backup would hold: counts of guard's own rows, which move when
+  // somebody adds a machine rather than when telemetry arrives.
+  if (facets && qs("[data-backup-sections]")) work.push(refreshBackup());
   // The alert rules and their destinations: guard's own SQLite, but read on a
   // mount and after a change rather than on the tick. Nothing here moves
   // except when somebody edits it — and a row being redrawn under a cursor
   // mid-edit is the one thing this page must not do.
   if (facets && qs("[data-webhooks]")) work.push(refreshAlerts());
+  // The deploys page is both: the groups and templates move only when somebody
+  // saves a form, and a run moves by itself, machine by machine. Watching that
+  // happen is the reason to deploy from here, so it is on the tick — one small
+  // query for the runs still going, and the lists only on a mount.
+  if (qs("[data-deploy-rows]")) work.push(refreshDeploys(facets));
   // The storage page reads the provider, so it refreshes on a mount or an
   // explicit press — never on the three-second tick.
   if (facets && qs("[data-storage-rows]")) work.push(refreshStorage());
@@ -667,6 +677,8 @@ globalThis.guardPageUnmount = () => {
   // The outlet is about to throw this page's DOM away. The store keeps track of
   // what is on screen so it can skip redundant redraws; from here, nothing is.
   screenCleared();
+  // Every open event stream belongs to the page that is being thrown away.
+  closeDeployStreams();
   clearTimeout(filterTimer);
   filterTimer = undefined;
   for (const signal of signalRequests.keys()) signalRequests.set(signal, signalRequests.get(signal) + 1);

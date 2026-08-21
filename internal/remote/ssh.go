@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -108,6 +109,22 @@ func (r *Runner) Probe(ctx context.Context, login Login) (Result, error) {
 // that failed explains itself on one of the two, and which one it chose is not
 // a thing the reader should have to think about at 3am.
 func (r *Runner) Run(ctx context.Context, login Login, command string) (Result, error) {
+	return r.stream(ctx, login, command, nil)
+}
+
+// Stream is Run with a running commentary: onChunk is called with each piece of
+// output as it arrives, and the whole of it still comes back in Result.
+//
+// It exists because the two long things guard does over SSH — pulling an image
+// and installing docker — say nothing for a minute and then say a lot. A caller
+// that only gets the end of that is showing somebody a spinner and hoping. The
+// callback runs on the reading goroutine, so it should be cheap; the deploy
+// runner throttles its writes rather than touching the database per line.
+func (r *Runner) Stream(ctx context.Context, login Login, command string, onChunk func(string)) (Result, error) {
+	return r.stream(ctx, login, command, onChunk)
+}
+
+func (r *Runner) stream(ctx context.Context, login Login, command string, onChunk func(string)) (Result, error) {
 	r.prepare()
 	if strings.TrimSpace(command) == "" {
 		return Result{}, errors.New("there is no command to run")
@@ -201,13 +218,16 @@ func (r *Runner) Run(ctx context.Context, login Login, command string) (Result, 
 		}
 	}()
 
-	output, runErr := shell.CombinedOutput(command)
+	// Streamed rather than collected, so a caller that wants to show progress
+	// can. `docker compose pull` on a fat image says nothing for a minute and
+	// then says a lot; a watcher that only sees the end of it is watching a
+	// spinner. Callers that do not care pass nil and read Output as before.
+	sink := &stream{max: r.MaxOutput, onChunk: onChunk}
+	shell.Stdout = sink
+	shell.Stderr = sink
+	runErr := shell.Run(command)
 	result.DurationMS = float64(time.Since(started)) / float64(time.Millisecond)
-	if len(output) > r.MaxOutput {
-		output = output[:r.MaxOutput]
-		result.Truncated = true
-	}
-	result.Output = string(output)
+	result.Output, result.Truncated = sink.text()
 
 	var exit *ssh.ExitError
 	switch {
@@ -244,4 +264,54 @@ func reason(err error) error {
 		return errors.New("network unreachable")
 	}
 	return err
+}
+
+// stream collects what a command printed and hands each piece on as it lands.
+//
+// One writer for stdout and stderr both, which is what keeps them interleaved
+// in the order the machine produced them. The cap is the same one Run always
+// had: output goes into a JSON response and then into a browser, so a command
+// that prints a gigabyte truncates rather than taking the process down.
+type stream struct {
+	mu        sync.Mutex
+	buf       []byte
+	max       int
+	truncated bool
+	onChunk   func(string)
+}
+
+func (s *stream) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	room := s.max - len(s.buf)
+	keep := p
+	if room <= 0 {
+		s.truncated = true
+		keep = nil
+	} else if len(keep) > room {
+		keep = keep[:room]
+		s.truncated = true
+	}
+	if len(keep) > 0 {
+		s.buf = append(s.buf, keep...)
+	}
+	// The whole buffer, not the chunk: a caller showing a pane wants what has
+	// been said so far, and reassembling that from fragments is the caller
+	// writing this loop again.
+	var far string
+	if s.onChunk != nil && len(keep) > 0 {
+		far = string(s.buf)
+	}
+	s.mu.Unlock()
+	if far != "" {
+		s.onChunk(far)
+	}
+	// Always the full length: a short write is an error to the ssh package, and
+	// truncation here is a decision rather than a failure.
+	return len(p), nil
+}
+
+func (s *stream) text() (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return string(s.buf), s.truncated
 }

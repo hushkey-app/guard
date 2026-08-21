@@ -1,0 +1,528 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/field"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/axadrn/shadcn-templ/v2/components/textarea"
+)
+
+// The deploys page: groups, templates, and what happened.
+//
+// It is a list like /cluster and /storage, for the same reason — the figures
+// line up down the page, and the row that is unlike the others is the one you
+// are looking for. A group's row says what its machines are running; the fold
+// is the membership and the destination, which is not what somebody scanning
+// for "which box is still on last week's tag" came to read.
+//
+// Every panel below is chrome only. The rows are cloned from the <template>
+// elements at the bottom by deploys.js, so panel markup stays real shadcn and
+// every class stays somewhere Tailwind looks.
+
+// DeployGroups is the top of the page: the groups, each with a Deploy button.
+templ DeployGroups() {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Groups
+			}
+			@card.Description() {
+				A group is a set of machines out of the cluster — not a second inventory.
+				A machine deleted there leaves every group here by itself.
+			}
+			<div class="flex flex-wrap items-center gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-deploy-new-group": true, "type": "button"},
+				}) {
+					Add group
+				}
+			</div>
+		}
+		@card.Content() {
+			<p data-deploy-status class="text-sm text-muted-foreground empty:hidden" hidden></p>
+			<div data-deploy-rows class="divide-y divide-border rounded-lg border border-border"></div>
+			<p data-deploy-empty class="py-8 text-center text-sm text-muted-foreground" hidden>
+				No groups yet. A group names the machines one application runs on.
+			</p>
+		}
+	}
+}
+
+// DeployTemplates is the compose files guard keeps.
+templ DeployTemplates() {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Compose templates
+			}
+			@card.Description() {
+				The compose file lives here, not on the box — so it travels in the backup, and a
+				replacement machine is provisioned by deploying to it. Saving writes a new version;
+				the version a past run points at is never rewritten.
+			}
+			<div class="flex flex-wrap items-center gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-deploy-new-template": true, "type": "button"},
+				}) {
+					New template
+				}
+			</div>
+		}
+		@card.Content() {
+			<div data-template-rows class="divide-y divide-border rounded-lg border border-border"></div>
+			<p data-template-empty class="py-8 text-center text-sm text-muted-foreground" hidden>
+				No templates yet. A template is the compose file, the service it names and the
+				variables it expects.
+			</p>
+		}
+	}
+}
+
+// DeployRuns is the history, and the live one at the top of it.
+templ DeployRuns() {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Deploys
+			}
+			@card.Description() {
+				What was pressed, machine by machine. A run that stopped waits here for somebody to
+				answer it — and gives up after thirty minutes rather than holding its machines
+				forever.
+			}
+		}
+		@card.Content() {
+			<div data-run-rows class="space-y-3"></div>
+			<p data-run-empty class="py-8 text-center text-sm text-muted-foreground" hidden>
+				Nothing has been deployed from guard yet.
+			</p>
+			<!-- Its own pager rather than ui.Pagination: that one is wired to the
+			     signal pages in guard.js by a global click handler, and sharing
+			     the markup would mean sharing the handler. -->
+			<div data-run-pager class="flex flex-wrap items-center justify-between gap-3 border-t border-border px-1 pt-3" hidden>
+				<p data-run-page-summary class="text-xs text-muted-foreground"></p>
+				<div class="flex items-center gap-2">
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-run-page": "previous", "type": "button", "aria-label": "Previous deploys"},
+					}) {
+						← Newer
+					}
+					<span data-run-page-number class="text-xs font-medium text-muted-foreground"></span>
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-run-page": "next", "type": "button", "aria-label": "Older deploys"},
+					}) {
+						Older →
+					}
+				</div>
+			</div>
+		}
+	}
+}
+
+// DeployDialog is the press itself: template, version, tag and mode, then a
+// summary of exactly what is about to happen.
+//
+// The summary is not decoration. It is the last place the mode is readable
+// before machines start being replaced, and "all at once, no health gate" is a
+// thing somebody should have to read rather than a radio button they left where
+// it was.
+templ DeployDialog() {
+	<dialog data-deploy-dialog class="w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60">
+		<form method="dialog" class="space-y-5 p-6">
+			<div class="space-y-1.5">
+				<h2 class="text-lg font-semibold tracking-tight">
+					Deploy <span data-deploy-dialog-group class="font-mono"></span>
+				</h2>
+				<p class="text-sm text-muted-foreground">
+					The tag is written into the machine's <code class="font-mono">.env</code>; the compose
+					file is written from the template version below.
+				</p>
+			</div>
+			<div class="grid gap-4 sm:grid-cols-2">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "deploy-template"}) {
+						Template
+					}
+					<select id="deploy-template" data-deploy-template class="cn-native-select h-9 w-full"></select>
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "deploy-version"}) {
+						Version
+					}
+					<select id="deploy-version" data-deploy-version class="cn-native-select h-9 w-full"></select>
+				}
+			</div>
+			<div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "deploy-tag"}) {
+						Tag
+					}
+					<div class="flex gap-2">
+						<select id="deploy-tag-list" data-deploy-tag-list class="cn-native-select h-9 w-full"></select>
+						@button.Button(button.Props{
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Attributes: templ.Attributes{"data-deploy-tags-refresh": true, "type": "button"},
+						}) {
+							Refresh
+						}
+					</div>
+					@input.Input(input.Props{
+						ID:          "deploy-tag",
+						Placeholder: "or type a tag",
+						Class:       "font-mono",
+						Attributes:  templ.Attributes{"data-deploy-tag": true, "spellcheck": "false", "autocomplete": "off"},
+					})
+				}
+			</div>
+			<!-- The mode. Named honestly: the second option is the one that will
+			     be picked out of habit if it is labelled "fast". -->
+			<fieldset class="space-y-2 rounded-lg border border-border p-4">
+				<legend class="px-1 text-sm font-medium">How</legend>
+				<label class="flex cursor-pointer items-start gap-3 text-sm">
+					<input type="radio" name="deploy-mode" value="sequential" data-deploy-mode checked class="mt-0.5"/>
+					<span>
+						<span class="font-medium">One at a time, health-gated</span>
+						<span class="block text-xs text-muted-foreground">
+							Each machine has to answer its health check three times before the next one is
+							touched. A failure stops the run and waits for you.
+						</span>
+					</span>
+				</label>
+				<label class="flex cursor-pointer items-start gap-3 text-sm">
+					<input type="radio" name="deploy-mode" value="parallel" data-deploy-mode class="mt-0.5"/>
+					<span>
+						<span class="font-medium">All at once</span>
+						<span class="block text-xs text-destructive">
+							No downtime protection. Health is recorded but gates nothing, so every machine can
+							go down together. Use only where losing the whole group is acceptable.
+						</span>
+					</span>
+				</label>
+			</fieldset>
+			<div data-deploy-summary class="rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap"></div>
+			<p data-deploy-dialog-error class="text-sm text-destructive empty:hidden"></p>
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Type:       button.TypeSubmit,
+					Attributes: templ.Attributes{"value": "cancel"},
+				}) {
+					Cancel
+				}
+				@button.Button(button.Props{
+					Size:       button.SizeSm,
+					Type:       button.TypeButton,
+					Attributes: templ.Attributes{"data-deploy-go": true},
+				}) {
+					Write deploy
+				}
+			</div>
+		</form>
+	</dialog>
+}
+
+// TemplateDialog edits one template, which always means writing a new version.
+templ TemplateDialog() {
+	<dialog data-template-dialog class="w-[min(52rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60">
+		<form method="dialog" class="max-h-[85vh] space-y-5 overflow-auto p-6">
+			<div class="space-y-1.5">
+				<h2 data-template-dialog-title class="text-lg font-semibold tracking-tight">New template</h2>
+				<p class="text-sm text-muted-foreground">
+					Saving an existing template writes the next version. Nothing that has already been
+					deployed changes.
+				</p>
+			</div>
+			<div class="grid gap-4 sm:grid-cols-2">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "template-name"}) {
+						Name
+					}
+					@input.Input(input.Props{
+						ID:         "template-name",
+						Required:   true,
+						Attributes: templ.Attributes{"data-template": "name", "maxlength": "80", "autocomplete": "off"},
+					})
+					<p data-template-derived class="text-xs text-muted-foreground"></p>
+				}
+			</div>
+			<div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,8rem)]">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "template-health"}) {
+						Health path
+					}
+					@input.Input(input.Props{
+						ID:          "template-health",
+						Placeholder: "/health",
+						Class:       "font-mono",
+						Attributes:  templ.Attributes{"data-template": "health_path", "spellcheck": "false", "autocomplete": "off"},
+					})
+					<p class="text-xs text-muted-foreground">
+						What proves the deploy. Empty uses the machine's own.
+					</p>
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "template-port"}) {
+						Port
+					}
+					@input.Input(input.Props{
+						ID:          "template-port",
+						Type:        "number",
+						Placeholder: "same as the machine",
+						Attributes:  templ.Attributes{"data-template": "health_port", "min": "0", "max": "65535"},
+					})
+					<p class="text-xs text-muted-foreground">
+						Only if the service answers on a different port to the machine's address.
+					</p>
+				}
+			</div>
+			@field.Field() {
+				@field.Label(field.LabelProps{For: "template-compose"}) {
+					docker-compose.yml
+				}
+				@textarea.Textarea(textarea.Props{
+					ID:         "template-compose",
+					Rows:       12,
+					Class:      "font-mono text-xs",
+					Attributes: templ.Attributes{"data-template": "compose_yaml", "spellcheck": "false"},
+				})
+				<p class="text-xs text-muted-foreground">
+					<code class="font-mono">{ "${TAG}" }</code> comes from the <code class="font-mono">.env</code> guard writes beside it.
+				</p>
+			}
+			<div class="space-y-3 rounded-lg border border-border p-4">
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<div>
+						<h3 class="text-sm font-medium">Variables <span class="font-normal text-muted-foreground">— optional</span></h3>
+						<p class="text-xs text-muted-foreground">
+							Anything the compose file needs besides <code class="font-mono">TAG</code>.
+						</p>
+					</div>
+					<div class="flex items-center gap-2">
+						<select data-template-env class="cn-native-select h-8 text-xs"></select>
+						@button.Button(button.Props{
+							Variant:    button.VariantOutline,
+							Size:       button.SizeSm,
+							Attributes: templ.Attributes{"data-template-add-var": true, "type": "button"},
+						}) {
+							Add variable
+						}
+					</div>
+				</div>
+				<div data-template-vars class="space-y-2"></div>
+				<p class="text-xs text-muted-foreground">
+					<b>vault</b> reads from the environment above at deploy time and writes it into the
+					machine's 0600 <code class="font-mono">.env</code> — still plaintext on that box.
+				</p>
+			</div>
+			<p data-template-dialog-error class="text-sm text-destructive empty:hidden"></p>
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Type:       button.TypeSubmit,
+					Attributes: templ.Attributes{"value": "cancel"},
+				}) {
+					Cancel
+				}
+				@button.Button(button.Props{
+					Size:       button.SizeSm,
+					Type:       button.TypeButton,
+					Attributes: templ.Attributes{"data-template-save": true},
+				}) {
+					Save version
+				}
+			</div>
+		</form>
+	</dialog>
+}
+
+// GroupDialog names a group, picks its machines and says where its deploys
+// speak up.
+templ GroupDialog() {
+	<dialog data-group-dialog class="w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60">
+		<form method="dialog" class="max-h-[85vh] space-y-5 overflow-auto p-6">
+			<div class="space-y-1.5">
+				<h2 data-group-dialog-title class="text-lg font-semibold tracking-tight">Add group</h2>
+				<p class="text-sm text-muted-foreground">
+					Machines come from the cluster. Editing a group changes nothing that already happened.
+				</p>
+			</div>
+			@field.Field() {
+				@field.Label(field.LabelProps{For: "group-name"}) {
+					Name
+				}
+				@input.Input(input.Props{
+					ID:         "group-name",
+					Required:   true,
+					Attributes: templ.Attributes{"data-group": "name", "maxlength": "80", "autocomplete": "off"},
+				})
+			}
+			@field.Field() {
+				@field.Label(field.LabelProps{For: "group-webhook"}) {
+					Tell
+				}
+				<select id="group-webhook" data-group-webhook class="cn-native-select h-9 w-full"></select>
+				<p data-group-webhook-note class="text-xs text-muted-foreground"></p>
+			}
+			<div class="space-y-2">
+				<h3 class="text-sm font-medium">Machines</h3>
+				<div data-group-machines class="max-h-64 space-y-1 overflow-auto rounded-lg border border-border p-3"></div>
+			</div>
+			<p data-group-dialog-error class="text-sm text-destructive empty:hidden"></p>
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Type:       button.TypeSubmit,
+					Attributes: templ.Attributes{"value": "cancel"},
+				}) {
+					Cancel
+				}
+				@button.Button(button.Props{
+					Size:       button.SizeSm,
+					Type:       button.TypeButton,
+					Attributes: templ.Attributes{"data-group-save": true},
+				}) {
+					Save group
+				}
+			</div>
+		</form>
+	</dialog>
+}
+
+// DeployTemplatesMarkup is the row chrome deploys.js clones. Same reason the
+// panels do it: real component markup, and every class where Tailwind looks.
+templ DeployTemplatesMarkup() {
+	<template data-tpl="deploy-group">
+		<div class="space-y-3 p-4">
+			<div class="flex flex-wrap items-start justify-between gap-3">
+				<div class="min-w-0 space-y-1">
+					<div class="flex flex-wrap items-center gap-2">
+						<button type="button" data-fold class="text-sm font-semibold tracking-tight hover:underline"></button>
+						<span data-count class="cn-badge cn-badge-variant-secondary"></span>
+						<span data-busy class="cn-badge cn-badge-variant-default" hidden>deploying</span>
+					</div>
+					<p data-running class="font-mono text-xs text-muted-foreground"></p>
+				</div>
+				<div class="flex shrink-0 flex-wrap items-center gap-2">
+					<button type="button" data-deploy class="cn-button cn-button-size-sm cn-button-variant-default">Deploy</button>
+					<button type="button" data-edit class="cn-button cn-button-size-sm cn-button-variant-outline">Edit</button>
+					<button type="button" data-remove class="cn-button cn-button-size-sm cn-button-variant-ghost">Remove</button>
+				</div>
+			</div>
+			<div data-body class="space-y-2 border-t border-border pt-3" hidden></div>
+		</div>
+	</template>
+	<template data-tpl="deploy-member">
+		<div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+			<div class="flex min-w-0 items-center gap-2">
+				<span data-name class="truncate font-medium"></span>
+				<span data-warn class="cn-badge cn-badge-variant-secondary" hidden></span>
+			</div>
+			<div class="flex shrink-0 items-center gap-3 font-mono text-xs">
+				<span data-tag class="text-muted-foreground"></span>
+				<!-- Over the login guard already proved. The alternative is
+				     somebody pasting a curl-to-shell into a root session with no
+				     record that it happened. -->
+				<button type="button" data-prepare class="cn-button cn-button-size-sm cn-button-variant-ghost">Install docker</button>
+				<button type="button" data-rollback class="cn-button cn-button-size-sm cn-button-variant-ghost" hidden>Roll back</button>
+			</div>
+		</div>
+	</template>
+	<template data-tpl="deploy-template-row">
+		<div class="flex flex-wrap items-center justify-between gap-3 p-4">
+			<div class="min-w-0 space-y-1">
+				<div class="flex flex-wrap items-center gap-2">
+					<span data-name class="text-sm font-semibold tracking-tight"></span>
+					<span data-version class="cn-badge cn-badge-variant-secondary"></span>
+				</div>
+				<p data-detail class="truncate font-mono text-xs text-muted-foreground"></p>
+			</div>
+			<div class="flex shrink-0 flex-wrap items-center gap-2">
+				<button type="button" data-edit class="cn-button cn-button-size-sm cn-button-variant-outline">Edit</button>
+				<button type="button" data-remove class="cn-button cn-button-size-sm cn-button-variant-ghost">Remove</button>
+			</div>
+		</div>
+	</template>
+	<template data-tpl="deploy-run">
+		<div class="space-y-3 rounded-lg border border-border p-4">
+			<div class="flex flex-wrap items-start justify-between gap-3">
+				<div class="min-w-0 space-y-1">
+					<div class="flex flex-wrap items-center gap-2">
+						<span data-group class="text-sm font-semibold tracking-tight"></span>
+						<span data-status class="cn-badge"></span>
+						<span data-mode class="cn-badge cn-badge-variant-secondary"></span>
+					</div>
+					<p data-detail class="font-mono text-xs text-muted-foreground"></p>
+				</div>
+				<div class="flex shrink-0 items-center gap-2">
+					<p data-tally class="text-xs text-muted-foreground"></p>
+					<!-- Only while it is going. It stops guard advancing and
+					     waiting; it undoes nothing, and the confirm says so. -->
+					<button type="button" data-cancel class="cn-button cn-button-size-sm cn-button-variant-outline" hidden>Stop</button>
+					<!-- On a run that is over and did not come back healthy. It
+					     starts a new run rather than resurrecting this one: the
+					     old row is a record of what happened. -->
+					<button type="button" data-retry-run class="cn-button cn-button-size-sm cn-button-variant-outline" hidden>Retry</button>
+				</div>
+			</div>
+			<div data-instances class="space-y-1.5"></div>
+			<div data-answers class="flex flex-wrap items-center gap-2 border-t border-border pt-3" hidden>
+				<p data-answer-note class="w-full text-xs text-destructive"></p>
+				<button type="button" data-retry class="cn-button cn-button-size-sm cn-button-variant-default">Retry</button>
+				<button type="button" data-skip class="cn-button cn-button-size-sm cn-button-variant-outline">Skip and continue</button>
+				<button type="button" data-stop class="cn-button cn-button-size-sm cn-button-variant-ghost">Stop the run</button>
+				<button type="button" data-run-rollback class="cn-button cn-button-size-sm cn-button-variant-outline" hidden>Roll back this machine</button>
+			</div>
+		</div>
+	</template>
+	<template data-tpl="deploy-instance">
+		<div class="space-y-1">
+			<div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+				<span data-name class="font-medium"></span>
+				<div class="flex items-center gap-2">
+					<span data-state class="font-mono text-muted-foreground"></span>
+					<!-- The machine's own words, one press away. The row says the
+					     last line because that is usually the whole answer; this is
+					     the rest of what docker printed, which is the difference
+					     between "exited 127" and knowing why. -->
+					<button type="button" data-log class="cn-button cn-button-size-sm cn-button-variant-ghost h-6 px-2 text-xs" hidden>Log</button>
+				</div>
+			</div>
+			<div class="h-1.5 overflow-hidden rounded-full bg-muted">
+				<div data-bar class="h-full rounded-full transition-all"></div>
+			</div>
+			<p data-note class="font-mono text-xs text-muted-foreground empty:hidden"></p>
+			<pre data-output class="max-h-64 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap select-text" hidden></pre>
+		</div>
+	</template>
+	<template data-tpl="deploy-var">
+		<div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,7rem)_minmax(0,1fr)_auto]">
+			<input data-key class="cn-input h-8 font-mono text-xs" placeholder="REDIS_URL" autocomplete="off" spellcheck="false"/>
+			<select data-source class="cn-native-select h-8 text-xs">
+				<option value="static">value</option>
+				<option value="vault">vault</option>
+			</select>
+			<input data-value class="cn-input h-8 font-mono text-xs" placeholder="value" autocomplete="off" spellcheck="false"/>
+			<button type="button" data-remove class="cn-button cn-button-size-sm cn-button-variant-ghost">Remove</button>
+		</div>
+	</template>
+	<template data-tpl="deploy-machine-choice">
+		<label class="flex cursor-pointer items-center gap-2 text-sm">
+			<input type="checkbox" data-pick/>
+			<span data-name class="font-medium"></span>
+			<span data-note class="text-xs text-muted-foreground"></span>
+		</label>
+	</template>
+}
