@@ -246,6 +246,11 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	if err := migrateClusterEnv(s.db); err != nil {
 		return err
 	}
+	// One row per machine per day, because the check history keeps only one day
+	// and the status page asks for ninety.
+	if err := migrateUptime(s.db); err != nil {
+		return err
+	}
 	// The deploys: groups over the cluster, versioned templates, and what each
 	// machine is actually running.
 	if err := migrateDeploy(s.db); err != nil {

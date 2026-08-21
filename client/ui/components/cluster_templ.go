@@ -857,7 +857,7 @@ func clusterDetail() templ.Component {
 			templ_7745c5c3_Var30 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div data-node-detail hidden class=\"space-y-5 border-t border-border bg-muted/30 p-4\"><section class=\"space-y-3\"><div class=\"flex items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Address</h3><p data-node-probe class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p></div><div class=\"grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]\"><label class=\"grid gap-1.5 text-xs text-muted-foreground\">Where the service answers <input data-node-field=\"domain\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"https://vps-1.example.com\" class=\"cn-input h-9 font-mono text-xs\"></label> <label class=\"grid gap-1.5 text-xs text-muted-foreground\">Health path <input data-node-field=\"health_path\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"/api/health\" class=\"cn-input h-9 font-mono text-xs\"></label><!-- Where the machine *is*, which the cluster page lays itself\n\t\t\t\t     out by. Free text: guard cannot know whether the boundary\n\t\t\t\t     somebody cares about is a VPC, a region or a floor. --><label class=\"grid gap-1.5 text-xs text-muted-foreground sm:col-span-2\">Group <input data-node-field=\"group\" list=\"cluster-groups\" maxlength=\"60\" autocomplete=\"off\" placeholder=\"VPC-1 — empty means Ungrouped\" class=\"cn-input h-9 text-xs\"></label></div><datalist id=\"cluster-groups\"></datalist><div class=\"flex flex-wrap items-center justify-between gap-3\"><p class=\"max-w-lg text-xs text-muted-foreground\">Guard fetches this from the server, so it can be an address only the server can reach. The machine's own IP goes under SSH — that is a way in, not a health check.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div data-node-detail hidden class=\"space-y-5 border-t border-border bg-muted/30 p-4\"><section class=\"space-y-3\"><div class=\"flex items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Address</h3><p data-node-probe class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p></div><div class=\"grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]\"><label class=\"grid gap-1.5 text-xs text-muted-foreground\">Where the service answers <input data-node-field=\"domain\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"https://vps-1.example.com\" class=\"cn-input h-9 font-mono text-xs\"></label> <label class=\"grid gap-1.5 text-xs text-muted-foreground\">Health path <input data-node-field=\"health_path\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"/api/health\" class=\"cn-input h-9 font-mono text-xs\"></label><!-- Where the machine *is*, which the cluster page lays itself\n\t\t\t\t     out by. Free text: guard cannot know whether the boundary\n\t\t\t\t     somebody cares about is a VPC, a region or a floor. --><label class=\"grid gap-1.5 text-xs text-muted-foreground sm:col-span-2\">Group <input data-node-field=\"group\" list=\"cluster-groups\" maxlength=\"60\" autocomplete=\"off\" placeholder=\"VPC-1 — empty means Ungrouped\" class=\"cn-input h-9 text-xs\"></label><!-- The status page. Two controls rather than one, because \"is\n\t\t\t\t     this machine public\" and \"what do strangers call it\" are\n\t\t\t\t     different questions: the name on the card is the one\n\t\t\t\t     somebody SSHes into, and publishing it tells a reader the\n\t\t\t\t     naming scheme, the provider and the shape of the fleet.\n\t\t\t\t     Empty falls back to the machine's name, which is a choice\n\t\t\t\t     somebody can make on purpose. --><label class=\"grid gap-1.5 text-xs text-muted-foreground sm:col-span-2\">Public name <input data-node-field=\"public_name\" maxlength=\"60\" autocomplete=\"off\" placeholder=\"Database — empty publishes the machine name itself\" class=\"cn-input h-9 text-xs\"></label> <label class=\"flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2\"><input data-node-field=\"public\" type=\"checkbox\" class=\"size-4 accent-primary\"> <span>Show this machine on the public status page at <code class=\"font-mono\">/status</code></span></label></div><datalist id=\"cluster-groups\"></datalist><div class=\"flex flex-wrap items-center justify-between gap-3\"><p class=\"max-w-lg text-xs text-muted-foreground\">Guard fetches this from the server, so it can be an address only the server can reach. The machine's own IP goes under SSH — that is a way in, not a health check.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2299,7 +2299,7 @@ func headFigure(label string) templ.Component {
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 981, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 996, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
@@ -2353,7 +2353,7 @@ func headLabel(label string) templ.Component {
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 991, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1006, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 		if templ_7745c5c3_Err != nil {
@@ -2397,7 +2397,7 @@ func headStat(key, label string) templ.Component {
 		var templ_7745c5c3_Var84 string
 		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 997, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1012, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
 		if templ_7745c5c3_Err != nil {
@@ -2410,7 +2410,7 @@ func headStat(key, label string) templ.Component {
 		var templ_7745c5c3_Var85 string
 		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 998, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1013, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 		if templ_7745c5c3_Err != nil {
@@ -2423,7 +2423,7 @@ func headStat(key, label string) templ.Component {
 		var templ_7745c5c3_Var86 string
 		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 999, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1014, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
 		if templ_7745c5c3_Err != nil {
@@ -2465,7 +2465,7 @@ func hostMeter(key, label string) templ.Component {
 		var templ_7745c5c3_Var88 string
 		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1005, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1020, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 		if templ_7745c5c3_Err != nil {
@@ -2478,7 +2478,7 @@ func hostMeter(key, label string) templ.Component {
 		var templ_7745c5c3_Var89 string
 		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1006, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1021, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
 		if templ_7745c5c3_Err != nil {
@@ -2491,7 +2491,7 @@ func hostMeter(key, label string) templ.Component {
 		var templ_7745c5c3_Var90 string
 		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1008, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1023, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
 		if templ_7745c5c3_Err != nil {
@@ -2535,7 +2535,7 @@ func cardMetric(label string) templ.Component {
 		var templ_7745c5c3_Var92 string
 		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1017, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1032, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 		if templ_7745c5c3_Err != nil {

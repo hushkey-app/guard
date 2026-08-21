@@ -302,6 +302,21 @@ templ clusterDetail() {
 					Group
 					<input data-node-field="group" list="cluster-groups" maxlength="60" autocomplete="off" placeholder="VPC-1 — empty means Ungrouped" class="cn-input h-9 text-xs"/>
 				</label>
+				<!-- The status page. Two controls rather than one, because "is
+				     this machine public" and "what do strangers call it" are
+				     different questions: the name on the card is the one
+				     somebody SSHes into, and publishing it tells a reader the
+				     naming scheme, the provider and the shape of the fleet.
+				     Empty falls back to the machine's name, which is a choice
+				     somebody can make on purpose. -->
+				<label class="grid gap-1.5 text-xs text-muted-foreground sm:col-span-2">
+					Public name
+					<input data-node-field="public_name" maxlength="60" autocomplete="off" placeholder="Database — empty publishes the machine name itself" class="cn-input h-9 text-xs"/>
+				</label>
+				<label class="flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
+					<input data-node-field="public" type="checkbox" class="size-4 accent-primary"/>
+					<span>Show this machine on the public status page at <code class="font-mono">/status</code></span>
+				</label>
 			</div>
 			<datalist id="cluster-groups"></datalist>
 			<div class="flex flex-wrap items-center justify-between gap-3">

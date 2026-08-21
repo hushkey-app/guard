@@ -400,6 +400,11 @@ func (c *Client) PreviewView(ctx context.Context, body contract.PreviewRequest) 
 	return api.Call[model.Frame](ctx, c.Transport, "POST", "/api/views/preview", nil, body)
 }
 
+// PublicStatus calls GET /api/status.
+func (c *Client) PublicStatus(ctx context.Context) (model.PublicStatus, error) {
+	return api.Call[model.PublicStatus](ctx, c.Transport, "GET", "/api/status", nil, nil)
+}
+
 // Purge calls POST /api/settings/purge.
 func (c *Client) Purge(ctx context.Context) (contract.Purged, error) {
 	return api.Call[contract.Purged](ctx, c.Transport, "POST", "/api/settings/purge", nil, nil)

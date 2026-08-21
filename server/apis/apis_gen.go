@@ -27,10 +27,11 @@ import (
 	e20 "github.com/hushkey-app/guard/server/apis/secrets/keys"
 	e21 "github.com/hushkey-app/guard/server/apis/secrets/values"
 	e22 "github.com/hushkey-app/guard/server/apis/settings"
-	e23 "github.com/hushkey-app/guard/server/apis/traces"
-	e24 "github.com/hushkey-app/guard/server/apis/update"
-	e25 "github.com/hushkey-app/guard/server/apis/views"
-	e26 "github.com/hushkey-app/guard/server/apis/webhooks"
+	e23 "github.com/hushkey-app/guard/server/apis/status"
+	e24 "github.com/hushkey-app/guard/server/apis/traces"
+	e25 "github.com/hushkey-app/guard/server/apis/update"
+	e26 "github.com/hushkey-app/guard/server/apis/views"
+	e27 "github.com/hushkey-app/guard/server/apis/webhooks"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -138,24 +139,25 @@ func FsApiRoutes() []api.Route {
 		api.At("GET", "/api/settings", e22.Read),
 		api.At("PUT", "/api/settings", e22.Update),
 		api.At("POST", "/api/settings/purge", e22.Purge),
+		api.At("GET", "/api/status", e23.Public),
 		api.At("GET", "/api/summary", Summary),
-		api.At("GET", "/api/traces/{id}", e23.ByID),
-		api.At("GET", "/api/update", e24.State),
-		api.At("POST", "/api/update", e24.Apply),
-		api.At("GET", "/api/views", e25.List),
-		api.At("POST", "/api/views", e25.Create),
-		api.At("GET", "/api/views/catalogue", e25.Catalogue),
-		api.At("GET", "/api/views/data", e25.Data),
-		api.At("POST", "/api/views/drill", e25.Drill),
-		api.At("PUT", "/api/views/order", e25.Order),
-		api.At("POST", "/api/views/preview", e25.Preview),
-		api.At("POST", "/api/views/samples", e25.Samples),
-		api.At("DELETE", "/api/views/{id}", e25.Remove),
-		api.At("PUT", "/api/views/{id}", e25.Update),
-		api.At("GET", "/api/webhooks", e26.List),
-		api.At("PUT", "/api/webhooks", e26.Save),
-		api.At("POST", "/api/webhooks/test", e26.Test),
-		api.At("DELETE", "/api/webhooks/{id}", e26.Delete),
+		api.At("GET", "/api/traces/{id}", e24.ByID),
+		api.At("GET", "/api/update", e25.State),
+		api.At("POST", "/api/update", e25.Apply),
+		api.At("GET", "/api/views", e26.List),
+		api.At("POST", "/api/views", e26.Create),
+		api.At("GET", "/api/views/catalogue", e26.Catalogue),
+		api.At("GET", "/api/views/data", e26.Data),
+		api.At("POST", "/api/views/drill", e26.Drill),
+		api.At("PUT", "/api/views/order", e26.Order),
+		api.At("POST", "/api/views/preview", e26.Preview),
+		api.At("POST", "/api/views/samples", e26.Samples),
+		api.At("DELETE", "/api/views/{id}", e26.Remove),
+		api.At("PUT", "/api/views/{id}", e26.Update),
+		api.At("GET", "/api/webhooks", e27.List),
+		api.At("PUT", "/api/webhooks", e27.Save),
+		api.At("POST", "/api/webhooks/test", e27.Test),
+		api.At("DELETE", "/api/webhooks/{id}", e27.Delete),
 		api.At("GET", "/healthz", Health),
 	}
 }

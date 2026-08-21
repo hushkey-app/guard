@@ -5,7 +5,7 @@ package pages
 
 import (
 	p0 "github.com/hushkey-app/guard/client/pages/cluster"
-	p18 "github.com/hushkey-app/guard/client/pages/cluster/id.dyn"
+	p19 "github.com/hushkey-app/guard/client/pages/cluster/id.dyn"
 	p1 "github.com/hushkey-app/guard/client/pages/deploys"
 	p2 "github.com/hushkey-app/guard/client/pages/login"
 	p3 "github.com/hushkey-app/guard/client/pages/logs"
@@ -20,9 +20,10 @@ import (
 	p12 "github.com/hushkey-app/guard/client/pages/settings/config"
 	p13 "github.com/hushkey-app/guard/client/pages/settings/members"
 	p14 "github.com/hushkey-app/guard/client/pages/settings/security"
-	p15 "github.com/hushkey-app/guard/client/pages/storage"
-	p16 "github.com/hushkey-app/guard/client/pages/traces"
-	p17 "github.com/hushkey-app/guard/client/pages/views"
+	p15 "github.com/hushkey-app/guard/client/pages/status"
+	p16 "github.com/hushkey-app/guard/client/pages/storage"
+	p17 "github.com/hushkey-app/guard/client/pages/traces"
+	p18 "github.com/hushkey-app/guard/client/pages/views"
 	"github.com/mirairoad/howl-go/core/router"
 )
 
@@ -45,9 +46,10 @@ func FsClientRoutes() []router.Route {
 		{Pattern: "/settings/config", Label: "Config", Page: p12.Page, Head: p12.Head, Mount: p12.Mount, Unmount: p12.Unmount, Layouts: nil, Client: true, Raw: false},
 		{Pattern: "/settings/members", Label: "Members", Page: p13.Page, Head: p13.Head, Mount: p13.Mount, Unmount: p13.Unmount, Layouts: nil, Client: true, Raw: false},
 		{Pattern: "/settings/security", Label: "Security", Page: p14.Page, Head: p14.Head, Mount: p14.Mount, Unmount: p14.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/storage", Label: "Storage", Page: p15.Page, Head: p15.Head, Mount: p15.Mount, Unmount: p15.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/traces", Label: "Traces", Page: p16.Page, Head: p16.Head, Mount: p16.Mount, Unmount: p16.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/views", Label: "Views", Page: p17.Page, Head: p17.Head, Mount: p17.Mount, Unmount: p17.Unmount, Layouts: nil, Client: true, Raw: false},
-		{Pattern: "/cluster/{id}", Label: "Id", Page: p18.Page, Head: p18.Head, Mount: p18.Mount, Unmount: p18.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/status", Label: "Status", Page: p15.Page, Head: nil, Mount: nil, Unmount: nil, Layouts: nil, Client: false, Raw: true},
+		{Pattern: "/storage", Label: "Storage", Page: p16.Page, Head: p16.Head, Mount: p16.Mount, Unmount: p16.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/traces", Label: "Traces", Page: p17.Page, Head: p17.Head, Mount: p17.Mount, Unmount: p17.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/views", Label: "Views", Page: p18.Page, Head: p18.Head, Mount: p18.Mount, Unmount: p18.Unmount, Layouts: nil, Client: true, Raw: false},
+		{Pattern: "/cluster/{id}", Label: "Id", Page: p19.Page, Head: p19.Head, Mount: p19.Mount, Unmount: p19.Unmount, Layouts: nil, Client: true, Raw: false},
 	}
 }
