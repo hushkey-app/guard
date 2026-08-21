@@ -27,6 +27,7 @@ import (
 
 	"github.com/hushkey-app/guard/internal/cloud"
 	"github.com/hushkey-app/guard/internal/cloudflare"
+	"github.com/hushkey-app/guard/internal/secrets"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vultr"
 	"github.com/hushkey-app/guard/server/apis/store"
@@ -105,8 +106,15 @@ func KeyFor(accountID int64) (string, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", api.NotFound("no such cloud account")
 	}
-	if err != nil {
+	// The two failures are different things to do about, and saying the wrong
+	// one costs somebody an afternoon: an account restored from a backup that
+	// carried no credentials has *no* key, and telling them GUARD_SECRET_KEY
+	// changed sends them looking for a key file that is fine.
+	if errors.Is(err, secrets.ErrUnreadable) {
 		return "", api.BadRequest("the stored key could not be opened — it was sealed with a different GUARD_SECRET_KEY. Remove this account and add it again.")
+	}
+	if err != nil {
+		return "", api.BadRequest(err.Error() + " — add the account again to store one.")
 	}
 	return key, nil
 }

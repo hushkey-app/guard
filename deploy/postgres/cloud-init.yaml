@@ -1,0 +1,488 @@
+#cloud-config
+#
+# A postgres box that reports to guard: metrics, host metrics, logs, and a
+# health endpoint the cluster page can dial.
+#
+# This is the valkey box's file with a different database under it, and every
+# fault found while getting that one working is already fixed here rather than
+# rediscovered. The five that cost the most, in the order they bit:
+#
+#   1. THE CREDENTIAL IS GUARD_OTEL_SECRET, NEVER GUARD_TOKEN. The token opens
+#      every write endpoint in guard's API; the secret opens /v1/logs, /v1/traces
+#      and /v1/metrics and nothing else. A box holding your production database
+#      is the last place to put an operator credential, and a provisioning file
+#      is the last place to write one down.
+#   2. It is not seeded here at all. Guard is the source: the value lives in
+#      guard's database and reaches this machine through Save → Inject on the
+#      machine's page. A seeded /etc/otelcol/env would silently BEAT that, since
+#      a unit's EnvironmentFile overrides the manager's DefaultEnvironment — so
+#      a forgotten placeholder wins over a correct inject and every batch 401s
+#      while both the dashboard and the drop-in look right.
+#   3. host.name must be set, and must match the host in the NODE'S URL.
+#      Guard files telemetry under a machine by host, never by service name
+#      (internal/telemetry/topology.go). Without it the instance is unassigned
+#      and picking this machine in the Machines filter resolves to no rows —
+#      logs visible on /api/logs, an empty page beside it.
+#   4. Postgres logs as JSON, not as text. jsonlog exists precisely so nobody
+#      has to write a regex for a format with multi-line DETAIL and STATEMENT
+#      continuations, and a fragile regex is how the valkey box shipped a
+#      collector that would not start.
+#   5. Every download is checksummed and the config is validated before the
+#      collector is restarted. An invalid config exits at start, and on a box
+#      nobody is watching that reads as silence.
+#
+# TRACES still do not arrive, and cannot. Postgres emits none. Database spans
+# come from the CLIENT library in your application, carry db.system=postgresql,
+# and arrive from that service. There is deliberately no traces pipeline below:
+# one with nothing feeding it is a lie on the page.
+#
+# TWO THINGS TO CHECK BEFORE BOOTING THIS:
+#
+#   * The pg_hba replication line grants 10.19.96.6, which is the VALKEY box.
+#     That is almost certainly a copy-paste from another file — a redis box does
+#     not replicate postgres. Point it at the intended standby or drop it.
+#   * log_connections = on with a busy application is a great deal of log
+#     volume, and guard has a retention window and an event cap. Worth knowing
+#     what it costs before it is the reason older logs disappeared.
+
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - ca-certificates
+  - gnupg
+
+write_files:
+  - path: /opt/pg-health/health.py
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env python3
+      # Liveness for the guard cluster page. pg_isready rather than a query: it
+      # asks whether the server is accepting connections and nothing else, so
+      # the probe cannot be the thing that exhausts a connection slot.
+      import http.server, subprocess
+
+      class H(http.server.BaseHTTPRequestHandler):
+          def do_GET(self):
+              if self.path != "/health":
+                  self.send_response(404); self.end_headers(); return
+              ok = subprocess.run(
+                  ["pg_isready", "-h", "127.0.0.1", "-p", "5432", "-t", "2"],
+                  capture_output=True
+              ).returncode == 0
+              body = b'{"status":"ok"}' if ok else b'{"status":"down"}'
+              self.send_response(200 if ok else 503)
+              self.send_header("Content-Type", "application/json")
+              self.send_header("Content-Length", str(len(body)))
+              self.end_headers()
+              self.wfile.write(body)
+          def log_message(self, *a):
+              pass
+
+      http.server.HTTPServer(("0.0.0.0", 8080), H).serve_forever()
+
+  - path: /etc/systemd/system/pg-health.service
+    content: |
+      [Unit]
+      Description=Postgres health endpoint
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      ExecStart=/usr/bin/python3 /opt/pg-health/health.py
+      Restart=always
+      RestartSec=3
+      DynamicUser=yes
+      NoNewPrivileges=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # Proving the credential is its own script because it is the thing somebody
+  # runs at 3am, after injecting the secret from guard. Re-running it is safe.
+  - path: /usr/local/sbin/otelcol-verify
+    permissions: "0700"
+    content: |
+      #!/bin/sh
+      # Prove the token against guard, then enable the collector.
+      set -eu
+      ENDPOINT="${GUARD_OTLP_ENDPOINT:-http://10.19.96.7:4318}"
+
+      # Either source: a file put here by hand, or the environment guard
+      # injected into /etc/environment and the manager's defaults. An `&&`
+      # would exit under `set -e` when the file is absent, which is precisely
+      # the injected-from-guard case.
+      if [ -f /etc/otelcol/env ]; then . /etc/otelcol/env; fi
+      case "${GUARD_OTEL_SECRET:-}" in
+        ""|REPLACE_ME) echo "GUARD_OTEL_SECRET is unset — inject it from guard's machine page, then re-run this over a fresh login" >&2; exit 1 ;;
+      esac
+
+      # An empty ExportLogsServiceRequest is a legitimate OTLP call that guard
+      # answers 200. It proves the route and the token and writes no record.
+      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        -X POST "$ENDPOINT/v1/logs" \
+        -H 'Content-Type: application/json' \
+        -H "Authorization: Bearer $GUARD_OTEL_SECRET" \
+        -d '{"resourceLogs":[]}' || echo 000)
+
+      case "$code" in
+        200) : ;;
+        401) echo "guard answered 401 — that value is not GUARD_OTEL_SECRET on the guard box" >&2; exit 1 ;;
+        000) echo "could not reach $ENDPOINT — check the address, that guard binds 0.0.0.0:4318 rather than 127.0.0.1, and that ufw on the guard box allows this subnet to 4318" >&2; exit 1 ;;
+        *)   echo "guard answered $code at $ENDPOINT/v1/logs" >&2; exit 1 ;;
+      esac
+
+      /usr/local/bin/otelcol-contrib validate --config=/etc/otelcol/config.yaml
+
+      systemctl enable --now otelcol
+      systemctl restart otelcol
+      echo "otelcol is running; guard accepted the credential at $ENDPOINT"
+
+  - path: /etc/otelcol/config.yaml
+    permissions: "0644"
+    content: |
+      extensions:
+        # The queue outlives a restart at either end. Guard is restarted by its
+        # own dashboard whenever configuration is saved, and the records dropped
+        # in that window are the ones explaining whatever prompted the change.
+        file_storage/queue:
+          directory: /var/lib/otelcol
+          # StateDirectory only makes this when systemd STARTS the unit, and
+          # otelcol-verify validates before anything has ever started — so on a
+          # box where the collector has never run, validate fails on a missing
+          # directory and the gate that was meant to start it refuses instead.
+          create_directory: true
+
+      receivers:
+        prometheus:
+          config:
+            scrape_configs:
+              # The job name becomes service.name at guard, and the resource
+              # processor below pins the same word. Change one and change both.
+              - job_name: postgres
+                scrape_interval: 30s
+                static_configs:
+                  - targets: ["127.0.0.1:9187"]
+
+        # Postgres writes JSON here because log_destination is jsonlog. That is
+        # the whole reason this receiver is three operators instead of a regex
+        # nobody can maintain: a text-format postgres log carries multi-line
+        # DETAIL, HINT and STATEMENT continuations, and every one of them would
+        # need a recombine rule to avoid arriving as separate records.
+        filelog:
+          include: [/var/log/postgresql/*.json]
+          start_at: end
+          # Survives a restart. Without it the receiver resumes at the end of
+          # the file and silently skips whatever was written while it was down —
+          # which, on a restart, is the reason it was restarted.
+          storage: file_storage/queue
+          operators:
+            - type: json_parser
+              parse_from: body
+              timestamp:
+                parse_from: attributes.timestamp
+                # gotime: the default is strptime, which rejects a format
+                # carrying decimals, and the milliseconds are the reason to
+                # parse the stamp rather than take the collector's receive time.
+                layout_type: gotime
+                # MST parses the abbreviation postgres prints — "UTC" here.
+                layout: '2006-01-02 15:04:05.000 MST'
+              severity:
+                parse_from: attributes.error_severity
+                # Without this the record keeps "LOG" as its severity TEXT and
+                # guard facets on the raw string. This replaces it with the
+                # level's own name, so the severity filter is usable.
+                overwrite_text: true
+                mapping:
+                  debug: [DEBUG1, DEBUG2, DEBUG3, DEBUG4, DEBUG5]
+                  info: [INFO, LOG, NOTICE]
+                  warn: WARNING
+                  error: ERROR
+                  fatal: [FATAL, PANIC]
+            # The message, not a bag of attributes with the message inside it.
+            - type: move
+              from: attributes.message
+              to: body
+
+        # The second logs receiver. Postgres writing to a file says nothing
+        # about postgres failing to start, being OOM-killed, or the exporter
+        # dying — systemd is the only thing that sees those, and they are the
+        # events worth being told about.
+        journald:
+          units: [postgresql.service, postgres-exporter.service, pg-health.service]
+          priority: info
+          start_at: end
+          operators:
+            # A journal entry is a MAP, not a line: MESSAGE, _PID,
+            # _SYSTEMD_UNIT and thirty more fields. Left alone the record
+            # reaches guard with no string body at all and draws as an empty
+            # row — present in the counts, invisible on the page.
+            #
+            # The unit is copied out FIRST, because the move below replaces the
+            # whole body and everything not saved goes with it.
+            - type: copy
+              from: body._SYSTEMD_UNIT
+              to: attributes.unit
+              on_error: send_quiet
+            - type: move
+              from: body.MESSAGE
+              to: body
+
+        # The box itself. Guard's cluster page gets these over SSH when it has
+        # a login; this is the same numbers without one.
+        hostmetrics:
+          collection_interval: 60s
+          scrapers:
+            cpu:
+            memory:
+            load:
+            filesystem:
+
+      processors:
+        batch:
+          timeout: 5s
+        resource:
+          attributes:
+            - key: service.name
+              value: postgres
+              action: upsert
+            - key: service.instance.id
+              value: pack-postgres-vps-main
+              action: upsert
+            # Guard files telemetry under a machine by HOST, never by name —
+            # two services called "api" on two boxes are two different things.
+            # This must match the host in the NODE'S URL, which is the health
+            # address guard dials. Not the hostname: that is a second name for
+            # the same machine and matches nothing.
+            - key: host.name
+              value: 10.19.96.4
+              action: upsert
+
+      exporters:
+        otlphttp/guard:
+          # Base URL — the collector appends /v1/metrics and /v1/logs itself.
+          endpoint: http://10.19.96.7:4318
+          headers:
+            # GUARD_OTEL_SECRET, never GUARD_TOKEN. See the header of this file.
+            Authorization: "Bearer ${env:GUARD_OTEL_SECRET}"
+          retry_on_failure:
+            enabled: true
+          sending_queue:
+            enabled: true
+            storage: file_storage/queue
+
+      service:
+        extensions: [file_storage/queue]
+        pipelines:
+          metrics:
+            receivers: [prometheus, hostmetrics]
+            processors: [resource, batch]
+            exporters: [otlphttp/guard]
+          logs:
+            receivers: [filelog, journald]
+            processors: [resource, batch]
+            exporters: [otlphttp/guard]
+
+  - path: /etc/systemd/system/postgres-exporter.service
+    content: |
+      [Unit]
+      Description=Postgres Prometheus exporter
+      After=network-online.target postgresql.service
+      Wants=network-online.target
+
+      [Service]
+      EnvironmentFile=/etc/postgres-exporter/env
+      # Loopback. The collector on this box is the only scraper, and /metrics
+      # describes your database — table sizes, connection counts, replication
+      # state — to anyone who can reach it. The original listened on 0.0.0.0
+      # and ufw opened 9187 to the whole subnet; neither is needed.
+      ExecStart=/usr/local/bin/postgres_exporter --web.listen-address=127.0.0.1:9187
+      Restart=always
+      RestartSec=3
+      DynamicUser=yes
+      NoNewPrivileges=yes
+      ProtectSystem=strict
+      ProtectHome=true
+      PrivateTmp=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      CapabilityBoundingSet=
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/otelcol.service
+    content: |
+      [Unit]
+      Description=OpenTelemetry Collector (postgres + host -> Guard)
+      After=network-online.target postgres-exporter.service
+      Wants=network-online.target
+
+      [Service]
+      # The leading dash is for the box configured from guard: Inject writes the
+      # variables into the manager's own defaults, and then there is no file
+      # here to read. An empty bearer token still cannot start the collector —
+      # otelcol-verify proves the credential against guard before enabling it,
+      # which is a better gate than a missing file.
+      EnvironmentFile=-/etc/otelcol/env
+      ExecStart=/usr/local/bin/otelcol-contrib --config=/etc/otelcol/config.yaml
+      Restart=always
+      RestartSec=3
+      DynamicUser=yes
+      # Where the sending queue and the filelog offsets live. DynamicUser has no
+      # home and cannot make this itself; StateDirectory hands it
+      # /var/lib/otelcol already owned. It must be the directory itself, not a
+      # subdirectory — file_storage does not create one (create_directory is
+      # false by default) and refuses to start if it is missing.
+      StateDirectory=otelcol
+      # Reading postgres's log needs a group; DynamicUser gets a private UID
+      # that is in none of them by default. systemd-journal is the same problem
+      # for the journald receiver — without it that receiver starts, reports
+      # nothing wrong, and ships zero records.
+      #
+      # `postgres` is here because of logging_collector: the files IT writes are
+      # owned postgres:postgres with log_file_mode, and the 0640 set above is
+      # worth nothing without a group that can use it. The package's own stderr
+      # log is postgres:adm, which is why adm alone looks like it should be
+      # enough and is not — the .json the receiver actually reads is the one
+      # postgres created.
+      SupplementaryGroups=adm systemd-journal postgres
+      NoNewPrivileges=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - >
+    bash -c 'for i in $(seq 1 30); do
+      curl -fsS --max-time 3 https://apt.postgresql.org >/dev/null 2>&1 && break;
+      echo "waiting for outbound network... ($i)"; sleep 2;
+    done'
+  - install -d /usr/share/postgresql-common/pgdg
+  - curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+  - >
+    bash -c '. /etc/os-release && printf "%s\n" \
+    "Types: deb" \
+    "URIs: https://apt.postgresql.org/pub/repos/apt" \
+    "Suites: ${VERSION_CODENAME}-pgdg" \
+    "Components: main" \
+    "Architectures: $(dpkg --print-architecture)" \
+    "Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc" \
+    > /etc/apt/sources.list.d/pgdg.sources'
+  - apt-get update
+  - apt-get install -y postgresql-18 postgresql-client-18 postgresql-contrib-18
+  # jsonlog is the load-bearing line here. Without logging_collector postgres
+  # writes to stderr and the package captures it as text; with both, it writes
+  # structured records the collector parses without a regex.
+  - >
+    bash -c 'PGV=$(ls /etc/postgresql/);
+    CONF=/etc/postgresql/$PGV/main/postgresql.conf;
+    sed -i "s/^#listen_addresses.*/listen_addresses = '"'"'localhost,10.19.96.4'"'"'/" "$CONF";
+    sed -i "s/^#ssl = .*/ssl = on/" "$CONF";
+    sed -i "s/^#*password_encryption.*/password_encryption = scram-sha-256/" "$CONF";
+    sed -i "s/^#*log_connections.*/log_connections = on/" "$CONF";
+    printf "\n# --- guard telemetry ---\nlogging_collector = on\nlog_destination = '"'"'jsonlog'"'"'\nlog_file_mode = 0640\nlog_directory = '"'"'/var/log/postgresql'"'"'\nlog_filename = '"'"'postgresql-%%Y-%%m-%%d.log'"'"'\nlog_rotation_age = 1d\nlog_rotation_size = 100MB\nlog_min_duration_statement = 1000\n" >> "$CONF";
+    echo "host    pack            pack            10.19.96.0/24   scram-sha-256" >> /etc/postgresql/$PGV/main/pg_hba.conf;
+    echo "host    replication     replicator      10.19.96.6/32   scram-sha-256" >> /etc/postgresql/$PGV/main/pg_hba.conf'
+  - systemctl enable postgresql
+  - systemctl restart postgresql
+  - >
+    bash -c 'PGPW=$(openssl rand -base64 32 | tr -d "/+=" | head -c 32);
+    PACKPW=$(openssl rand -base64 32 | tr -d "/+=" | head -c 32);
+    REPLPW=$(openssl rand -base64 32 | tr -d "/+=" | head -c 32);
+    EXPPW=$(openssl rand -base64 32 | tr -d "/+=" | head -c 32);
+    sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '"'"'$PGPW'"'"';";
+    sudo -u postgres psql -c "CREATE ROLE pack WITH LOGIN PASSWORD '"'"'$PACKPW'"'"';";
+    sudo -u postgres psql -c "CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '"'"'$REPLPW'"'"';";
+    sudo -u postgres psql -c "CREATE ROLE pg_exporter WITH LOGIN PASSWORD '"'"'$EXPPW'"'"' CONNECTION LIMIT 3;";
+    sudo -u postgres psql -c "GRANT pg_monitor TO pg_exporter;";
+    sudo -u postgres psql -c "CREATE DATABASE pack OWNER pack;";
+    install -m 600 /dev/null /root/.pack_db_pw;
+    echo "$PACKPW" > /root/.pack_db_pw;
+    install -m 600 /dev/null /root/.replicator_pw;
+    echo "$REPLPW" > /root/.replicator_pw;
+    install -d -m 700 /etc/postgres-exporter;
+    printf "DATA_SOURCE_NAME=postgresql://pg_exporter:%s@127.0.0.1:5432/postgres?sslmode=disable\n" "$EXPPW" > /etc/postgres-exporter/env;
+    chmod 600 /etc/postgres-exporter/env'
+  - systemctl daemon-reload
+  - systemctl enable --now pg-health
+  # Verified against the release's own sha256sums.txt. A shipper installed from
+  # an unverified tarball is a worse problem than a missing metric.
+  - >
+    bash -c 'set -e; ARCH=$(dpkg --print-architecture);
+    VER=0.20.1;
+    N="postgres_exporter-${VER}.linux-${ARCH}.tar.gz";
+    B="https://github.com/prometheus-community/postgres_exporter/releases/download/v${VER}";
+    curl -fsSL -o /tmp/$N "$B/$N";
+    curl -fsSL -o /tmp/pe-sums "$B/sha256sums.txt";
+    W=$(grep " $N$" /tmp/pe-sums | cut -d" " -f1);
+    H=$(sha256sum /tmp/$N | cut -d" " -f1);
+    [ -n "$W" ] && [ "$W" = "$H" ] || { echo "postgres_exporter checksum mismatch"; exit 1; };
+    tar -xzf /tmp/$N -C /tmp;
+    install -m 755 /tmp/postgres_exporter-${VER}.linux-${ARCH}/postgres_exporter /usr/local/bin/postgres_exporter;
+    rm -rf /tmp/$N /tmp/pe-sums /tmp/postgres_exporter-${VER}.linux-${ARCH}'
+  - systemctl enable --now postgres-exporter
+  # Contrib, not the core distribution: filelog and journald are contrib
+  # receivers, and core would start fine and read nothing.
+  - >
+    bash -c 'set -e; ARCH=$(dpkg --print-architecture);
+    VER=0.158.0;
+    N="otelcol-contrib_${VER}_linux_${ARCH}.tar.gz";
+    B="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${VER}";
+    curl -fsSL -o /tmp/$N "$B/$N";
+    curl -fsSL -o /tmp/oc-sum "$B/$N.sha256";
+    W=$(cut -d" " -f1 /tmp/oc-sum);
+    H=$(sha256sum /tmp/$N | cut -d" " -f1);
+    [ -n "$W" ] && [ "$W" = "$H" ] || { echo "otelcol checksum mismatch"; exit 1; };
+    tar -xzf /tmp/$N -C /tmp otelcol-contrib;
+    install -m 755 /tmp/otelcol-contrib /usr/local/bin/otelcol-contrib;
+    rm -f /tmp/$N /tmp/oc-sum /tmp/otelcol-contrib'
+  # 0755 so the collector can read config.yaml. NO env file is written beside
+  # it: guard is the source of GUARD_OTEL_SECRET, and a seeded placeholder here
+  # would override a correct inject. See the header of this file.
+  - bash -c 'install -d -m 755 /etc/otelcol'
+  # Not enabled here, because the secret arrives after this file has finished:
+  # the box has to exist before guard can inject into it. otelcol-verify is the
+  # gate and prints what is missing.
+  - >
+    bash -c '/usr/local/sbin/otelcol-verify ||
+    echo "otelcol NOT enabled: inject GUARD_OTEL_SECRET from guard, then re-run /usr/local/sbin/otelcol-verify over a fresh login"'
+  # The host firewall is not the perimeter — the provider's firewall group is,
+  # and it filters the public interface only. Everything open from the VPC; 22
+  # left at the host for the group to restrict.
+  #
+  # Deliberately NOT the stricter "delete 22, allow 22 from the VPC only" shape:
+  # that leaves no way in when the VPC is the thing that is broken, and it is
+  # inconsistent with the valkey box, which is how one of two allowlists ends up
+  # edited and the other forgotten.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow from 10.19.96.0/24 comment 'vpc — gated at the provider'
+  - ufw allow 22/tcp comment 'ssh — restricted in the provider firewall group'
+  - ufw --force enable
+
+final_message: |
+  postgres, health endpoint, exporter and collector are installed.
+
+  otelcol is deliberately NOT running. Finish it from guard:
+
+    1. Add this machine on /settings/cluster (health http://10.19.96.4:8080/health)
+    2. Environment box:  GUARD_OTEL_SECRET=<Settings -> Configuration>
+       Save, then Inject.
+    3. /usr/local/sbin/otelcol-verify
+
+  That proves the token against guard before enabling anything.
+
+  Everything from this box lands as service.name=postgres. The Machines
+  filter works because host.name is 10.19.96.4 — it must match the host
+  in the node's URL, or the filter shows nothing while /api/logs shows
+  everything.
+
+  Passwords are in /root/.pack_db_pw and /root/.replicator_pw. The
+  postgres superuser password was set and NOT written down, on purpose:
+  local peer auth still works via `sudo -u postgres psql`.
+
+  Traces will never arrive from this box. They come from the application
+  calling postgres, with db.system=postgresql on its client spans.
+
+  CHECK BEFORE TRUSTING: the pg_hba replication line grants 10.19.96.6,
+  which is the valkey box. Almost certainly wrong.

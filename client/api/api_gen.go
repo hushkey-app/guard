@@ -9,6 +9,7 @@ import (
 	"context"
 	"github.com/hushkey-app/guard/internal/cloud"
 	"github.com/hushkey-app/guard/internal/config"
+	deploy2 "github.com/hushkey-app/guard/internal/deploy"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vultr"
@@ -20,6 +21,10 @@ import (
 	"github.com/hushkey-app/guard/server/apis/cluster/provider"
 	config2 "github.com/hushkey-app/guard/server/apis/config"
 	"github.com/hushkey-app/guard/server/apis/contract"
+	"github.com/hushkey-app/guard/server/apis/deploy"
+	"github.com/hushkey-app/guard/server/apis/deploy/groups"
+	"github.com/hushkey-app/guard/server/apis/deploy/runs"
+	"github.com/hushkey-app/guard/server/apis/deploy/templates"
 	"github.com/hushkey-app/guard/server/apis/members"
 	"github.com/hushkey-app/guard/server/apis/registries"
 	"github.com/hushkey-app/guard/server/apis/secrets"
@@ -51,9 +56,24 @@ func (c *Client) AddMember(ctx context.Context, body members.Invite) (model.Memb
 	return api.Call[model.Member](ctx, c.Transport, "POST", "/api/members", nil, body)
 }
 
+// AnswerStoppedDeploy calls POST /api/deploy/resolve.
+func (c *Client) AnswerStoppedDeploy(ctx context.Context, body deploy.Answer) (model.DeployRun, error) {
+	return api.Call[model.DeployRun](ctx, c.Transport, "POST", "/api/deploy/resolve", nil, body)
+}
+
 // AssignInstance calls PUT /api/cluster/assign.
 func (c *Client) AssignInstance(ctx context.Context, body contract.Assignment) (model.ClusterTopology, error) {
 	return api.Call[model.ClusterTopology](ctx, c.Transport, "PUT", "/api/cluster/assign", nil, body)
+}
+
+// BackupSummary calls GET /api/backup.
+func (c *Client) BackupSummary(ctx context.Context) (model.BackupSummary, error) {
+	return api.Call[model.BackupSummary](ctx, c.Transport, "GET", "/api/backup", nil, nil)
+}
+
+// CancelDeploy calls POST /api/deploy/cancel.
+func (c *Client) CancelDeploy(ctx context.Context, body deploy.Run) (model.DeployRun, error) {
+	return api.Call[model.DeployRun](ctx, c.Transport, "POST", "/api/deploy/cancel", nil, body)
 }
 
 // CheckClusterNow calls POST /api/cluster/check.
@@ -106,6 +126,11 @@ func (c *Client) ClusterTopology(ctx context.Context) (model.ClusterTopology, er
 	return api.Call[model.ClusterTopology](ctx, c.Transport, "GET", "/api/cluster/topology", nil, nil)
 }
 
+// ComposeTemplate calls GET /api/deploy/templates/{id}.
+func (c *Client) ComposeTemplate(ctx context.Context, id string, query templates.Query) (model.DeployTemplate, error) {
+	return api.Call[model.DeployTemplate](ctx, c.Transport, "GET", api.Path("/api/deploy/templates/{id}", id), query, nil)
+}
+
 // Configuration calls GET /api/config.
 func (c *Client) Configuration(ctx context.Context) (config.State, error) {
 	return api.Call[config.State](ctx, c.Transport, "GET", "/api/config", nil, nil)
@@ -139,6 +164,18 @@ func (c *Client) CreateView(ctx context.Context, body model.View) (model.View, e
 // DeleteClusterMonitor calls DELETE /api/cluster/monitors/{id}.
 func (c *Client) DeleteClusterMonitor(ctx context.Context, id string) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/cluster/monitors/{id}", id), nil, nil)
+	return err
+}
+
+// DeleteComposeTemplate calls DELETE /api/deploy/templates/{id}.
+func (c *Client) DeleteComposeTemplate(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/deploy/templates/{id}", id), nil, nil)
+	return err
+}
+
+// DeleteDeployGroup calls DELETE /api/deploy/groups/{id}.
+func (c *Client) DeleteDeployGroup(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/deploy/groups/{id}", id), nil, nil)
 	return err
 }
 
@@ -202,6 +239,26 @@ func (c *Client) DeleteView(ctx context.Context, id string) error {
 	return err
 }
 
+// DeployGroups calls GET /api/deploy/groups.
+func (c *Client) DeployGroups(ctx context.Context) ([]model.DeployGroup, error) {
+	return api.Call[[]model.DeployGroup](ctx, c.Transport, "GET", "/api/deploy/groups", nil, nil)
+}
+
+// DeployRun calls GET /api/deploy/runs/{id}.
+func (c *Client) DeployRun(ctx context.Context, id string) (model.DeployRun, error) {
+	return api.Call[model.DeployRun](ctx, c.Transport, "GET", api.Path("/api/deploy/runs/{id}", id), nil, nil)
+}
+
+// DeployRuns calls GET /api/deploy/runs.
+func (c *Client) DeployRuns(ctx context.Context, query runs.Query) (runs.Page, error) {
+	return api.Call[runs.Page](ctx, c.Transport, "GET", "/api/deploy/runs", query, nil)
+}
+
+// DeployTemplates calls GET /api/deploy/templates.
+func (c *Client) DeployTemplates(ctx context.Context) ([]model.DeployTemplate, error) {
+	return api.Call[[]model.DeployTemplate](ctx, c.Transport, "GET", "/api/deploy/templates", nil, nil)
+}
+
 // DrillIntoPanel calls POST /api/views/drill.
 func (c *Client) DrillIntoPanel(ctx context.Context, body contract.DrillRequest) (model.Drill, error) {
 	return api.Call[model.Drill](ctx, c.Transport, "POST", "/api/views/drill", nil, body)
@@ -225,6 +282,11 @@ func (c *Client) EventDestinations(ctx context.Context) ([]model.Webhook, error)
 // Events calls GET /api/events.
 func (c *Client) Events(ctx context.Context, query model.Filter) ([]model.Event, error) {
 	return api.Call[[]model.Event](ctx, c.Transport, "GET", "/api/events", query, nil)
+}
+
+// ExportConfiguration calls POST /api/backup.
+func (c *Client) ExportConfiguration(ctx context.Context, body contract.BackupRequest) (model.Backup, error) {
+	return api.Call[model.Backup](ctx, c.Transport, "POST", "/api/backup", nil, body)
 }
 
 // ExportSecrets calls GET /api/secrets/export.
@@ -277,6 +339,11 @@ func (c *Client) Logs(ctx context.Context, query model.Filter) ([]model.Event, e
 	return api.Call[[]model.Event](ctx, c.Transport, "GET", "/api/logs", query, nil)
 }
 
+// MachineDeployState calls GET /api/deploy/state.
+func (c *Client) MachineDeployState(ctx context.Context, query deploy.StateQuery) ([]model.DeployState, error) {
+	return api.Call[[]model.DeployState](ctx, c.Transport, "GET", "/api/deploy/state", query, nil)
+}
+
 // MachineEnvironment calls GET /api/cluster/env.
 func (c *Client) MachineEnvironment(ctx context.Context, query env.Query) (env.Saved, error) {
 	return api.Call[env.Saved](ctx, c.Transport, "GET", "/api/cluster/env", query, nil)
@@ -291,6 +358,11 @@ func (c *Client) MachineInstance(ctx context.Context, query provider.NodeQuery) 
 func (c *Client) MachinePower(ctx context.Context, body provider.PowerRequest) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "POST", "/api/cluster/provider/power", nil, body)
 	return err
+}
+
+// MachinePreparation calls GET /api/deploy/prepare.
+func (c *Client) MachinePreparation(ctx context.Context, query deploy.StateQuery) (deploy2.Preparation, error) {
+	return api.Call[deploy2.Preparation](ctx, c.Transport, "GET", "/api/deploy/prepare", query, nil)
 }
 
 // MachineSnapshots calls GET /api/cluster/provider/snapshots.
@@ -316,6 +388,11 @@ func (c *Client) ObjectStorage(ctx context.Context) ([]storage.AccountStorage, e
 // ObjectStorageOptions calls GET /api/cloud/storage/options.
 func (c *Client) ObjectStorageOptions(ctx context.Context, query storage.AccountOptions) (cloud.StorageOptions, error) {
 	return api.Call[cloud.StorageOptions](ctx, c.Transport, "GET", "/api/cloud/storage/options", query, nil)
+}
+
+// PrepareMachineForDeploys calls POST /api/deploy/prepare.
+func (c *Client) PrepareMachineForDeploys(ctx context.Context, body deploy.Machine) (deploy2.Preparation, error) {
+	return api.Call[deploy2.Preparation](ctx, c.Transport, "POST", "/api/deploy/prepare", nil, body)
 }
 
 // PreviewView calls POST /api/views/preview.
@@ -396,6 +473,11 @@ func (c *Client) RestartGuard(ctx context.Context) (config.State, error) {
 	return api.Call[config.State](ctx, c.Transport, "POST", "/api/config/restart", nil, nil)
 }
 
+// RestoreConfiguration calls POST /api/backup/restore.
+func (c *Client) RestoreConfiguration(ctx context.Context, body contract.RestoreRequest) (model.RestoreReport, error) {
+	return api.Call[model.RestoreReport](ctx, c.Transport, "POST", "/api/backup/restore", nil, body)
+}
+
 // RestoreMachineSnapshot calls POST /api/cluster/provider/restore.
 func (c *Client) RestoreMachineSnapshot(ctx context.Context, body provider.RestoreRequest) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "POST", "/api/cluster/provider/restore", nil, body)
@@ -436,6 +518,16 @@ func (c *Client) SaveClusterActions(ctx context.Context, body contract.ActionLis
 // SaveClusterMonitor calls PUT /api/cluster/monitors.
 func (c *Client) SaveClusterMonitor(ctx context.Context, body model.Monitor) (model.Monitor, error) {
 	return api.Call[model.Monitor](ctx, c.Transport, "PUT", "/api/cluster/monitors", nil, body)
+}
+
+// SaveComposeTemplate calls POST /api/deploy/templates.
+func (c *Client) SaveComposeTemplate(ctx context.Context, body templates.Template) (model.DeployTemplate, error) {
+	return api.Call[model.DeployTemplate](ctx, c.Transport, "POST", "/api/deploy/templates", nil, body)
+}
+
+// SaveDeployGroup calls POST /api/deploy/groups.
+func (c *Client) SaveDeployGroup(ctx context.Context, body groups.Group) (model.DeployGroup, error) {
+	return api.Call[model.DeployGroup](ctx, c.Transport, "POST", "/api/deploy/groups", nil, body)
 }
 
 // SaveEventDestination calls PUT /api/webhooks.
@@ -492,6 +584,11 @@ func (c *Client) SetAccountS3Keys(ctx context.Context, body accounts.S3Request) 
 // Settings calls GET /api/settings.
 func (c *Client) Settings(ctx context.Context) (model.Settings, error) {
 	return api.Call[model.Settings](ctx, c.Transport, "GET", "/api/settings", nil, nil)
+}
+
+// StartDeploy calls POST /api/deploy.
+func (c *Client) StartDeploy(ctx context.Context, body deploy.Start) (model.DeployRun, error) {
+	return api.Call[model.DeployRun](ctx, c.Transport, "POST", "/api/deploy", nil, body)
 }
 
 // StorageObjects calls GET /api/cloud/storage/objects.

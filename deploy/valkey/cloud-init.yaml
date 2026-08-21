@@ -111,9 +111,13 @@ write_files:
       set -eu
       ENDPOINT="${GUARD_OTLP_ENDPOINT:-http://10.19.96.7:4318}"
 
-      . /etc/otelcol/env
+      # Either source: a file pasted in by hand, or the environment guard
+      # injected into /etc/environment and the manager's defaults.
+      # An `&&` here would exit under `set -e` when the file is absent, which
+      # is precisely the injected-from-guard case.
+      if [ -f /etc/otelcol/env ]; then . /etc/otelcol/env; fi
       case "${GUARD_OTEL_SECRET:-}" in
-        ""|REPLACE_ME) echo "GUARD_OTEL_SECRET is still a placeholder in /etc/otelcol/env" >&2; exit 1 ;;
+        ""|REPLACE_ME) echo "GUARD_OTEL_SECRET is unset or still a placeholder — paste it into /etc/otelcol/env, or inject it from guard and re-run this over a fresh login" >&2; exit 1 ;;
       esac
 
       # An empty ExportLogsServiceRequest is a legitimate OTLP call that guard
@@ -147,7 +151,12 @@ write_files:
         # own dashboard whenever configuration is saved, and the records dropped
         # in that window are the ones explaining whatever prompted the change.
         file_storage/queue:
-          directory: /var/lib/otelcol/queue
+          directory: /var/lib/otelcol
+          # StateDirectory only makes this when systemd STARTS the unit, and
+          # otelcol-verify validates before anything has ever started — so on a
+          # box where the collector has never run, validate fails on a missing
+          # directory and the gate that was meant to start it refuses instead.
+          create_directory: true
 
       receivers:
         prometheus:
@@ -175,9 +184,19 @@ write_files:
                 # Valkey writes no offset, so this is read as UTC. True on this
                 # box; check `timedatectl` before assuming it on another.
                 parse_from: attributes.ts
+                # gotime, because the layout below is Go's reference time. The
+                # default is strptime, which rejects a format carrying decimals
+                # — and valkey's milliseconds are the whole reason to parse the
+                # stamp rather than take the collector's.
+                layout_type: gotime
                 layout: '02 Jan 2006 15:04:05.000'
               severity:
                 parse_from: attributes.lvl
+                # Without this the record keeps "*" as its severity TEXT — the
+                # mapping below sets the numeric level, but guard facets on the
+                # text, and a severity filter offering "*" and "#" is a filter
+                # nobody can use. This replaces it with the level's own name.
+                overwrite_text: true
                 mapping:
                   debug: "."
                   info: ["-", "*"]
@@ -195,6 +214,21 @@ write_files:
           units: [valkey-server.service, redis-exporter.service, redis-health.service]
           priority: info
           start_at: end
+          operators:
+            # A journal entry is a MAP, not a line: MESSAGE, _PID, _SYSTEMD_UNIT
+            # and thirty more fields. Left alone the record reaches guard with
+            # no string body at all and draws as an empty row — present in the
+            # counts, invisible on the page.
+            #
+            # The unit is copied out FIRST, because the move below replaces the
+            # whole body and everything not saved goes with it.
+            - type: copy
+              from: body._SYSTEMD_UNIT
+              to: attributes.unit
+              on_error: send_quiet
+            - type: move
+              from: body.MESSAGE
+              to: body
         # The box itself — CPU, memory, disk, load. Guard's cluster page gets
         # these over SSH when it has a login; this is the same numbers without
         # one.
@@ -215,6 +249,19 @@ write_files:
               action: upsert
             - key: service.instance.id
               value: pack-redis-vps-main
+              action: upsert
+            # Guard files telemetry under a machine by HOST, never by name
+            # (internal/telemetry/topology.go) — two services called "api" on
+            # two boxes are two different things. Without a host attribute this
+            # instance is unassigned, and picking this machine in the Machines
+            # filter resolves to "no rows" rather than to these logs.
+            #
+            # It must match the host in the NODE'S URL, which is the health
+            # address guard dials — not the hostname, which is
+            # PACK-REDIS-VPS-MAIN and matches nothing. resourcedetection would
+            # set the hostname here, which is why this line comes after it.
+            - key: host.name
+              value: 10.19.96.6
               action: upsert
 
       exporters:
@@ -269,9 +316,12 @@ write_files:
       Wants=network-online.target
 
       [Service]
-      # No leading dash: a missing credentials file must stop the unit, not
-      # start it with an empty bearer token that 401s every batch for a week.
-      EnvironmentFile=/etc/otelcol/env
+      # The leading dash is for the box configured from guard: Inject writes
+      # the variables into the manager's own defaults, and then there is no file
+      # here to read. An empty bearer token still cannot start the collector —
+      # otelcol-verify proves the credential against guard before enabling it,
+      # which is a better gate than a missing file anyway.
+      EnvironmentFile=-/etc/otelcol/env
       ExecStart=/usr/local/bin/otelcol-contrib --config=/etc/otelcol/config.yaml
       Restart=always
       RestartSec=3
@@ -350,23 +400,30 @@ runcmd:
     tar -xzf /tmp/$N -C /tmp otelcol-contrib;
     install -m 755 /tmp/otelcol-contrib /usr/local/bin/otelcol-contrib;
     rm -f /tmp/$N /tmp/oc-sum /tmp/otelcol-contrib'
-  # 0755 so the collector's DynamicUser can read config.yaml; the credential
-  # beside it stays 0600 and is read by systemd as root.
+  # 0755 so the collector's DynamicUser can read config.yaml. NO env file is
+  # written beside it, and that is the decision this box is built on:
+  #
+  # GUARD IS THE SOURCE OF THE SECRET. It lives in guard's database, sealed,
+  # and reaches this machine through Save → Inject on the machine's page —
+  # /etc/environment and the manager's own defaults. Changing it is two presses
+  # and a restart, from wherever you are, rather than an SSH session.
+  #
+  # A seeded /etc/otelcol/env would quietly beat that: a unit's EnvironmentFile
+  # overrides the manager's DefaultEnvironment, so a forgotten REPLACE_ME wins
+  # over a correct inject and every batch 401s while both the dashboard and the
+  # drop-in look right. The file is left absent so there is one answer to
+  # "where does this value come from", and the unit's EnvironmentFile carries a
+  # leading dash so absent is legal.
+  - bash -c 'install -d -m 755 /etc/otelcol'
+  # Not enabled here, because the secret arrives after this file has finished:
+  # the box has to exist before guard can inject into it. otelcol-verify is the
+  # gate and prints what is missing — it reads the environment from either
+  # source, proves it against guard, validates the config and only then starts
+  # the collector. A collector started with an empty bearer token looks healthy
+  # and drops every batch; the loudest thing to do is not start.
   - >
-    bash -c 'install -d -m 755 /etc/otelcol;
-    printf "GUARD_OTEL_SECRET=REPLACE_ME\n" > /etc/otelcol/env;
-    chmod 600 /etc/otelcol/env'
-  # Enabled only once the placeholder is gone AND guard has accepted the
-  # credential. A collector that starts with a fake token looks healthy and
-  # drops every batch — the loudest thing to do is not start. The empty payload
-  # is a legitimate OTLP request that guard answers 200, so it proves the token
-  # and the route without writing a record.
-  - >
-    bash -c 'if grep -q REPLACE_ME /etc/otelcol/env; then
-      echo "otelcol NOT enabled: put the real GUARD_OTEL_SECRET in /etc/otelcol/env, then re-run: /usr/local/sbin/otelcol-verify";
-      exit 0;
-    fi;
-    /usr/local/sbin/otelcol-verify'
+    bash -c '/usr/local/sbin/otelcol-verify ||
+    echo "otelcol NOT enabled: inject GUARD_OTEL_SECRET from guard, then re-run /usr/local/sbin/otelcol-verify over a fresh login"'
   # The host firewall is not the perimeter — the Vultr firewall group is, and it
   # filters the public interface only. Everything open from the VPC; 22 left for
   # the group to gate.

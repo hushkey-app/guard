@@ -9,6 +9,8 @@ internal/ingest/otlp.go       OTLP/HTTP + the JSON API the dashboard reads
 internal/telemetry/model.go   storage, retention, snapshots
 internal/telemetry/cluster.go the machines watched from outside, and their commands
 internal/telemetry/views.go   saved views: the query compiler and its CRUD
+internal/telemetry/backup.go  the configuration as one file: what travels, what never does
+internal/telemetry/deploy.go   the groups, the versioned templates, the runs, what is running
 internal/telemetry/provider.go the stored cloud accounts and their sealed keys
 internal/cloud/               the provider vocabulary: neutral types, the halves a provider may implement
 internal/vultr/               one Vultr account: registries, compute, object storage
@@ -19,6 +21,7 @@ internal/cluster/stats.go     the host sampling — one fixed read-only command 
 internal/cluster/scheduler.go the stored commands that carry a schedule
 internal/cluster/watchdog.go  "no successful run in too long" — its own loop, its own delivery
 internal/cluster/monitors.go  the rules over what the cluster page measures
+internal/deploy/              a versioned image onto the machines, one at a time, health-gated
 internal/envfile/             a machine's environment, put on the machine
 internal/notify/              one POST of JSON to a named destination — every watcher's way out
 internal/viewalerts/          the saved views that carry a rule, run on a timer
@@ -31,7 +34,7 @@ internal/config/config.go     every GUARD_* variable: the catalogue, stored, app
 internal/auth/               sign in with Google or Apple, and who is allowed in
 client/pages/                 the dashboard — howl-go filesystem routes
 client/ui/ui.templ            shared page furniture (nav, stats, filter bar, pagination)
-client/ui/components/         panel chrome, panel bodies, the view builder
+client/ui/components/         panel chrome, panel bodies, the view builder, the settings frame
 client/public/core.js         helpers shared by the three client modules
 client/public/charts.js       the panel renderers, hand-drawn SVG
 client/public/views.js        the views page: panels, builder, live preview
@@ -41,6 +44,8 @@ client/public/cloud.js        the cloud accounts, the machine link, the provider
 client/public/storage.js      the object storage page
 client/public/secrets.js      the secrets page: environments, pairs, keys, .env import
 client/public/config.js       both settings forms: the catalogue, filtered per page
+client/public/backup.js       the backup page: the sections, the download, the restore
+client/public/deploys.js      the deploys page: groups, templates, runs, the press
 client/styles/app.css         stylesheet source — compiles to client/public/app.css
 ```
 
@@ -264,8 +269,9 @@ two pages reading the machine list read the same list.
   outlet has just thrown the DOM away and the next page starts empty.
 - Every page goes through it: cluster, views, storage, registries, cloud
   accounts, members, alerts. A page that fetched on its own would be the one
-  that still says "Loading…" on the way back. `client/public/store_test.mjs`
-  asserts the eight rules; `make test` runs it.
+  that still says "Loading…" on the way back. A restored backup calls
+  `forgetAll()`, because every key in it describes an instance that is gone.
+  `client/public/store_test.mjs` asserts the rules; `make test` runs it.
 
 ## Secrets
 
@@ -558,6 +564,129 @@ that sets everything in its unit file behaves exactly as it did.
   that stops guard from starting could only be fixed from the dashboard that is
   not running. One unreadable stored value is skipped rather than fatal, for the
   same reason.
+
+## Backup
+
+Guard's configuration is one file, and the telemetry is never in it — read
+`docs/backup.md` before changing any of it. **Settings → Backup** exports
+machines, commands, machine environments, deploy groups, compose templates,
+cloud accounts, saved views, alert rules, destinations, secrets, members and
+stored settings; logs, traces,
+metrics, health history, command runs, host samples and open sessions stay
+behind, because none of them says how guard is configured and all of them are
+the part that grows.
+
+- **The catalogue is `backupTables`** in `internal/telemetry/backup.go`, with
+  `backupExcluded` written out beside it — so "is my telemetry in this file" has
+  a visible answer, and the page shows both lists rather than being trusted.
+- **Columns are matched by name at both ends.** The exporter asks the database
+  what the columns are and the importer asks its own; a backup from an older
+  guard restores with the new columns at their defaults, and a column that has
+  gone is a line in the report. Nothing has a hardcoded column list to forget.
+- **Sealed values are opened on the way out and sealed on the way in**, never
+  copied: ciphertext is bound to the key beside *that* database, so a copy of it
+  restores as garbage — even on the same box, since the key belongs to the file
+  rather than to the rows. A passphrase (scrypt, salt in the file) is what
+  protects them in between; **without one the file holds them plainly**, which
+  is the default, because a restore whose credentials are all blank is an
+  instance that answers "no stored key" on every page. The importer decides per
+  value from the cell's own type — text is a value, a blob is sealed — so no
+  header can disagree with the body. A known phrase in the header means the
+  wrong passphrase is refused before anything is read.
+- **A restore replaces, ids and all**, in one transaction, after everything that
+  can fail has already happened — so a refusal leaves the instance as it was,
+  and a success is the instance the file describes. Typing `replace` is what the
+  page asks for.
+- **Alert state is cleared and stored settings need a restart.** What a rule has
+  already told a receiver is about the machines this instance was watching a
+  moment ago; a process has its environment from its start. Both are the same
+  rules the alerts and configuration pages already keep.
+
+## Deploys
+
+Guard puts a versioned image on the machines it already watches — read
+`docs/deploys.md` before changing any of it. Nothing about it is a new way to
+reach a box: the login is the cluster's, the health check is the prober's, and
+the alert leaves through `internal/notify` like every other watcher's.
+
+- **Healthy means the health check passed, and nothing else.** Three
+  consecutive successes, five seconds apart, two minutes to do it in.
+  Deliberately not an error rate: a container twenty seconds old has served
+  nobody, and guard's rule everywhere is that an empty window is silence rather
+  than zero — so a rate-based gate would read "no traffic yet" as "no errors"
+  and pass a corpse. **The health path belongs to the template**, not to the
+  machine: the box's own path answers for whatever was there before, and a
+  deploy has to be proved by the thing it deployed.
+- **A stopped run says so, and gives up.** Sequential is the default and stops
+  at the first failure with nothing after it touched. It tells the group's
+  destination immediately, again after fifteen minutes, and **abandons after
+  thirty** — releasing its locks and recording what it never reached. **Stop**
+  is on any run still going: each run has its own context, so it cuts the SSH
+  session and the health gate rather than setting a flag. It undoes nothing —
+  the run reads `cancelled` rather than `failed`, and the machine in flight says
+  its container may be running and was never proved, because calling that a
+  failure is how a healthy box gets restarted at 3am. "Waits
+  until resolved" with nobody watching is a stuck deploy holding a lock nobody
+  can clear. Three answers, no fourth: retry, skip, stop. Parallel gates
+  nothing, and the button says so in those words.
+- **Rollback is a deploy.** The ordinary press with `last_known_good_tag`
+  filled in and one machine named — no second code path, so the one that runs
+  on the worst day is the one exercised every day. A rollback target is the
+  deploy **before** the current one, and it is a pair — the tag *and* the
+  template version, because what changes is often the compose file rather than
+  the image. Both move only on a passed gate, so both halves actually answered;
+  on each success the old current steps into last good.
+- **The lock reaches deploys.** A deploy writes files and runs docker; it is
+  the command line wearing a template's name. `Store.DeployTarget` refuses a
+  locked machine, and the whole group is checked before anything is touched — a
+  rolling deploy that stops at the third machine because it is locked has
+  already replaced two.
+- **A template is three answers: a name, a compose file, a health path.** The
+  directory (`/guard/<name>`), the service name and the image are derived at the
+  save and stored — the image being the one the compose file tags with `${TAG}`,
+  because a separate image field can name a different repository to the one that
+  is actually pulled and nothing would notice. A compose file that never
+  mentions `${TAG}` is refused: deploying it changes nothing while looking like
+  a success.
+- **Guard owns the compose file, and writes only what it rendered.** A template
+  is versioned rather than edited in place, so a run months old still says what
+  it deployed; the file lives in guard so it travels in the backup and a
+  replacement machine is provisioned by deploying to it. The request carries a
+  template id and a tag, never file content — the same rule `internal/envfile`
+  keeps — and `model.ValidateDeployPath` decides where guard may write.
+- **Secrets are the template author's choice, said out loud.** A variable is
+  static (stored, in the backup, not secret) or from the vault (resolved at
+  deploy time, never stored twice, written into a 0600 `.env` that is still
+  plaintext on that box — and the dialog says so). The third option is to
+  declare nothing and let the application read `guard-vault` itself with its own
+  scoped key, which is the better answer where it is possible.
+- **One lock per machine, in memory, failing loud.** No queue: two people
+  deploying different tags to one box is not something to serialise. In memory
+  like the scheduler's `running` map, so a restart releases them — and
+  `SweepDeployRuns` makes the rows honest at startup. **Nothing is resumed**,
+  because guard cannot know whether `compose up` finished.
+- **A box with no docker is one press, not a terminal.** `internal/deploy/prepare.go`
+  installs docker and the compose plugin over the login guard already proved —
+  `internal/envfile`'s shape exactly: a node id and nothing else, a constant
+  command, refused on a locked machine, idempotent. Separate from a deploy on
+  purpose, because a deploy that installed software the first time it ran would
+  be doing something nobody asked for on the worst day. `deploy/cloud-init-app.yaml`
+  is the same thing for a box that does not exist yet.
+- **Long output goes two ways, and only one of them is the truth.**
+  `remote.Runner.Stream` feeds output into the instance row about once a second
+  — that is what a reload, a second viewer and tomorrow all read — and
+  `GET /api/deploy/stream` pushes the same thing per chunk to whoever is looking
+  now. `internal/deploy/stream.go` sends non-blocking and coalescing, because a
+  deploy must never wait on a socket in somebody's browser; a dropped frame
+  costs nothing, since every frame carries the whole output and the tick has the
+  row anyway.
+- **Fifty runs per group, and the page shows three.** Trimmed when a group
+  gains a run, which is the only moment it can have grown too long; an
+  unfinished run is exempt, because a run still waiting for somebody must not
+  vanish from under the page watching it. A deploy row is tall, so the history
+  is paged where the active runs never are.
+- `deploy.Timeout` is ten minutes against a pressed command's two, because
+  pulling a fat image is a legitimately long thing to be doing.
 
 ## Deploying
 

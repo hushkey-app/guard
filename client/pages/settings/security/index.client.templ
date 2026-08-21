@@ -18,7 +18,6 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/alert"
 	"github.com/axadrn/shadcn-templ/v2/components/button"
 	"github.com/hushkey-app/guard/client/lifecycle"
-	"github.com/hushkey-app/guard/client/ui"
 	"github.com/hushkey-app/guard/client/ui/components"
 )
 
@@ -28,11 +27,7 @@ templ Head() {
 }
 
 templ Page() {
-	<section class="space-y-8">
-		@ui.PageHeading("Workspace", "Security", "Who may open this dashboard, and how long they stay signed in.")
-		<div class="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
-			@components.SettingsNav("/settings/security")
-			<div class="min-w-0 space-y-6">
+	@components.SettingsShell("/settings/security", "Workspace", "Security", "Who may open this dashboard, and how long they stay signed in.") {
 				<div>
 					<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Access</p>
 					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Signing in</h2>
@@ -81,9 +76,7 @@ templ Page() {
 				}
 				@components.ConfirmDialog()
 				@components.ConfigTemplates()
-			</div>
-		</div>
-	</section>
+	}
 }
 
 func Mount()   { lifecycle.Mount("settings-security") }

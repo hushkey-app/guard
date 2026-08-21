@@ -1,0 +1,104 @@
+#cloud-config
+#
+# An application box: docker, the compose plugin, and nothing else.
+#
+# This is the machine guard *deploys to*, not the machine guard runs on — that
+# one is deploy/cloud-init.yaml beside this. The whole job here is to make a box
+# that guard can put a versioned image on the minute it finishes booting, which
+# means exactly two things have to be true:
+#
+#   * an SSH login guard can prove, and
+#   * `docker compose` answering on the box.
+#
+# Everything after that is the dashboard: add the machine on /cluster with this
+# login, put it in a group on /deploys, press Deploy. There is no application
+# configuration in here, because guard owns the compose file and writes it on
+# every deploy — a compose file in user data would be a second copy of something
+# that is already versioned in guard's database and travels in its backup.
+#
+# WHAT IT DELIBERATELY DOES NOT DO
+#
+#   * No firewall. Same reason as the guard box: the public perimeter is the
+#     provider's, and two allowlists that have to agree is how somebody gets
+#     locked out editing one over the other. Publish 80/443 in the provider's
+#     firewall group, and keep 22 to the addresses guard reaches from.
+#   * No application. No compose file, no image, no pull. The first deploy does
+#     all of it, which is the point — a box provisioned with an application
+#     baked in is a box that disagrees with guard about what is running on it.
+#   * No password login. Keys only, and root's password authentication is turned
+#     off. Guard supports a password login because plenty of boxes have one; it
+#     is not what a machine created today should start with.
+#   * No swap, no tuning, no monitoring agent. Guard watches this box from
+#     outside over the same SSH login — that is what /cluster already does.
+#
+# BEFORE YOU PASTE IT
+#
+#   Replace the ssh_authorized_keys line with the public key whose private half
+#   guard will use. That is the one thing here that cannot have a default.
+
+users:
+  # A dedicated account rather than root. It is in the docker group, which on
+  # any box is equivalent to root — the difference that matters is that it is a
+  # named account in the audit trail, and that guard's login can be revoked by
+  # removing one key rather than by changing root's password everywhere.
+  - name: deploy
+    groups: [docker, sudo]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAA_REPLACE_WITH_THE_KEY_GUARD_WILL_USE
+
+# Guard writes everything it deploys under one directory it owns, a
+# subdirectory per template. Created here so the first deploy does not have to
+# be the thing that makes it, and owned by the account that will write into it.
+write_files:
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "10m", "max-file": "3" }
+      }
+
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+
+runcmd:
+  # Docker's own repository rather than the distribution's package. The
+  # distribution's docker.io is usually old enough that the compose plugin is
+  # not in it at all, which is the exact failure this file exists to prevent.
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - >
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc]
+    https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable"
+    > /etc/apt/sources.list.d/docker.list
+  - apt-get update -qq
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+
+  # Where guard's deploys land. Matches model.DeployRoot — a template's
+  # directory is /guard/<name>, so this is the one parent it needs.
+  - mkdir -p /guard
+  - chown deploy:deploy /guard
+  - chmod 0755 /guard
+
+  # Keys only. cloud-init usually does this already; saying it here means the
+  # box is the same whether or not the image's defaults changed.
+  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+  - systemctl reload ssh || systemctl reload sshd || true
+
+  # The proof, in the log. `cloud-init status --long` and
+  # /var/log/cloud-init-output.log carry these two lines, so "did it work" is
+  # answerable without logging in and guessing.
+  - docker --version
+  - docker compose version
+  - echo "guard: this box is ready to be added on /cluster and deployed to"
+
+final_message: "ready for guard after $UPTIME seconds — add it on /cluster, then deploy"

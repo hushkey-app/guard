@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -19,16 +20,19 @@ import (
 	"github.com/hushkey-app/guard/internal/build"
 	"github.com/hushkey-app/guard/internal/cluster"
 	"github.com/hushkey-app/guard/internal/config"
+	"github.com/hushkey-app/guard/internal/deploy"
 	"github.com/hushkey-app/guard/internal/ingest"
 	"github.com/hushkey-app/guard/internal/notify"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/remote"
 	"github.com/hushkey-app/guard/internal/statuspage"
 	"github.com/hushkey-app/guard/internal/telemetry"
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/viewalerts"
 	"github.com/hushkey-app/guard/server/apis"
 	apicollector "github.com/hushkey-app/guard/server/apis/collector"
 	apiconfig "github.com/hushkey-app/guard/server/apis/config"
+	apideployer "github.com/hushkey-app/guard/server/apis/deployer"
 	apiprober "github.com/hushkey-app/guard/server/apis/prober"
 	apirunner "github.com/hushkey-app/guard/server/apis/runner"
 	apischeduler "github.com/hushkey-app/guard/server/apis/scheduler"
@@ -240,6 +244,24 @@ func main() {
 	sender := &notify.Webhook{}
 	watch := &cluster.Watchdog{Store: store, Sender: sender}
 	go watch.Run(proberCtx)
+	// The deploys. Not a loop — a deploy is driven by the press that started
+	// it — but it takes the process's lifetime the same way, because a rolling
+	// deploy outlives the request, and it makes honest at startup whatever the
+	// last restart interrupted.
+	//
+	// Everything it needs it borrows: the SSH runner the scheduler uses (with
+	// its own budget, because pulling a fat image is a legitimately long thing
+	// to be doing), the prober's health check — which is the whole definition
+	// of "did this deploy land" — and the same sender every other watcher
+	// reaches for.
+	deployer := &deploy.Runner{
+		Store:  deployStore{store},
+		SSH:    &remote.Runner{Timeout: deploy.Timeout},
+		Probe:  probe,
+		Sender: sender,
+	}
+	go deployer.Run(proberCtx)
+	apideployer.Use(deployer)
 	// And the rules over what the cluster page already measures — the health
 	// check, the uptime share, and what each machine says about its own CPU,
 	// memory and disk. Same delivery module, same destinations, its own faster
@@ -319,6 +341,65 @@ func main() {
 		w.Write(icon) //nolint:errcheck
 	})
 
+	// Watching a deploy happen, as it happens.
+	//
+	// A raw handler rather than an endpoint, for the same reason the icon above
+	// is one: the typed layer answers with a value, and this answers with a
+	// connection that stays open. howl's app.SSE owns the wire format.
+	//
+	// It is a *second* way to see what the rows already say, never the only one.
+	// A browser that never opens it, or one whose connection a proxy drops, sees
+	// the same deploy on the three-second tick — which is what makes it safe for
+	// this to be best-effort and for a frame to be dropped rather than queued.
+	mux.HandleFunc("GET /api/deploy/stream", func(w http.ResponseWriter, r *http.Request) {
+		if err := sessions.Authorize(r, []string{model.RoleAdmin}); err != nil {
+			http.Error(w, "not allowed", http.StatusUnauthorized)
+			return
+		}
+		kind, subject := deploy.KindRun, r.URL.Query().Get("run")
+		if node := r.URL.Query().Get("node"); node != "" {
+			kind, subject = deploy.KindPrepare, node
+		}
+		id, err := strconv.ParseInt(subject, 10, 64)
+		if err != nil || id <= 0 {
+			http.Error(w, "name a run or a node", http.StatusBadRequest)
+			return
+		}
+		frames, stop := deployer.Watch(kind, id)
+		defer stop()
+		stream, err := app.SSE(w, r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// A heartbeat, because the interesting part of a deploy is the two
+		// minutes where nothing is printed, and every proxy in the world closes
+		// an idle connection somewhere inside that.
+		beat := time.NewTicker(20 * time.Second)
+		defer beat.Stop()
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-beat.C:
+				if stream.Send("ping", "") != nil {
+					return
+				}
+			case frame := <-frames:
+				body, err := json.Marshal(frame)
+				if err != nil {
+					return
+				}
+				if stream.Send("frame", string(body)) != nil {
+					return
+				}
+				if frame.Done {
+					return
+				}
+			}
+		}
+	})
+
 	log.Fatal(a.Listen(mux))
 }
 
@@ -381,5 +462,15 @@ type statsStore struct{ *telemetry.Store }
 
 func (s statsStore) SSHLoginFor(nodeID int64) (remote.Login, error) {
 	login, err := s.Store.SSHLoginFor(nodeID)
+	return remote.Login(login), err
+}
+
+// deployStore is the same seam for the deploys. One method's difference again,
+// and the lock is on the other side of it: DeployTarget refuses a locked
+// machine, so no adapter here can accidentally hand one out.
+type deployStore struct{ *telemetry.Store }
+
+func (s deployStore) DeployTarget(nodeID int64) (remote.Login, error) {
+	login, err := s.Store.DeployTarget(nodeID)
 	return remote.Login(login), err
 }
