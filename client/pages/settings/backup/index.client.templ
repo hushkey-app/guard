@@ -1,0 +1,158 @@
+// The backup page: guard's configuration as one file, and back again.
+//
+// Two cards side by side, and nothing else — the whole page is meant to fit
+// without scrolling. It once listed every section with its row count, which
+// read like a chooser and is not one: an export is all of the configuration or
+// none of it, so a list nobody can act on is a list in the way. What is left is
+// the one line that answers "is this file worth anything" — how many rows and
+// how many credentials — and the rest is in docs/backup.md.
+package backup
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/alert"
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/field"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui/components"
+)
+
+templ Head() {
+	<title>Backup — Guard</title>
+	<meta name="description" content="Export Guard's configuration to one file, and restore it."/>
+}
+
+templ Page() {
+	@components.SettingsShell("/settings/backup", "Workspace", "Settings", "Manage Guard's storage, configuration, and administrative controls.") {
+				<div>
+					<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Import &amp; export</p>
+					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Backup</h2>
+					<p class="mt-2 text-muted-foreground">
+						One file with everything this instance was configured with — machines, commands,
+						environments, cloud accounts, saved views, alert rules, secrets, members and stored
+						settings. Logs, traces and metrics stay behind, with the run history and open sessions.
+					</p>
+					<p data-backup-sections class="mt-2 text-sm text-muted-foreground">
+						<span data-backup-loading>Loading…</span>
+					</p>
+				</div>
+				<div class="grid gap-4 xl:grid-cols-2">
+					@card.Card(card.Props{Class: "h-full"}) {
+						@card.Header() {
+							@card.Title() {
+								Export
+							}
+							@card.Description() {
+								Downloads a JSON file. Guard keeps no copy.
+							}
+						}
+						@card.Content(card.ContentProps{Class: "flex flex-1 flex-col"}) {
+							<div class="flex flex-1 flex-col gap-4">
+								@field.Field() {
+									@field.Label(field.LabelProps{For: "backup-passphrase"}) {
+										Passphrase
+										<span class="font-normal text-muted-foreground">(optional)</span>
+									}
+									@input.Input(input.Props{
+										ID:          "backup-passphrase",
+										Type:        "password",
+										Placeholder: "Words you will still have when you need this file",
+										Attributes:  templ.Attributes{"data-backup-passphrase": true, "autocomplete": "new-password"},
+									})
+									@field.Description() {
+										Given one, every stored credential is sealed under it — the file restores onto any
+										Guard and is worth nothing without the words, which Guard cannot recover.
+										<strong class="font-medium text-foreground">Left empty, the credentials are written into the file as they are</strong>,
+										so the restore is complete and the file has to be kept like a password store.
+									}
+								}
+								<div class="mt-auto flex flex-wrap items-center gap-3 border-t border-border pt-4">
+									@button.Button(button.Props{Attributes: templ.Attributes{"data-backup-export": true, "type": "button"}}) {
+										Download backup
+									}
+									<span data-backup-status class="text-sm text-muted-foreground"></span>
+								</div>
+							</div>
+						}
+					}
+					@card.Card(card.Props{Class: "h-full"}) {
+						@card.Header() {
+							@card.Title() {
+								Restore
+							}
+							@card.Description() {
+								Replaces this instance's configuration with the file's, ids and all.
+							}
+						}
+						@card.Content(card.ContentProps{Class: "flex flex-1 flex-col"}) {
+							<div class="flex flex-1 flex-col gap-4">
+								@field.Field() {
+									@field.Label(field.LabelProps{For: "backup-file"}) {
+										Backup file
+									}
+									<!-- The input itself is hidden and pressed for: a file control
+									     dressed as a text field is neither, and the browser's own
+									     is one widget per engine. What is on screen is a button
+									     and the name of what was chosen. -->
+									<div class="flex flex-wrap items-center gap-3">
+										@button.Button(button.Props{
+											Variant:    button.VariantOutline,
+											Attributes: templ.Attributes{"data-backup-pick": true, "type": "button"},
+										}) {
+											Choose file
+										}
+										<span data-backup-filename class="min-w-0 truncate text-sm text-muted-foreground">No file chosen</span>
+									</div>
+									<input id="backup-file" type="file" accept="application/json,.json" data-backup-file class="hidden"/>
+								}
+								@field.Field() {
+									@field.Label(field.LabelProps{For: "backup-restore-passphrase"}) {
+										Passphrase
+									}
+									@input.Input(input.Props{
+										ID:          "backup-restore-passphrase",
+										Type:        "password",
+										Placeholder: "Only if the file carries credentials",
+										Attributes:  templ.Attributes{"data-backup-restore-passphrase": true, "autocomplete": "off"},
+									})
+									@field.Description() {
+										Only for a file taken with one. Checked before anything is written, so the wrong words cost nothing.
+									}
+								}
+								<div data-backup-report class="empty:hidden"></div>
+								<div class="mt-auto flex flex-wrap items-center gap-3 border-t border-border pt-4">
+									@button.Button(button.Props{
+										Variant:    button.VariantDestructive,
+										Attributes: templ.Attributes{"data-backup-restore": true, "type": "button"},
+									}) {
+										Replace configuration
+									}
+									@button.Button(button.Props{
+										Variant:    button.VariantOutline,
+										Attributes: templ.Attributes{"data-backup-restart": true, "type": "button", "hidden": true},
+									}) {
+										Restart Guard
+									}
+									<span data-backup-restore-status class="text-sm text-muted-foreground"></span>
+								</div>
+							</div>
+						}
+					}
+				</div>
+				@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+					@alert.Title() {
+						A restore is not a merge
+					}
+					@alert.Description() {
+						What is on this instance and not in the file is gone. Alert state is cleared, so a rule
+						that is still bad reports again on its next pass; stored settings take a restart, which is
+						the second press. Telemetry, run history and open sessions are untouched.
+					}
+				}
+				@components.ConfirmDialog()
+	}
+}
+
+func Mount()   { lifecycle.Mount("settings-backup") }
+func Unmount() { lifecycle.Unmount("settings-backup") }

@@ -67,4 +67,12 @@ const cold = await import("./store.js?cold=1");
 console.assert(JSON.stringify(cold.get("k")) === '{"a":4}', "hydrated from sessionStorage", cold.get("k"));
 console.assert(cold.freshness("k") === 0, "a hydrated value has never been confirmed live");
 
+// 9. A restored backup: every key describes an instance that is gone, and the
+//    mirror has to go with the memory or a reload would bring it all back.
+store.set("k", { a: 5 });
+store.forgetAll();
+console.assert(store.get("k") === undefined, "forgetAll drops what is in memory", store.get("k"));
+const afterRestore = await import("./store.js?cold=2");
+console.assert(afterRestore.get("k") === undefined, "forgetAll drops the mirror too", afterRestore.get("k"));
+
 console.log("store: all checks passed");

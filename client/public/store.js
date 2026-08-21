@@ -191,3 +191,22 @@ export function forget(key) {
     sessionStorage.removeItem(PREFIX + key);
   } catch { /* see hydrate */ }
 }
+
+/**
+ * Drop everything.
+ *
+ * For the one event that invalidates the whole session at once: a restored
+ * backup. Every key here describes an instance that no longer exists, and
+ * forgetting them one at a time means the list of keys has to be kept in step
+ * with a store that also holds per-workspace ones nobody outside secrets.js
+ * knows the names of.
+ */
+export function forgetAll() {
+  state.clear();
+  rendered.clear();
+  try {
+    for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith(PREFIX)) sessionStorage.removeItem(key);
+    }
+  } catch { /* see hydrate */ }
+}

@@ -7,7 +7,6 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/field"
 	"github.com/axadrn/shadcn-templ/v2/components/input"
 	"github.com/hushkey-app/guard/client/lifecycle"
-	"github.com/hushkey-app/guard/client/ui"
 	"github.com/hushkey-app/guard/client/ui/components"
 )
 
@@ -17,11 +16,7 @@ templ Head() {
 }
 
 templ Page() {
-	<section class="space-y-8">
-		@ui.PageHeading("Workspace", "Settings", "Manage Guard's storage, configuration, and administrative controls.")
-		<div class="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
-			@components.SettingsNav("/settings")
-			<div class="min-w-0 space-y-6">
+	@components.SettingsShell("/settings", "Workspace", "Settings", "Manage Guard's storage, configuration, and administrative controls.") {
 				<div>
 					<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Storage policy</p>
 					<h2 class="mt-2 text-2xl font-semibold tracking-tight">Data storage</h2>
@@ -114,9 +109,7 @@ templ Page() {
 						Use <code class="font-mono">GUARD_DB_PATH=/data/guard.db</code> and mount a named volume at <code class="font-mono">/data</code>. Keep the database and its WAL files on the same local volume.
 					}
 				}
-			</div>
-		</div>
-	</section>
+	}
 }
 
 func Mount()   { lifecycle.Mount("settings") }

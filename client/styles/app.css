@@ -77,13 +77,15 @@
   --card-foreground: oklch(.985 0 0);
   --popover: oklch(.205 0 0);
   --popover-foreground: oklch(.985 0 0);
-  --primary: oklch(.72 .16 160);
-  --primary-foreground: oklch(.15 .02 160);
+  /* Purple, and only purple: `success` keeps the green this used to be, so a
+   * machine that is up still reads as up rather than as branded. */
+  --primary: oklch(.68 .19 300);
+  --primary-foreground: oklch(.15 .03 300);
   --secondary: oklch(.269 0 0);
   --secondary-foreground: oklch(.985 0 0);
   --muted: oklch(.269 0 0);
   --muted-foreground: oklch(.708 0 0);
-  --accent: oklch(.32 .035 160);
+  --accent: oklch(.32 .045 300);
   --accent-foreground: oklch(.985 0 0);
   --destructive: oklch(.704 .191 22.216);
   --destructive-foreground: oklch(.985 0 0);
@@ -93,7 +95,7 @@
   --warning-foreground: oklch(.18 .04 78);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(.72 .16 160);
+  --ring: oklch(.68 .19 300);
   --chart-1: oklch(.72 .16 160);
   --chart-2: oklch(.68 .16 200);
   --chart-3: oklch(.62 .16 250);

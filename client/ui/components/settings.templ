@@ -5,6 +5,31 @@ import (
 	"github.com/hushkey-app/guard/client/ui"
 )
 
+// SettingsShell is every settings page's frame: the heading, the section list,
+// and the column the page's own content goes in.
+//
+// From lg it is a fixed-height pane rather than a long document — the heading
+// stays put and the two columns scroll inside it. The heading is what says
+// which section of guard you are in, and scrolling a form until it is off the
+// screen means the answer to "where am I" is at the top of a page nobody is
+// looking at any more. Below lg there is not enough height for two scroll
+// regions to be anything but a trap, so it is an ordinary stacked page.
+templ SettingsShell(current, eyebrow, title, lede string) {
+	<section class="flex flex-col gap-8 lg:h-[calc(100dvh-4rem)] lg:gap-6">
+		@ui.PageHeading(eyebrow, title, lede)
+		<div class="grid items-start gap-8 lg:min-h-0 lg:flex-1 lg:grid-cols-[15rem_minmax(0,1fr)]">
+			<div class="lg:h-full lg:overflow-y-auto lg:pb-2">
+				@SettingsNav(current)
+			</div>
+			<!-- pr-1 leaves the scrollbar somewhere to be that is not on top of
+			     a card's border; pb-8 keeps the last control off the bottom edge. -->
+			<div class="min-w-0 space-y-6 lg:h-full lg:overflow-y-auto lg:pb-8 lg:pr-1">
+				{ children... }
+			</div>
+		</div>
+	</section>
+}
+
 // SettingsNav is the second navigation level, shared by every settings page so
 // the primary sidebar stays focused as this section grows.
 //
@@ -12,7 +37,7 @@ import (
 // also rendered in the browser, where the wasm build has a router but the
 // component is simpler for not needing one.
 templ SettingsNav(current string) {
-	<aside class="lg:sticky lg:top-24">
+	<aside>
 		<p class="mb-3 px-3 text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Settings</p>
 		@item.Group(item.GroupProps{Class: "gap-1", Attributes: templ.Attributes{"aria-label": "Settings sections"}}) {
 			@settingsLink("/settings", "▤", "Data storage", "Retention and cleanup", current)
@@ -22,6 +47,7 @@ templ SettingsNav(current string) {
 			@settingsLink("/settings/members", "◉", "Members", "Who may sign in", current)
 			@settingsLink("/settings/security", "⛨", "Security", "Sign-in providers and sessions", current)
 			@settingsLink("/settings/config", "⌘", "Configuration", "Every variable Guard reads", current)
+			@settingsLink("/settings/backup", "⇅", "Backup", "Export and restore the configuration", current)
 		}
 		<p class="mt-4 px-3 text-xs leading-relaxed text-muted-foreground">New settings pages can be added here without crowding the main navigation.</p>
 	</aside>

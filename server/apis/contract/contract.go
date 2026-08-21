@@ -217,3 +217,18 @@ func (r NodeRequest) Validate() error {
 	}
 	return nil
 }
+
+// BackupRequest is what an export is asked with.
+//
+// Empty is a real answer rather than a missing one: a backup with no passphrase
+// is the configuration with the credentials cut out, which is a file somebody
+// can keep anywhere. So there is nothing to validate here.
+type BackupRequest struct {
+	Passphrase string `json:"passphrase"`
+}
+
+// RestoreRequest is a backup file and the words that open it.
+type RestoreRequest struct {
+	Passphrase string       `json:"passphrase"`
+	Backup     model.Backup `json:"backup"`
+}
