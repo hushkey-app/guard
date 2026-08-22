@@ -128,7 +128,7 @@ it is testable with no browser and no HTTP.
     failing each edge limit, and the happy path landing rows in the rollup.
   - Verify: `go test ./internal/ingest/`
 
-- [ ] **B2 — the tracker**
+- [x] **B2 — the tracker**
   - Depends: B1
   - Files: `internal/ingest/track.js`, `internal/ingest/analytics.go`,
     `internal/ingest/analytics_test.go`

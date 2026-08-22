@@ -40,3 +40,10 @@ trap **there**, and put a cross-cutting one here.
   is the shared reader — no need to hand-roll the `pragma_table_xinfo` loop that
   `cluster.go` and `views.go` predate it with. And `Store.Settings` selects its
   columns by name, so a new one is a line there and a line in `UpdateSettings`.
+- The tracker's budget cannot be eyeballed. `npx esbuild internal/ingest/track.js
+  --minify | wc -c` is the only real number (needs network); the Go test measures
+  the source with comments and indentation stripped, which runs ~1.5× the
+  minified figure because it cannot rename locals.
+- An XHR sending a string sets `Content-Type: text/plain;charset=UTF-8` by
+  itself — the CORS-safelisted type the browser door wants. Setting it by hand
+  is 60 bytes of tracker for nothing.

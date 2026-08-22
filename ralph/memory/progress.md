@@ -92,3 +92,18 @@ on its own. `ralph.sh` greps for it.
   mount is one line. Validate is called at the door *and* in the store: the
   door's answer to a bad beacon is 400, the store's is a 500, and B3's rejection
   counter belongs on the door's side of that line.
+
+## B2 — the tracker, embedded and served from the door it posts to
+- commit: (this one)
+- gates: build ok / howl ok / make test ok
+- notes: the mount is one line in `rum.go` (outside B2's Files list) so the
+  script is off with the door — a script that could only be refused should not
+  be embeddable. **The two-kilobyte budget is real but only reachable by
+  measuring**: `npx esbuild internal/ingest/track.js --minify` said 2359 on the
+  first honest draft and 2024 after trimming, and the Go test measures the
+  *stripped source* (3584 budget) because there is no build step to minify in.
+  Dropping `setRequestHeader` was worth 60 of those bytes: XHR sending a string
+  already means `text/plain;charset=UTF-8`, which is the safelisted type the
+  door wants anyway. B3 gets the counters; the tracker already refuses a bad
+  action name client-side, because the door refuses the whole beacon over one
+  and the page views batched beside it would go with it.

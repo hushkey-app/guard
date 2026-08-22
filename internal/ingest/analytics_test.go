@@ -1,7 +1,9 @@
 package ingest
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -181,5 +183,113 @@ func TestBeaconEdgeLimits(t *testing.T) {
 	}
 	if len(rows) != 0 {
 		t.Fatalf("a refused beacon was stored: %+v", rows)
+	}
+}
+
+// The tracker is served from the door it posts to, so the script tag on
+// somebody's site and the endpoint it flushes to are the same origin and the
+// same switch.
+func TestTrackerIsServed(t *testing.T) {
+	_, server := browserServer(t, Browser{Origins: []string{"https://app.example.com"}})
+
+	response, err := http.Get(server.URL + "/v1/rum/track.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode)
+	}
+	if kind := response.Header.Get("Content-Type"); !strings.HasPrefix(kind, "text/javascript") {
+		t.Errorf("content type = %q, want text/javascript", kind)
+	}
+	if cache := response.Header.Get("Cache-Control"); !strings.Contains(cache, "max-age=") {
+		t.Errorf("cache control = %q, want a max-age — the script is served to every visitor", cache)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, tracker) {
+		t.Fatal("the served script is not the embedded one")
+	}
+	// The two names the markup and the API depend on. Renaming either is a
+	// silent break: the tracker keeps loading and counts nothing.
+	for _, needed := range []string{"data-guard-track", "page_view", "/v1/rum/events"} {
+		if !bytes.Contains(body, []byte(needed)) {
+			t.Errorf("the tracker no longer mentions %q", needed)
+		}
+	}
+}
+
+// Off with the door. A tracker that could only ever be refused is a script
+// nobody should be able to embed.
+func TestTrackerIsOffUntilOriginsAreNamed(t *testing.T) {
+	_, server := browserServer(t, Browser{})
+	response, err := http.Get(server.URL + "/v1/rum/track.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 — nothing should be mounted", response.StatusCode)
+	}
+}
+
+// The tracker's budget is two kilobytes minified, and it has no build step —
+// so what is measured here is the source with its comments and indentation
+// taken off, which is what a minifier takes off before it renames anything.
+// The real figure is smaller: `npx esbuild internal/ingest/track.js --minify`
+// answered 2024 bytes when this was written.
+//
+// The budget is a gate rather than a target. A script served to every visitor
+// of somebody else's product is a cost guard imposes on them, and the way that
+// cost grows is one convenience at a time with nothing failing.
+func TestTrackerFitsItsBudget(t *testing.T) {
+	const budget = 3584
+
+	stripped := 0
+	for _, line := range strings.Split(string(tracker), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+		stripped += len(line) + 1
+	}
+	if stripped > budget {
+		t.Fatalf("the tracker is %d bytes stripped, over its %d byte budget", stripped, budget)
+	}
+	t.Logf("tracker: %d bytes stripped of %d", stripped, budget)
+}
+
+// A flush the tracker actually produced, posted at the door it posts to.
+//
+// The two halves of this feature are a JavaScript object literal and a set of
+// Go struct tags, and nothing but a test carrying the real bytes notices the
+// day one of them is renamed — the tracker would keep loading, the door would
+// keep answering 204, and the grid would stay empty.
+func TestATrackerFlushIsAcceptedWhole(t *testing.T) {
+	const flush = `{"s":"2c24b98db8144459dacc35c33576bb94","p":"/pricing",` +
+		`"u":{"s":"google","m":"cpc","c":"spring"},"r":"news.ycombinator.com",` +
+		`"e":[{"n":"page_view","t":1787427604640},` +
+		`{"n":"signup_click","t":1787427604641,"d":{"plan":"team"}}]}`
+
+	store, server := browserServer(t, Browser{Origins: []string{"https://app.example.com"}})
+	response := post(t, server.URL+"/v1/rum/events", "https://app.example.com", flush)
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", response.StatusCode)
+	}
+
+	now := time.Now().UTC()
+	rows, err := store.AnalyticsPaths(now.Add(-24*time.Hour), now.Add(24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Path != "/pricing" || rows[0].Views != 1 {
+		t.Fatalf("rows = %+v", rows)
+	}
+	cell, seen := rows[0].Actions["signup_click"]
+	if !seen || cell.Events != 1 || cell.Rate != 1 {
+		t.Fatalf("signup_click = %+v, seen = %v", cell, seen)
 	}
 }

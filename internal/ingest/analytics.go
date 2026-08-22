@@ -15,11 +15,33 @@ package ingest
 // the browser door open".
 
 import (
+	_ "embed"
 	"encoding/json"
 	"net/http"
 
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
+
+// The tracker, served to somebody else's visitors. It lives beside the door it
+// posts to rather than under client/public/, which is the dashboard's own
+// JavaScript and where every file needs a Tailwind @source line — this one has
+// no classes, no build step and no dependencies, and is embedded exactly as it
+// is written.
+//
+//go:embed track.js
+var tracker []byte
+
+// trackJS serves the tracker.
+//
+// Cached for a day, and the header is also the ceiling on how long a fix to
+// the tracker takes to reach a browser that already has it — the URL carries
+// no version, because a version in it would be a number every customer's page
+// has to be edited to change.
+func trackJS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Write(tracker)
+}
 
 func (h Handler) beacon(config Browser, limiter *rateLimiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
