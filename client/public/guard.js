@@ -536,7 +536,7 @@ async function loadSettings() {
   const form = qs("[data-settings-form]"); if (!form) return;
 	if (form.dataset.loaded === "true") return;
   const settings = await request("/api/settings");
-  for (const key of ["database_path", "retention_hours", "max_events"]) qs(`[data-setting="${key}"]`, form).value = settings[key] ?? "";
+  for (const key of ["database_path", "retention_hours", "max_events", "analytics_rollup_days", "analytics_seen_days"]) qs(`[data-setting="${key}"]`, form).value = settings[key] ?? "";
   qs('[data-setting="token"]', form).value = sessionStorage.getItem("guard.token") || "";
 	form.dataset.loaded = "true";
 }
@@ -544,7 +544,13 @@ async function loadSettings() {
 async function saveSettings(form) {
   const status = qs("[data-settings-status]", form); status.textContent = "Saving…";
   try {
-    const value = { retention_hours: Number(qs('[data-setting="retention_hours"]', form).value), max_events: Number(qs('[data-setting="max_events"]', form).value) };
+    // Every number the form holds goes on every save: the store reads a zero as
+    // "leave it alone", so a partial body would look like a save that worked.
+    const number_ = (key) => Number(qs(`[data-setting="${key}"]`, form).value);
+    const value = {
+      retention_hours: number_("retention_hours"), max_events: number_("max_events"),
+      analytics_rollup_days: number_("analytics_rollup_days"), analytics_seen_days: number_("analytics_seen_days"),
+    };
     await request("/api/settings", { method: "PUT", headers: adminHeaders(), body: JSON.stringify(value) }); status.textContent = "Saved and cleanup applied."; await refreshSummary();
   } catch (error) { status.textContent = error.message; }
 }
