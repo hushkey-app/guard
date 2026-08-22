@@ -174,7 +174,7 @@ convention, not a choice.
     for wasm.
   - Verify: `make apis && go build ./... && GOOS=js GOARCH=wasm go build ./wasm`
 
-- [ ] **C2 — the actions endpoints**
+- [x] **C2 — the actions endpoints**
   - Depends: C1
   - Files: `server/apis/analytics/actions.api.go`,
     `server/apis/analytics/actions.post.api.go`,

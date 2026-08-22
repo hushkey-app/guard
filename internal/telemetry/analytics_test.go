@@ -1,6 +1,8 @@
 package telemetry
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -1198,5 +1200,84 @@ func TestAnalyticsHealthCarriesTheCeilings(t *testing.T) {
 	}
 	if health.Rejected != 0 {
 		t.Errorf("a beacon the door accepted was counted as %d rejections", health.Rejected)
+	}
+}
+
+// Deleting an action is not hiding a column: the rows counted under it go from
+// every table that holds them, including the raw feed somebody is watching
+// while they instrument the page. What must not go with it is the page views on
+// the same path, which are a different action.
+func TestDeletingAnAnalyticsActionTakesEveryRowUnderIt(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for _, session := range []string{"a1", "b2"} {
+		if err := store.addAnalyticsAt(beacon(session, "/pricing", actionPageView, "signup_click"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.DeleteAnalyticsAction("signup_click"); err != nil {
+		t.Fatal(err)
+	}
+
+	day := epochDay(at)
+	for table, column := range map[string]string{
+		"analytics_rollup": "action",
+		"analytics_seen":   "action",
+		"analytics_events": "action",
+	} {
+		var left int64
+		if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE `+column+` = ?`, "signup_click").Scan(&left); err != nil {
+			t.Fatal(err)
+		}
+		if left != 0 {
+			t.Errorf("%s still holds %d rows for a deleted action", table, left)
+		}
+	}
+	if events, sessions := rollupRow(t, store, day, "/pricing", actionPageView); events != 2 || sessions != 2 {
+		t.Errorf("deleting an action took the page views with it: %d events over %d sessions", events, sessions)
+	}
+	// A name that is not there is not a deletion. Answering as though it were
+	// would tell somebody their rollup rows are gone when nothing was read —
+	// and page_view is never in the table, so the one name that must survive is
+	// refused by the same line.
+	for _, name := range []string{"signup_click", actionPageView} {
+		if err := store.DeleteAnalyticsAction(name); !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("deleting %s that is not there = %v", name, err)
+		}
+	}
+}
+
+// Pinning is the whole set in one write, because pinning a column and putting
+// it second is one decision. A name nothing has ever sent is refused, and the
+// refusal is the whole request rather than the rows before the bad one.
+func TestPinningAnalyticsActionsIsOneOrderedDecision(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	if err := store.addAnalyticsAt(beacon("a1", "/pricing", actionPageView, "signup_click", "docs_search"), at); err != nil {
+		t.Fatal(err)
+	}
+	pinned, err := store.PinAnalyticsActions([]string{"docs_search", "signup_click"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pinned) != 2 || pinned[0].Name != "docs_search" || pinned[1].Position != 1 {
+		t.Fatalf("pinned = %#v", pinned)
+	}
+
+	if _, err := store.PinAnalyticsActions([]string{"signup_click", "never_fired"}); err == nil {
+		t.Fatal("a column that could have no cells was pinned")
+	}
+	// The unpin at the top of the write is inside the transaction, so a refused
+	// list leaves the order that was there rather than nothing pinned at all.
+	after, err := store.AnalyticsActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 2 || !after[0].Pinned || after[0].Name != "docs_search" {
+		t.Fatalf("a refused pin was half applied: %#v", after)
 	}
 }

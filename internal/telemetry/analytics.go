@@ -485,6 +485,144 @@ func analyticsCountedPath(tx *sql.Tx, day int64, path string) (string, bool, err
 	return path, false, nil
 }
 
+// The actions: what arrived, and the one decision a person makes about it.
+//
+// Discovery and decision are split the way PostHog splits an event from an
+// action, with the rule in guard rather than in a selector: everything is
+// counted, and pinning is what makes one a column. Nothing here can create a
+// name — the only names that can be pinned are ones that actually arrived,
+// because a column that never had a cell is a column read as a zero.
+
+// AnalyticsActions lists what has been discovered, pinned first in the order the grid
+// draws them and the rest behind them by name.
+//
+// The count is events and not sessions, which is a refusal rather than an
+// omission: the rollup is keyed per path, so summing its sessions across pages
+// counts one session once per page it did the action on. The exact figure is in
+// `analytics_seen`, which is purged behind the rollup — a seven-day session
+// count printed beside a ninety-day event count would be two windows on one
+// line, and somebody would divide them.
+func (s *Store) AnalyticsActions() ([]model.Action, error) {
+	// Grouped on the primary key, so the columns beside the sum are the row's
+	// own and there is nothing for SQLite to choose between.
+	rows, err := s.rdb.Query(`SELECT a.name, a.pinned, a.position, a.first_seen_ns, a.last_seen_ns, COALESCE(SUM(r.events), 0)
+FROM analytics_actions a LEFT JOIN analytics_rollup r ON r.action = a.name
+GROUP BY a.name ORDER BY a.pinned DESC, a.position, a.name`)
+	if err != nil {
+		return nil, fmt.Errorf("read analytics actions: %w", err)
+	}
+	defer rows.Close()
+	var out []model.Action
+	for rows.Next() {
+		var action model.Action
+		var firstNS, lastNS int64
+		if err := rows.Scan(&action.Name, &action.Pinned, &action.Position, &firstNS, &lastNS, &action.Events); err != nil {
+			return nil, err
+		}
+		if firstNS > 0 {
+			action.FirstSeen = time.Unix(0, firstNS).UTC()
+		}
+		if lastNS > 0 {
+			action.LastSeen = time.Unix(0, lastNS).UTC()
+		}
+		out = append(out, action)
+	}
+	return out, rows.Err()
+}
+
+// PinAnalyticsActions makes the grid's columns: the names sent, in the order sent, and
+// nothing else pinned.
+//
+// One request for the whole set rather than a press per name, for the reason
+// the dashboard's layout is one request — pinning a fourth column and dragging
+// it into second place is one decision, and two writes are two chances to leave
+// an order nobody chose. Unpinning the last column is an empty list rather than
+// a second verb.
+//
+// A name that has not been seen is refused. So is `page_view`, which is never
+// discovered because it is the Views column, and which refuses itself here
+// without a case of its own.
+func (s *Store) PinAnalyticsActions(names []string) ([]model.Action, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(`UPDATE analytics_actions SET pinned = 0, position = 0`); err != nil {
+		return nil, fmt.Errorf("unpin analytics actions: %w", err)
+	}
+	pinned := make(map[string]bool, len(names))
+	for position, name := range names {
+		name = strings.TrimSpace(name)
+		// The same name twice is two columns of the same cells, and the second
+		// position silently wins. Refused while somebody is still looking at
+		// the list they built.
+		if pinned[name] {
+			return nil, fmt.Errorf("%q is pinned twice, and a column is in one place", name)
+		}
+		pinned[name] = true
+		result, err := tx.Exec(`UPDATE analytics_actions SET pinned = 1, position = ? WHERE name = ?`, position, name)
+		if err != nil {
+			return nil, fmt.Errorf("pin analytics action: %w", err)
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if changed == 0 {
+			return nil, fmt.Errorf("%q has not been seen, and a column nothing was ever counted in reads as a zero", name)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.AnalyticsActions()
+}
+
+// DeleteAnalyticsAction removes a name and everything counted under it — the rollup
+// rows, the seen rows and the raw feed.
+//
+// That is the part the dialog has to say out loud: this is not hiding a column,
+// it is dropping the history, and the page views on those paths stay where they
+// are because they are a different action. What it cannot do is un-discover the
+// name: the next beacon carrying it discovers it again, because discovery is
+// what the tracker does rather than something guard was told. Deleting a name a
+// page still fires is a purge, not a mute.
+func (s *Store) DeleteAnalyticsAction(name string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	result, err := tx.Exec(`DELETE FROM analytics_actions WHERE name = ?`, name)
+	if err != nil {
+		return fmt.Errorf("delete analytics action: %w", err)
+	}
+	// A name that is not there is not a deletion, and answering as though it
+	// were would tell somebody their rollup rows are gone when nothing was
+	// read. `page_view` is never in this table, so the one name that must
+	// survive is refused here rather than by a case somebody could delete.
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return sql.ErrNoRows
+	}
+	for _, statement := range []string{
+		`DELETE FROM analytics_rollup WHERE action = ?`,
+		`DELETE FROM analytics_seen WHERE action = ?`,
+		`DELETE FROM analytics_events WHERE action = ?`,
+	} {
+		if _, err := tx.Exec(statement, name); err != nil {
+			return fmt.Errorf("delete what was counted under %q: %w", name, err)
+		}
+	}
+	return tx.Commit()
+}
+
 // The path rules: how a URL with an id in it becomes the page it is.
 //
 // `/users/*` → `/users/:id`, ordered, and the first match wins. They are

@@ -45,3 +45,12 @@ Nobody is reading this while the loop runs. It is the handover.
   `analytics_seen`) is now a number somebody types rather than a constant: seen
   may be raised as far as the rollup window and is refused past it. Neither of
   A6's two ways out was built.
+
+- **C2** — the spec says a deleted action "stops being counted", but discovery
+  is automatic and `analytics_actions` has no blocklist column, so the next
+  beacon carrying the name discovers it again. Built delete as a purge — the
+  actions row, the rollup rows, the seen rows and the raw feed, in one
+  transaction — and said so in the method's comment. If it is meant to be a
+  mute, that is a column in A2's schema and a check in `AddAnalytics`, not
+  something the endpoint can do.
+

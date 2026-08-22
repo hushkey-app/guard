@@ -42,6 +42,9 @@ import (
 func FsApiRoutes() []api.Route {
 	return []api.Route{
 		api.At("GET", "/api/analytics", e0.Index),
+		api.At("GET", "/api/analytics/actions", e0.Actions),
+		api.At("POST", "/api/analytics/actions", e0.Pin),
+		api.At("DELETE", "/api/analytics/{id}", e0.Remove),
 		api.At("GET", "/api/backup", e1.Summary),
 		api.At("POST", "/api/backup", e1.Export),
 		api.At("POST", "/api/backup/restore", e1.Apply),

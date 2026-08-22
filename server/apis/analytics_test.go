@@ -91,3 +91,137 @@ func TestAnalyticsRefusesAnUnboundedWindow(t *testing.T) {
 		t.Fatalf("status = %d, want 200", code)
 	}
 }
+func action(t *testing.T, actions []model.Action, name string) model.Action {
+	t.Helper()
+	for _, a := range actions {
+		if a.Name == name {
+			return a
+		}
+	}
+	t.Fatalf("%s was never discovered: %#v", name, actions)
+	return model.Action{}
+}
+
+// Discovery is what arrives; pinning is the one decision a person makes about
+// it. The list carries both, and pin, unpin and reorder are the same request.
+func TestAnalyticsActionsAreDiscoveredAndPinned(t *testing.T) {
+	store, srv := server(t, "")
+	visit(t, store, "a1", "/pricing", "page_view", "signup_click", "signup_click")
+	visit(t, store, "b2", "/docs", "page_view", "docs_search")
+
+	var discovered []model.Action
+	if code := get(t, srv.URL+"/api/analytics/actions", &discovered); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	// page_view is the Views column rather than a discovery, so it is never on
+	// the list somebody pins from.
+	if len(discovered) != 2 {
+		t.Fatalf("discovered = %#v", discovered)
+	}
+	if signup := action(t, discovered, "signup_click"); signup.Events != 2 || signup.Pinned || signup.LastSeen.IsZero() {
+		t.Fatalf("signup_click = %#v", signup)
+	}
+
+	// The whole set in one request, in the order the columns are drawn.
+	var pinned []model.Action
+	if code := call(t, http.MethodPost, srv.URL+"/api/analytics/actions",
+		contract.ActionPins{Pinned: []string{"docs_search", "signup_click"}}, &pinned); code != http.StatusOK {
+		t.Fatalf("pinning = %d", code)
+	}
+	if len(pinned) != 2 || pinned[0].Name != "docs_search" || pinned[1].Name != "signup_click" {
+		t.Fatalf("pinned = %#v", pinned)
+	}
+	if !pinned[0].Pinned || pinned[0].Position != 0 || pinned[1].Position != 1 {
+		t.Fatalf("the order was not stored: %#v", pinned)
+	}
+
+	// Unpinning is a shorter list, not a second verb — and an empty one is how
+	// the last column goes.
+	if code := call(t, http.MethodPost, srv.URL+"/api/analytics/actions",
+		contract.ActionPins{Pinned: []string{"signup_click"}}, &pinned); code != http.StatusOK {
+		t.Fatalf("unpinning = %d", code)
+	}
+	if action(t, pinned, "docs_search").Pinned || !action(t, pinned, "signup_click").Pinned {
+		t.Fatalf("after unpinning = %#v", pinned)
+	}
+}
+
+// A column with no cells reads as a page where nothing ever happened, so a name
+// nothing has ever sent cannot be pinned — and page_view, which is counted but
+// never discovered, is refused by the same rule rather than by a case of its own.
+func TestPinningRefusesANameNothingHasSent(t *testing.T) {
+	store, srv := server(t, "")
+	visit(t, store, "a1", "/pricing", "page_view", "signup_click")
+
+	for _, name := range []string{"never_fired", "page_view"} {
+		if code := call(t, http.MethodPost, srv.URL+"/api/analytics/actions",
+			contract.ActionPins{Pinned: []string{name}}, nil); code != http.StatusBadRequest {
+			t.Fatalf("pinning %s = %d, want 400", name, code)
+		}
+	}
+	// The refusal is the whole request: signup_click is not left pinned by a
+	// half-applied list.
+	var actions []model.Action
+	get(t, srv.URL+"/api/analytics/actions", &actions)
+	if action(t, actions, "signup_click").Pinned {
+		t.Fatalf("a refused pin was applied anyway: %#v", actions)
+	}
+	if code := call(t, http.MethodPost, srv.URL+"/api/analytics/actions",
+		contract.ActionPins{Pinned: []string{"signup_click", "signup_click"}}, nil); code != http.StatusBadRequest {
+		t.Fatalf("pinning one name twice = %d, want 400", code)
+	}
+}
+
+// Deleting an action drops the history counted under it, which is what the
+// dialog above it has to say. The page views on the same paths are a different
+// action and stand.
+func TestDeletingAnActionTakesWhatWasCountedUnderIt(t *testing.T) {
+	store, srv := server(t, "")
+	visit(t, store, "a1", "/pricing", "page_view", "signup_click")
+	visit(t, store, "b2", "/pricing", "page_view", "signup_click")
+
+	if code := call(t, http.MethodDelete, srv.URL+"/api/analytics/signup_click", nil, nil); code != http.StatusNoContent {
+		t.Fatalf("delete = %d", code)
+	}
+	var body contract.Analytics
+	if code := get(t, srv.URL+"/api/analytics?range=24h", &body); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	pricing := row(t, body.Paths, "/pricing")
+	if _, drawn := pricing.Actions["signup_click"]; drawn {
+		t.Fatalf("the rollup rows outlived the action: %#v", pricing)
+	}
+	if pricing.Views != 2 || pricing.Sessions != 2 {
+		t.Fatalf("deleting an action took the page views with it: %#v", pricing)
+	}
+	var actions []model.Action
+	get(t, srv.URL+"/api/analytics/actions", &actions)
+	if len(actions) != 0 {
+		t.Fatalf("actions = %#v", actions)
+	}
+	// Answering 204 for a name that is not there would be guard agreeing to a
+	// deletion it did not make.
+	if code := call(t, http.MethodDelete, srv.URL+"/api/analytics/signup_click", nil, nil); code != http.StatusNotFound {
+		t.Fatalf("deleting it twice = %d, want 404", code)
+	}
+}
+
+// Reading what the tracker found is open; deciding the columns and dropping the
+// history are not.
+func TestAnalyticsActionWritesNeedTheToken(t *testing.T) {
+	store, srv := server(t, "secret")
+	visit(t, store, "a1", "/pricing", "page_view", "signup_click")
+
+	if code := getWith(t, srv.URL+"/api/analytics/actions", "secret", nil); code != http.StatusOK {
+		t.Fatalf("reading with the token = %d", code)
+	}
+	if code := post(t, srv.URL+"/api/analytics/actions", []byte(`{"pinned":["signup_click"]}`), ""); code != http.StatusUnauthorized {
+		t.Fatalf("pinning without a token = %d, want 401", code)
+	}
+	if code := send(t, http.MethodDelete, srv.URL+"/api/analytics/signup_click", nil, ""); code != http.StatusUnauthorized {
+		t.Fatalf("deleting without a token = %d, want 401", code)
+	}
+	if code := post(t, srv.URL+"/api/analytics/actions", []byte(`{"pinned":["signup_click"]}`), "secret"); code != http.StatusOK {
+		t.Fatalf("pinning with the token = %d", code)
+	}
+}

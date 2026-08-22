@@ -123,3 +123,20 @@ on its own. `ralph.sh` greps for it.
   the type. Tests are `server/apis/analytics_test.go` (package `apis_test`,
   reusing `server`/`get` from `apis_test.go`), outside C1's Files list because
   every task ships its test and that is where endpoint tests live.
+
+## C2 — the actions endpoints: discovery read, pinning written, deletion refused twice
+- commit: c289b44
+- gates: build ok / howl ok / make test ok
+- notes: three routes — `GET /api/analytics/actions`, `POST` (admin) and
+  `DELETE /api/analytics/{id}`, where an action's id is its name. The store had
+  no actions half yet, so C2 also added `AnalyticsActions`, `PinAnalyticsActions`
+  and `DeleteAnalyticsAction` to `internal/telemetry/analytics.go` (outside C2's
+  Files list, unavoidable — the endpoints are three handlers over them).
+  **Pinning is the whole ordered set in one write**, like `ReorderViews`: unpin
+  everything, then pin what was sent, in one transaction, so a refused name
+  leaves the order that was there. A name nothing has sent is refused, which is
+  also how `page_view` refuses itself — it is never in `analytics_actions`.
+  The list carries **events and not sessions**: summing the rollup's sessions
+  across paths counts one session once per page, and the exact figure lives in
+  the seven-day `analytics_seen` beside a ninety-day event count.
+

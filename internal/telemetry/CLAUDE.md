@@ -23,4 +23,9 @@ API tree and a change here can only break compilation over there.
 
 Types live in `model/`, storage lives here — see that package's doc for why.
 
+One `Store` serves the whole product, so a method name is taken sooner than it
+looks: `Store.Actions` is a machine's stored commands, which is why the
+analytics half is `AnalyticsActions`, `PinAnalyticsActions` and
+`DeleteAnalyticsAction`.
+
 Analytics work: `ralph/specs/analytics.md` §5, plan tasks A1–A7.

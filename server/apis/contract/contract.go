@@ -288,6 +288,26 @@ func (q AnalyticsQuery) Window(now time.Time) (from, to time.Time) {
 	return to.Add(-d), to
 }
 
+// ActionPins is the grid's columns: the pinned action names, in the order they
+// are drawn.
+//
+// The whole set every time, rather than a name and a verb. Pinning a fourth
+// column and dragging it into second place is one decision, and unpinning the
+// last one is an empty list — a request that said "unpin this" would need the
+// order to be somebody else's problem, and the order is the point.
+type ActionPins struct {
+	Pinned []string `json:"pinned"`
+}
+
+func (p ActionPins) Validate() error {
+	for _, name := range p.Pinned {
+		if strings.TrimSpace(name) == "" {
+			return api.Invalid("pinned", "is a list of action names")
+		}
+	}
+	return nil
+}
+
 // Analytics is the top of the page in one answer: the strip, and the grid under
 // it.
 //

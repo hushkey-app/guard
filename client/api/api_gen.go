@@ -62,6 +62,11 @@ func (c *Client) Analytics(ctx context.Context, query contract.AnalyticsQuery) (
 	return api.Call[contract.Analytics](ctx, c.Transport, "GET", "/api/analytics", query, nil)
 }
 
+// AnalyticsActions calls GET /api/analytics/actions.
+func (c *Client) AnalyticsActions(ctx context.Context) ([]model.Action, error) {
+	return api.Call[[]model.Action](ctx, c.Transport, "GET", "/api/analytics/actions", nil, nil)
+}
+
 // AnswerStoppedDeploy calls POST /api/deploy/resolve.
 func (c *Client) AnswerStoppedDeploy(ctx context.Context, body deploy.Answer) (model.DeployRun, error) {
 	return api.Call[model.DeployRun](ctx, c.Transport, "POST", "/api/deploy/resolve", nil, body)
@@ -170,6 +175,12 @@ func (c *Client) CreateSecretKey(ctx context.Context, body model.APIKey) (model.
 // CreateView calls POST /api/views.
 func (c *Client) CreateView(ctx context.Context, body model.View) (model.View, error) {
 	return api.Call[model.View](ctx, c.Transport, "POST", "/api/views", nil, body)
+}
+
+// DeleteAnalyticsAction calls DELETE /api/analytics/{id}.
+func (c *Client) DeleteAnalyticsAction(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/analytics/{id}", id), nil, nil)
+	return err
 }
 
 // DeleteClusterMonitor calls DELETE /api/cluster/monitors/{id}.
@@ -404,6 +415,11 @@ func (c *Client) ObjectStorage(ctx context.Context) ([]storage.AccountStorage, e
 // ObjectStorageOptions calls GET /api/cloud/storage/options.
 func (c *Client) ObjectStorageOptions(ctx context.Context, query storage.AccountOptions) (cloud.StorageOptions, error) {
 	return api.Call[cloud.StorageOptions](ctx, c.Transport, "GET", "/api/cloud/storage/options", query, nil)
+}
+
+// PinAnalyticsActions calls POST /api/analytics/actions.
+func (c *Client) PinAnalyticsActions(ctx context.Context, body contract.ActionPins) ([]model.Action, error) {
+	return api.Call[[]model.Action](ctx, c.Transport, "POST", "/api/analytics/actions", nil, body)
 }
 
 // PrepareMachineForDeploys calls POST /api/deploy/prepare.
