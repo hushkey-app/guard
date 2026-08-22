@@ -119,6 +119,11 @@ test: generate
 	@# than eyeballing: what it draws, when it stays quiet, and what a cold
 	@# tab starts with.
 	@node client/public/store_test.mjs
+	@# Every client module has to link. `node --check` parses one file and
+	@# resolves no imports, so it cannot see a top-level declaration colliding
+	@# with an imported name — which is not a shadow but a SyntaxError, and
+	@# takes every page the module drives with it.
+	@node client/public/modules_test.mjs
 
 clean:
 	rm -f guard guard-vault client/public/views.wasm client/public/wasm_exec.js

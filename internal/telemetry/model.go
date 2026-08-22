@@ -34,7 +34,25 @@ type MetricPoint = model.MetricPoint
 type MetricSeries = model.MetricSeries
 
 type Store struct {
-	db         *sql.DB
+	// db is the *writer*, and it is one connection.
+	//
+	// SQLite has one write lock per database, so a second writer can only ever
+	// wait for the first. Waiting in Go — where a caller queues on the pool —
+	// is a wait that always ends; waiting in SQLite is `busy_timeout` and then
+	// `database is locked (5)`, which is an error a caller has to handle and
+	// none of them did. Every Exec and every Begin goes here.
+	//
+	// The DSN carries `_txlock=immediate`, which is the other half: a deferred
+	// transaction that reads and then writes asks to upgrade a lock it did not
+	// take, and SQLite refuses that **immediately** — the busy handler is not
+	// even called, because retrying an upgrade is how two writers deadlock. So
+	// a plain `BEGIN` is the one shape no timeout can rescue, and guard had
+	// twenty of them.
+	db *sql.DB
+	// rdb is the reader, and it is a pool. WAL means readers never block the
+	// writer and the writer never blocks them, so a slow query over the events
+	// table costs a deploy's row update nothing.
+	rdb        *sql.DB
 	path       string
 	writeCh    chan writeRequest
 	stopWriter chan struct{}
@@ -71,7 +89,8 @@ func NewStore(capacity int) *Store {
 		capacity = 10_000
 	}
 	name := "guard-memory-" + strconv.FormatUint(memoryStoreID.Add(1), 10)
-	store, err := open("file:"+name+"?mode=memory&cache=shared", "memory", Settings{RetentionHours: 24, MaxEvents: capacity}, true)
+	memDSN := "file:" + name + "?mode=memory&cache=shared"
+	store, err := open(memDSN, memDSN, "memory", Settings{RetentionHours: 24, MaxEvents: capacity}, true)
 	if err != nil {
 		panic(err)
 	}
@@ -89,38 +108,62 @@ func Open(path string, defaults Settings) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return nil, fmt.Errorf("database directory: %w", err)
 	}
+	return open(writeDSN(abs), readDSN(abs), abs, defaults, false)
+}
+
+// The two DSNs differ in exactly two things: the writer begins its
+// transactions IMMEDIATE, and the reader does not (so a read transaction still
+// takes no write lock). `busy_timeout` is generous on both because the only
+// contention left after the single writer connection is guard-vault, a second
+// process on the same file, and the thing it would be waiting for is a restore
+// or a retention sweep rather than a row update.
+func writeDSN(abs string) string { return sqliteDSN(abs, "immediate") }
+func readDSN(abs string) string  { return sqliteDSN(abs, "") }
+
+func sqliteDSN(abs, txlock string) string {
 	u := &url.URL{Scheme: "file", Path: abs}
 	q := u.Query()
-	q.Add("_pragma", "busy_timeout(5000)")
+	q.Add("_pragma", "busy_timeout(10000)")
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "synchronous(NORMAL)")
 	q.Add("_pragma", "foreign_keys(1)")
+	if txlock != "" {
+		q.Add("_txlock", txlock)
+	}
 	u.RawQuery = q.Encode()
-	return open(u.String(), abs, defaults, false)
+	return u.String()
 }
 
-func open(dsn, displayPath string, defaults Settings, memory bool) (*Store, error) {
+func open(writeDSN, readDSN, displayPath string, defaults Settings, memory bool) (*Store, error) {
 	if defaults.RetentionHours < 1 {
 		defaults.RetentionHours = 24
 	}
 	if defaults.MaxEvents < 1 {
 		defaults.MaxEvents = 1_000_000
 	}
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite", writeDSN)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-	if memory {
-		db.SetMaxOpenConns(1)
-	} else {
-		db.SetMaxOpenConns(8)
-		db.SetMaxIdleConns(4)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	// One handle in memory: a `mode=memory` database lives in the pool that
+	// opened it, and a second pool would be a second database.
+	rdb := db
+	if !memory {
+		rdb, err = sql.Open("sqlite", readDSN)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("open sqlite for reading: %w", err)
+		}
+		rdb.SetMaxOpenConns(8)
+		rdb.SetMaxIdleConns(4)
 	}
 	writeDelay := time.Duration(0)
 	if !memory {
 		writeDelay = 5 * time.Millisecond
 	}
-	store := &Store{db: db, path: displayPath, writeCh: make(chan writeRequest, 256), stopWriter: make(chan struct{}), writerDone: make(chan struct{}), writeDelay: writeDelay}
+	store := &Store{db: db, rdb: rdb, path: displayPath, writeCh: make(chan writeRequest, 256), stopWriter: make(chan struct{}), writerDone: make(chan struct{}), writeDelay: writeDelay}
 	// A memory store's secrets end with the process either way, so it never
 	// writes a key file next to a database that does not exist on disk.
 	if memory {
@@ -129,7 +172,7 @@ func open(dsn, displayPath string, defaults Settings, memory bool) (*Store, erro
 		store.secrets = secrets.Open(displayPath)
 	}
 	if err := store.migrate(defaults); err != nil {
-		db.Close()
+		store.closeDBs()
 		return nil, err
 	}
 	go store.writeLoop()
@@ -286,7 +329,17 @@ func (s *Store) Close() error {
 	close(s.stopWriter)
 	s.lifecycle.Unlock()
 	<-s.writerDone
-	return s.db.Close()
+	return s.closeDBs()
+}
+
+func (s *Store) closeDBs() error {
+	err := s.db.Close()
+	if s.rdb != nil && s.rdb != s.db {
+		if readErr := s.rdb.Close(); err == nil {
+			err = readErr
+		}
+	}
+	return err
 }
 
 func (s *Store) Add(events ...Event) error {
@@ -456,7 +509,7 @@ func (s *Store) Query(f Filter) ([]Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json
+	rows, err := s.rdb.Query(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json
 FROM events `+where+` ORDER BY timestamp_ns DESC, id DESC LIMIT ? OFFSET ?`, append(args, f.Limit, f.Offset)...)
 	if err != nil {
 		return nil, err
@@ -604,7 +657,7 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 }
 
 func (s *Store) Event(id uint64) (Event, error) {
-	row := s.db.QueryRow(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json FROM events WHERE id = ?`, id)
+	row := s.rdb.QueryRow(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json FROM events WHERE id = ?`, id)
 	return scanEvent(row)
 }
 
@@ -616,14 +669,14 @@ func (s *Store) Snapshot() (Summary, error) {
 	var summary Summary
 	summary.Capacity = settings.MaxEvents
 	var started int64
-	if err := s.db.QueryRow(`SELECT started_at_ns,total_received FROM metadata WHERE id=1`).Scan(&started, &summary.Received); err != nil {
+	if err := s.rdb.QueryRow(`SELECT started_at_ns,total_received FROM metadata WHERE id=1`).Scan(&started, &summary.Received); err != nil {
 		return summary, err
 	}
 	summary.StartedAt = time.Unix(0, started).UTC()
-	if err := s.db.QueryRow(`SELECT stored,logs,errors,spans,metrics FROM event_totals WHERE id=1`).Scan(&summary.Stored, &summary.Logs, &summary.Errors, &summary.Spans, &summary.Metrics); err != nil {
+	if err := s.rdb.QueryRow(`SELECT stored,logs,errors,spans,metrics FROM event_totals WHERE id=1`).Scan(&summary.Stored, &summary.Logs, &summary.Errors, &summary.Spans, &summary.Metrics); err != nil {
 		return summary, err
 	}
-	rows, err := s.db.Query(`SELECT service,instance,last_seen_ns,logs,errors,spans,metrics
+	rows, err := s.rdb.Query(`SELECT service,instance,last_seen_ns,logs,errors,spans,metrics
 FROM event_instances ORDER BY last_seen_ns DESC LIMIT 100`)
 	if err != nil {
 		return summary, err
@@ -652,7 +705,7 @@ func (s *Store) Facets() (Facets, error) {
 		`SELECT DISTINCT severity FROM events WHERE signal='logs' AND severity<>'' ORDER BY severity`: &result.Severities,
 		`SELECT DISTINCT name FROM events WHERE signal='metrics' AND name<>'' ORDER BY name`:          &result.MetricNames,
 	} {
-		rows, err := s.db.Query(query)
+		rows, err := s.rdb.Query(query)
 		if err != nil {
 			return result, err
 		}
@@ -680,7 +733,7 @@ func (s *Store) Metrics(f Filter, groupBy string) ([]MetricSeries, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(`SELECT timestamp_ns,service,instance,name,metric_value,unit,metric_type FROM events `+where+` AND metric_value IS NOT NULL ORDER BY timestamp_ns ASC LIMIT ?`, append(args, f.Limit)...)
+	rows, err := s.rdb.Query(`SELECT timestamp_ns,service,instance,name,metric_value,unit,metric_type FROM events `+where+` AND metric_value IS NOT NULL ORDER BY timestamp_ns ASC LIMIT ?`, append(args, f.Limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -717,7 +770,7 @@ func (s *Store) Metrics(f Filter, groupBy string) ([]MetricSeries, error) {
 
 func (s *Store) Settings() (Settings, error) {
 	settings := Settings{DatabasePath: s.path}
-	err := s.db.QueryRow(`SELECT retention_hours,max_events FROM settings WHERE id=1`).Scan(&settings.RetentionHours, &settings.MaxEvents)
+	err := s.rdb.QueryRow(`SELECT retention_hours,max_events FROM settings WHERE id=1`).Scan(&settings.RetentionHours, &settings.MaxEvents)
 	return settings, err
 }
 

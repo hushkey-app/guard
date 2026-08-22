@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -189,5 +190,71 @@ func TestDisabledWithoutARepo(t *testing.T) {
 	watch.Check(context.Background())
 	if state := watch.State(); state.Available || state.Latest != "" {
 		t.Fatalf("a disabled watch produced %+v", state)
+	}
+}
+
+// The pressed check leaves the box, so it needs a floor under it. GitHub allows
+// an unauthenticated address sixty requests an hour and guard's own timer
+// already spends four of them; a button anybody may press is a button somebody
+// holds down, and spending the budget would take the sidebar's answer down with
+// it for the rest of the hour.
+func TestAPressedCheckIsThrottled(t *testing.T) {
+	var calls atomic.Int64
+	watch, _ := watching(t, "v1.0.0", func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		release("v9.9.9")(w, r)
+	})
+
+	state, asked := watch.CheckNow(context.Background())
+	if !asked || state.Latest != "v9.9.9" || !state.Available {
+		t.Fatalf("first press: asked=%v state=%+v", asked, state)
+	}
+	for range 20 {
+		if _, asked := watch.CheckNow(context.Background()); asked {
+			t.Fatal("a press inside the gap left the box")
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("%d requests for 21 presses", got)
+	}
+	// Throttled is "the answer you already have", never an empty one — the page
+	// must not blank out because somebody pressed twice.
+	if state := watch.State(); state.Latest != "v9.9.9" || !state.Available {
+		t.Fatalf("the throttled press lost the answer: %+v", state)
+	}
+}
+
+// A watcher with no repository is an instance with no outbound internet, which
+// is a supported way to run guard rather than a broken one.
+func TestAPressWithNothingToPollDoesNothing(t *testing.T) {
+	watch := &Watch{Current: "v1.0.0"}
+	if _, asked := watch.CheckNow(context.Background()); asked {
+		t.Fatal("a disabled watcher asked something")
+	}
+}
+
+// The watcher main.go actually builds — a repository and a version, no interval
+// — has to poll.
+//
+// It did not, and nothing caught it: Enabled required an interval, main.go
+// never passed one, and every test in this file did. So the sidebar's update
+// card could not appear on any real instance, and the suite was green. The
+// shape of the constructor is the test.
+func TestTheWatcherMainBuildsIsEnabled(t *testing.T) {
+	watch := &Watch{Repo: "hushkey-app/guard", Current: "v0.2.0"}
+	if !watch.Enabled() {
+		t.Fatal("the watcher main.go builds is disabled, so nothing ever polls")
+	}
+
+	// And it really asks, rather than merely reporting itself enabled.
+	var calls atomic.Int64
+	live, _ := watching(t, "v0.2.0", func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		release("v9.9.9")(w, r)
+	})
+	live.Interval = 0
+	live.Check(context.Background())
+	if calls.Load() != 1 || live.State().Latest != "v9.9.9" {
+		t.Fatalf("%d requests, state %+v", calls.Load(), live.State())
 	}
 }

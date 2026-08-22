@@ -152,7 +152,7 @@ var ErrDeployLocked = errors.New("this machine is locked: nothing can be deploye
 
 // DeployGroups is every group, with its machines.
 func (s *Store) DeployGroups() ([]model.DeployGroup, error) {
-	rows, err := s.db.Query(`SELECT id, name, webhook_id, created_ns, updated_ns FROM deploy_groups ORDER BY name`)
+	rows, err := s.rdb.Query(`SELECT id, name, webhook_id, created_ns, updated_ns FROM deploy_groups ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (s *Store) DeployGroups() ([]model.DeployGroup, error) {
 func (s *Store) DeployGroup(id int64) (model.DeployGroup, error) {
 	var group model.DeployGroup
 	var created, updated int64
-	err := s.db.QueryRow(`SELECT id, name, webhook_id, created_ns, updated_ns FROM deploy_groups WHERE id = ?`, id).
+	err := s.rdb.QueryRow(`SELECT id, name, webhook_id, created_ns, updated_ns FROM deploy_groups WHERE id = ?`, id).
 		Scan(&group.ID, &group.Name, &group.WebhookID, &created, &updated)
 	if err != nil {
 		return model.DeployGroup{}, err
@@ -209,7 +209,7 @@ func (s *Store) DeployGroup(id int64) (model.DeployGroup, error) {
 // leaves the group by itself, because the group holds ids and the cluster holds
 // machines. There is no second list to go stale.
 func (s *Store) groupMembers(groupID int64) ([]model.DeployMember, error) {
-	rows, err := s.db.Query(`SELECT n.id, n.name, COALESCE(n.ssh_address,''),
+	rows, err := s.rdb.Query(`SELECT n.id, n.name, COALESCE(n.ssh_address,''),
 CASE WHEN n.ssh_password IS NOT NULL AND length(n.ssh_password) > 0 THEN 1 ELSE 0 END, n.locked
 FROM deploy_group_nodes g JOIN cluster_nodes n ON n.id = g.node_id
 WHERE g.group_id = ? ORDER BY g.position, n.name`, groupID)
@@ -328,7 +328,7 @@ func (s *Store) DeleteDeployGroup(id int64) error {
 
 // DeployTemplates is the newest version of each template, with its history.
 func (s *Store) DeployTemplates() ([]model.DeployTemplate, error) {
-	rows, err := s.db.Query(`SELECT id, MAX(version) FROM deploy_templates GROUP BY id ORDER BY id`)
+	rows, err := s.rdb.Query(`SELECT id, MAX(version) FROM deploy_templates GROUP BY id ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +374,7 @@ secret_env_id, vars, created_ns FROM deploy_templates WHERE id = ?`
 	var template model.DeployTemplate
 	var vars string
 	var created int64
-	err := s.db.QueryRow(query, args...).Scan(&template.ID, &template.Version, &template.Name, &template.ServiceName,
+	err := s.rdb.QueryRow(query, args...).Scan(&template.ID, &template.Version, &template.Name, &template.ServiceName,
 		&template.Image, &template.Path, &template.ComposeYAML, &template.HealthPath, &template.HealthPort,
 		&template.SecretEnvID, &vars, &created)
 	if err != nil {
@@ -404,7 +404,7 @@ func (s *Store) envLabel(envID int64) string {
 		return ""
 	}
 	var workspace, name string
-	err := s.db.QueryRow(`SELECT w.name, e.name FROM secret_envs e
+	err := s.rdb.QueryRow(`SELECT w.name, e.name FROM secret_envs e
 JOIN secret_workspaces w ON w.id = e.workspace_id WHERE e.id = ?`, envID).Scan(&workspace, &name)
 	if err != nil {
 		return "a deleted environment"
@@ -413,7 +413,7 @@ JOIN secret_workspaces w ON w.id = e.workspace_id WHERE e.id = ?`, envID).Scan(&
 }
 
 func (s *Store) templateVersions(id int64) ([]model.DeployTemplateVersion, error) {
-	rows, err := s.db.Query(`SELECT t.version, t.created_ns,
+	rows, err := s.rdb.Query(`SELECT t.version, t.created_ns,
 EXISTS(SELECT 1 FROM deploy_runs r WHERE r.template_id = t.id AND r.template_version = t.version)
 FROM deploy_templates t WHERE t.id = ? ORDER BY t.version DESC`, id)
 	if err != nil {
@@ -607,7 +607,7 @@ VALUES(?,?,?,?,?,?)`, id, instance.NodeID, instance.NodeName, position, model.In
 func (s *Store) DeployRun(id int64) (model.DeployRun, error) {
 	var run model.DeployRun
 	var started, finished, awaiting int64
-	err := s.db.QueryRow(`SELECT id,group_id,group_name,template_id,template_version,template_name,service_name,
+	err := s.rdb.QueryRow(`SELECT id,group_id,group_name,template_id,template_version,template_name,service_name,
 image,tag,mode,status,rollback,started_ns,finished_ns,awaiting_ns FROM deploy_runs WHERE id = ?`, id).
 		Scan(&run.ID, &run.GroupID, &run.GroupName, &run.TemplateID, &run.TemplateVersion, &run.TemplateName,
 			&run.ServiceName, &run.Image, &run.Tag, &run.Mode, &run.Status, &run.Rollback, &started, &finished, &awaiting)
@@ -630,7 +630,7 @@ image,tag,mode,status,rollback,started_ns,finished_ns,awaiting_ns FROM deploy_ru
 }
 
 func (s *Store) deployInstances(runID int64) ([]model.DeployInstance, error) {
-	rows, err := s.db.Query(`SELECT run_id,node_id,node_name,position,status,started_ns,finished_ns,
+	rows, err := s.rdb.Query(`SELECT run_id,node_id,node_name,position,status,started_ns,finished_ns,
 previous_tag,health,error,output FROM deploy_run_instances WHERE run_id = ? ORDER BY position`, runID)
 	if err != nil {
 		return nil, err
@@ -672,7 +672,7 @@ const deployRunRetention = 50
 // CountDeployRuns is how many there are, for a page that draws a pager.
 func (s *Store) CountDeployRuns() (int, error) {
 	var total int
-	err := s.db.QueryRow(`SELECT count(*) FROM deploy_runs`).Scan(&total)
+	err := s.rdb.QueryRow(`SELECT count(*) FROM deploy_runs`).Scan(&total)
 	return total, err
 }
 
@@ -702,7 +702,7 @@ func (s *Store) DeployRuns(limit, offset int) ([]model.DeployRun, error) {
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.db.Query(`SELECT id FROM deploy_runs ORDER BY started_ns DESC LIMIT ? OFFSET ?`, limit, offset)
+	rows, err := s.rdb.Query(`SELECT id FROM deploy_runs ORDER BY started_ns DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -732,7 +732,7 @@ func (s *Store) DeployRuns(limit, offset int) ([]model.DeployRun, error) {
 // ActiveDeployRuns is every run that is still going or still stopped at a
 // failure — what the loop sweeps and what a page has to keep polling.
 func (s *Store) ActiveDeployRuns() ([]model.DeployRun, error) {
-	rows, err := s.db.Query(`SELECT id FROM deploy_runs WHERE status IN (?,?) ORDER BY started_ns`,
+	rows, err := s.rdb.Query(`SELECT id FROM deploy_runs WHERE status IN (?,?) ORDER BY started_ns`,
 		model.RunRunning, model.RunAwaiting)
 	if err != nil {
 		return nil, err
@@ -826,7 +826,7 @@ template_id=excluded.template_id, updated_ns=excluded.updated_ns`,
 func (s *Store) DeployStateFor(nodeID int64, service string) (model.DeployState, error) {
 	var state model.DeployState
 	var updated int64
-	err := s.db.QueryRow(`SELECT node_id,service_name,current_tag,current_version,last_good_tag,
+	err := s.rdb.QueryRow(`SELECT node_id,service_name,current_tag,current_version,last_good_tag,
 last_good_version,template_id,updated_ns FROM deploy_state WHERE node_id = ? AND service_name = ?`, nodeID, service).
 		Scan(&state.NodeID, &state.ServiceName, &state.CurrentTag, &state.CurrentVersion,
 			&state.LastGoodTag, &state.LastGoodVersion, &state.TemplateID, &updated)
@@ -843,7 +843,7 @@ last_good_version,template_id,updated_ns FROM deploy_state WHERE node_id = ? AND
 // DeployStates is everything running on one machine, which is what the machine's
 // own page shows.
 func (s *Store) DeployStates(nodeID int64) ([]model.DeployState, error) {
-	rows, err := s.db.Query(`SELECT node_id,service_name,current_tag,current_version,last_good_tag,
+	rows, err := s.rdb.Query(`SELECT node_id,service_name,current_tag,current_version,last_good_tag,
 last_good_version,template_id,updated_ns FROM deploy_state WHERE node_id = ? ORDER BY service_name`, nodeID)
 	if err != nil {
 		return nil, err

@@ -114,7 +114,7 @@ func (s *Store) RecordStats(nodeID int64, stats model.HostStats) error {
 // machine rebooted is exactly the one whose counters went backwards, which is
 // a case the arithmetic already knows how to refuse.
 func (s *Store) LastStats(nodeID int64) (model.HostStats, error) {
-	return scanStats(s.db.QueryRow(`SELECT `+statsColumns+`
+	return scanStats(s.rdb.QueryRow(`SELECT `+statsColumns+`
 FROM cluster_stats WHERE node_id = ? ORDER BY at_ns DESC LIMIT 1`, nodeID).Scan)
 }
 
@@ -139,7 +139,7 @@ func (s *Store) attachStats(node *Node) error {
 	}
 	node.Stats = &stats
 
-	rows, err := s.db.Query(`SELECT cpu_percent, has_cpu FROM cluster_stats
+	rows, err := s.rdb.Query(`SELECT cpu_percent, has_cpu FROM cluster_stats
 WHERE node_id = ? ORDER BY at_ns DESC LIMIT ?`, node.ID, cpuHistoryPoints)
 	if err != nil {
 		return err
@@ -174,7 +174,7 @@ WHERE node_id = ? ORDER BY at_ns DESC LIMIT ?`, node.ID, cpuHistoryPoints)
 // enough of each to decide what is due and nothing more. No uptime, no
 // history, no actions — this runs on a timer, not for a person.
 func (s *Store) NodesForStats() ([]model.Node, error) {
-	rows, err := s.db.Query(`SELECT n.id, n.name, n.enabled, n.stats_interval_seconds,
+	rows, err := s.rdb.Query(`SELECT n.id, n.name, n.enabled, n.stats_interval_seconds,
 COALESCE((SELECT MAX(at_ns) FROM cluster_stats WHERE node_id = n.id), 0)
 FROM cluster_nodes n
 WHERE n.enabled = 1 AND n.stats_interval_seconds > 0 AND n.ssh_address <> ''

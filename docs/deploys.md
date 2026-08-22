@@ -16,8 +16,9 @@ For each machine, over SSH, in one command:
 1. `mkdir -p <template path>`
 2. write `docker-compose.yml` — 0644, from the template version being deployed
 3. write `.env` — **0600**, `TAG=<tag>` first, then the template's variables
-4. `docker compose pull`
-5. `docker compose up -d --remove-orphans`
+4. `docker compose pull <service>`
+5. `docker compose up -d --no-deps <service>` — or `up -d --remove-orphans` over the
+   whole file, when anything the file declares is not running
 6. poll the health target until it passes or the deadline runs out
 
 Both files are written to a temporary name beside the target and renamed over
@@ -27,6 +28,37 @@ and dollars, and every bug in a thing like this is a quoting bug.
 
 `docker compose` or `docker-compose`, whichever the box has; a machine with
 neither says so and exits 127 rather than looking like a pull failure.
+
+**Only the service the template names is recreated**, and that is step 5's whole
+point. Guard rewrites the `.env` on every deploy, so its hash changes, so a
+plain `up -d` recreates every service that reads it — including a reverse proxy
+holding `:80`, which is then racing its own outgoing container for the port and
+sometimes loses:
+
+```
+Bind for :::80 failed: port is already allocated
+```
+
+A deploy that changed one image has no business restarting a proxy. But
+`--no-deps` cannot be the only shape either: a fresh box, or a compose file that
+has grown a service, needs everything started. So the file is asked first —
+`config --services` against `ps -q` — and a project with anything missing gets
+the full `up`. The trade-off is stated rather than hidden: change a sidecar's
+configuration and it applies on the next deploy that brings the project up, not
+on the next deploy.
+
+**A port that is still held is retried once, through compose.** `down
+--remove-orphans` then `up -d --remove-orphans`, scoped to this project in this
+directory. That cures the one case a retry can cure — docker not having released
+the outgoing container's binding yet — and gives up rather than looping, because
+a port held by something that is not ours never comes free.
+
+What guard will **not** do is go looking for the process on the other end of
+`lsof -ti :80` and kill it. On a docker host that process is usually
+`docker-proxy`, and killing it leaves the daemon believing the mapping is still
+live; on a box where it is somebody's nginx, it is an outage guard caused. The
+port is a symptom, and the fix for it belongs in the compose file or on the box
+— not in a deploy that guesses.
 
 ## Healthy means the health check passed, and nothing else
 
@@ -175,6 +207,31 @@ the value is at rest:
   The file is 0600 and owned by the account guard logs in as — but it is
   plaintext on that box, and the dialog says so.
 
+**A variable has to be delivered, and the compose file is what delivers it.**
+This is the sharpest edge here and it used to be silent. Guard writes the
+variables into a `.env` beside the compose file — and docker compose reads that
+file to fill in `${...}` **in the compose file itself**. It does not put those
+values inside the container. A service that says neither `env_file:` nor
+`environment:` starts with none of them, and an application written to fall back
+on a default starts against the default: the wrong database, or none, while the
+container is up and answering, so the health gate passes it.
+
+So the service that is deployed needs one line:
+
+```yaml
+services:
+  app:
+    image: syd.vultrcr.com/hushkey/pack:${TAG}
+    env_file: .env
+```
+
+A template that declares a variable the compose file never mentions and never
+reads as a file is now **refused at the save**, naming each one — the same rule
+as a compose file that never mentions `${TAG}`, and for the same reason: it
+looks like a successful deploy of something it did not do. The check is
+generous, so `env_file`, `${DATABASE_URL}` under `environment:`, and a bare
+pass-through entry all pass.
+
 **The third option is to declare nothing.** A variable your application fetches
 from `guard-vault` itself with its own scoped key does not belong in the
 template: the key is already on the machine (put there by the machine's
@@ -214,6 +271,16 @@ that has to live somewhere specific. They are derived **once, at the save**, and
 stored: a run months old has to say where it wrote and what it pulled, and
 recomputing a path later would leave the old containers running in a directory
 guard had forgotten about.
+
+**The service comes off the compose file.** It is the one whose image carries
+`${TAG}` — derived like the image itself, and for the same reason. The template's
+name is what a person calls the deploy ("PACK-APP"); the service is what the file
+calls the container ("app"), and nothing makes those the same string. Guard used
+to slug the name, which was invisible while a deploy ran `up -d` over the whole
+file and became `no such service: pack-app` the moment it addressed one. A
+template naming a service its compose file does not declare is refused at the
+save, and a template stored before this says so in its own deploy output and
+deploys the tagged service instead.
 
 ## Making a machine deployable
 

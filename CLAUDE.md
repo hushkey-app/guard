@@ -30,6 +30,8 @@ internal/secrets/secrets.go   AES-GCM at rest, for the SSH passwords and the sto
 internal/telemetry/vault.go   the secrets: environments, values, the keys that read them
 internal/vault/               the second binary's half: read the file, answer a key
 cmd/vault/                    guard-vault — secrets served while guard is down
+internal/hostinfo/            what the box guard runs on is: /proc, one statfs, nothing stored
+internal/vaultproxy/          /v1/secrets on guard's port, forwarded to the vault
 internal/config/config.go     every GUARD_* variable: the catalogue, stored, applied at startup
 internal/auth/               sign in with Google or Apple, and who is allowed in
 client/pages/                 the dashboard — howl-go filesystem routes
@@ -131,10 +133,11 @@ panel that reads an existing shape is a renderer in `charts.js` and an entry in
 
 A machine is declared rather than discovered, so guard can say "VPS-1 has been
 down for six minutes" about a box that stopped talking to anyone. Two pages
-share one renderer (`client/public/cluster.js`): `/settings/cluster` declares,
-edits and locks machines; `/cluster` is the operational surface — a **list**, one line per
-machine, grouped, with the stored commands a click away and deliberately
-nothing that could redefine one. The head is what a machine is *found* by —
+share one renderer (`client/public/cluster.js`). Both now live on `/cluster`:
+the grouped ops surface — a **list**, one line per machine, with the stored
+commands a click away — and, below it, the form and rows that declare, edit and
+lock. `/settings/cluster` is a permanent redirect here; settings is
+configuration only. The head is what a machine is *found* by —
 status, name, tags, address, and five numbers in fixed columns — and the fold
 is what it is *acted on* by. Shut is the default; open is what is remembered.
 A tag is a label
@@ -482,12 +485,15 @@ secrets are sealed with — unset, guard generates `<db>.key` beside the databas
 part of the backup and never part of the repository. **`guard-vault` will not generate
 one**: without the key it refuses to start rather than answering with values it cannot
 decrypt. `GUARD_VAULT_ADDR` (:4319) is where it listens; how often one key's use is
-recorded is the server's own answer. `GUARD_SSH_TIMEOUT` bounds one command run,
+recorded is the server's own answer. `GUARD_VAULT_PROXY=1` also serves
+`/v1/secrets` on guard's port, forwarded to the vault — one door for the VPC,
+one for a caller that cannot reach it, and off by default because guard's port
+is the published one. `GUARD_SSH_TIMEOUT` bounds one command run,
 `GUARD_SCHEDULE_TIMEOUT` one scheduled run (30m). Alerts go to the destinations
 named on Settings → Alerts and to no environment variable.
 Every loop's cadence is a constant beside the loop — the budgets every 5m, the
 machine rules every 30s, the watched views every minute, a firing rule quiet for 6h
-between repeats. **Twenty-one `GUARD_*` variables, and that is the whole list**: the
+between repeats. **Twenty-two `GUARD_*` variables, and that is the whole list**: the
 catalogue on Settings → Configuration holds the six somebody changes, Security holds
 the ten about signing in, and the rest are the database, the key, the two tokens and
 the two escape hatches. Anything that reads like a tuning knob was deleted rather

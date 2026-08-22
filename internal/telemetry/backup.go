@@ -143,7 +143,7 @@ func (s *Store) BackupSummary() (model.BackupSummary, error) {
 			continue
 		}
 		var rows int
-		if err := s.db.QueryRow(`SELECT count(*) FROM "` + table.name + `"`).Scan(&rows); err != nil {
+		if err := s.rdb.QueryRow(`SELECT count(*) FROM "` + table.name + `"`).Scan(&rows); err != nil {
 			return model.BackupSummary{}, fmt.Errorf("count %s: %w", table.name, err)
 		}
 		line := model.BackupTableSummary{Name: table.name, Label: table.label, Group: table.group, Rows: rows}
@@ -153,7 +153,7 @@ func (s *Store) BackupSummary() (model.BackupSummary, error) {
 			}
 			var sealed int
 			query := fmt.Sprintf(`SELECT count(*) FROM %q WHERE %q IS NOT NULL AND length(%q) > 0`, table.name, column, column)
-			if err := s.db.QueryRow(query).Scan(&sealed); err != nil {
+			if err := s.rdb.QueryRow(query).Scan(&sealed); err != nil {
 				return model.BackupSummary{}, fmt.Errorf("count %s.%s: %w", table.name, column, err)
 			}
 			line.Sealed += sealed
@@ -219,7 +219,7 @@ func (s *Store) ExportBackup(passphrase string) (model.Backup, error) {
 		for i, column := range columns {
 			list[i] = fmt.Sprintf("%q", column)
 		}
-		rows, err := s.db.Query(fmt.Sprintf(`SELECT %s FROM %q`, strings.Join(list, ", "), table.name))
+		rows, err := s.rdb.Query(fmt.Sprintf(`SELECT %s FROM %q`, strings.Join(list, ", "), table.name))
 		if err != nil {
 			return model.Backup{}, fmt.Errorf("read %s: %w", table.name, err)
 		}

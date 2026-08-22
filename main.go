@@ -22,6 +22,7 @@ import (
 	"github.com/hushkey-app/guard/internal/config"
 	"github.com/hushkey-app/guard/internal/deploy"
 	"github.com/hushkey-app/guard/internal/ingest"
+	"github.com/hushkey-app/guard/internal/vaultproxy"
 	"github.com/hushkey-app/guard/internal/notify"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/remote"
@@ -192,6 +193,19 @@ func main() {
 	// wrong to take from the payload.
 	receiver.RegisterBrowser(mux, ingest.Browser{Origins: splitList(os.Getenv("GUARD_RUM_ORIGINS"))})
 
+	// The secrets endpoints, forwarded to guard-vault, for the caller that
+	// cannot reach :4319. Off unless asked for: guard's port is usually the
+	// published one, and this is the one route where that difference decides
+	// whether a leaked key is usable from the internet. It sits under /v1/, so
+	// it is outside sign-in like every other machine route — and it has to be,
+	// because the credential it takes is a vault key rather than a session.
+	if err := vaultproxy.Register(mux, vaultproxy.Config{
+		Enabled:  config.On("GUARD_VAULT_PROXY"),
+		Upstream: vaultproxy.UpstreamFrom(os.Getenv("GUARD_VAULT_ADDR")),
+	}); err != nil {
+		log.Fatal(err)
+	}
+
 	// The cluster prober: the one part of guard that makes outbound requests.
 	// It watches machines that were declared rather than ones that talk to
 	// us — the difference between "this service stopped sending telemetry" and
@@ -308,6 +322,14 @@ func main() {
 
 	// Built at startup from the same table that was just registered, so it
 	// cannot describe an endpoint this binary does not serve.
+	// /settings/cluster became /cluster: a machine is declared and acted on in
+	// one place, and settings is configuration. Kept as a redirect rather than
+	// dropped, because the path is in bookmarks, in alert emails already sent,
+	// and in anything anyone wrote down.
+	mux.HandleFunc("GET /settings/cluster", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/cluster", http.StatusMovedPermanently)
+	})
+
 	mux.HandleFunc("GET /api/openapi.json", api.OpenAPI(api.Info{
 		Title:       "Guard",
 		Version:     build.Tag(),

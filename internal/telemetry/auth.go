@@ -126,7 +126,7 @@ VALUES (?,?,?,?,?,?,?,?)`, session.Hash, session.Provider, session.Subject, sess
 func (s *Store) Session(hash []byte) (model.Session, error) {
 	var session model.Session
 	var created, expires int64
-	err := s.db.QueryRow(`SELECT token_hash, provider, subject, email, name, picture, created_at_ns, expires_at_ns
+	err := s.rdb.QueryRow(`SELECT token_hash, provider, subject, email, name, picture, created_at_ns, expires_at_ns
 FROM auth_sessions WHERE token_hash = ?`, hash).
 		Scan(&session.Hash, &session.Provider, &session.Subject, &session.Email,
 			&session.Name, &session.Picture, &created, &expires)

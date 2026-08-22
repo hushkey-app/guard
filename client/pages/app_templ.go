@@ -10,12 +10,8 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"github.com/axadrn/shadcn-templ/v2/components/button"
-	"github.com/hushkey-app/guard/client/ui"
 	"github.com/hushkey-app/guard/client/ui/components"
-	"github.com/hushkey-app/guard/internal/build"
-	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/mirairoad/howl-go/core/router"
-	"github.com/mirairoad/howl-go/core/state"
 )
 
 func App(title, head string) templ.Component {
@@ -46,7 +42,7 @@ func App(title, head string) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 25, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 21, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -59,7 +55,7 @@ func App(title, head string) templ.Component {
 		var templ_7745c5c3_Var3 templ.SafeURL
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(router.Asset(ctx, "app.css"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 26, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 22, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -80,7 +76,7 @@ func App(title, head string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Asset(ctx, "app.js"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 32, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 28, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
@@ -93,7 +89,7 @@ func App(title, head string) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Asset(ctx, "guard.js"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 33, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 29, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -107,249 +103,20 @@ func App(title, head string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<!--/page-head--></head><body class=\"min-h-screen bg-background font-sans text-foreground antialiased\"><!-- The sidebar is a sibling of this checkbox so `peer-checked:` can\n\t\t\t     reach it: below lg it slides in, from lg it is simply always\n\t\t\t     open. No JavaScript owns the navigation. --><input id=\"nav-drawer\" type=\"checkbox\" class=\"peer sr-only\"> <label for=\"nav-drawer\" aria-hidden=\"true\" class=\"fixed inset-0 z-30 hidden bg-black/60 peer-checked:block lg:peer-checked:hidden\"></label><aside class=\"fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r border-sidebar-border bg-sidebar p-4 transition-transform duration-200 peer-checked:translate-x-0 lg:translate-x-0\"><a href=\"/\" class=\"mb-7 flex items-center gap-3 px-2 py-1\"><div class=\"grid size-9 place-items-center rounded-xl bg-primary text-lg font-black text-primary-foreground\">G</div><div><div class=\"font-semibold tracking-tight\">Guard</div><div class=\"text-[.65rem] uppercase tracking-[.2em] text-muted-foreground\">watch the pack</div></div></a><nav class=\"flex flex-col gap-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<!--/page-head--></head><body class=\"min-h-screen bg-background font-sans text-foreground antialiased\"><!-- The document shell, and nothing that depends on the route.\n\t\t\t     A client-side navigation swaps #outlet and only #outlet, so\n\t\t\t     anything route-dependent parked here would freeze on whichever\n\t\t\t     page was loaded first. The sidebar and the content frame moved\n\t\t\t     to client/pages/layout.templ for exactly that reason; what is\n\t\t\t     left below is furniture that is deliberately outside the outlet\n\t\t\t     because it must outlive a navigation. --><main id=\"outlet\" data-route=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		for i, group := range ui.NavGroups(router.Nav(router.Routes(ctx))) {
-			if i > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"mt-2 mb-2 border-t border-sidebar-border\"></div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			for _, route := range group {
-				templ_7745c5c3_Err = ui.NavLink(route.Pattern, route.Label).Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
+		var templ_7745c5c3_Var6 string
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Current(ctx))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 42, Col: 53}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</nav><!-- Both cards sit at the bottom, so the space above them belongs to\n\t\t\t\t     one wrapper: two siblings each carrying mt-auto would split the\n\t\t\t\t     free space between them and drift apart. --><div class=\"mt-auto space-y-3\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ui.UpdateCard().Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 text-xs leading-5 text-muted-foreground\"><div class=\"min-w-0\"><div class=\"mb-1 font-semibold text-foreground\">OTLP/HTTP</div><code class=\"break-all font-mono\">localhost:4318</code></div><!-- Ghost by default, tinted by aria-current: the same reason\n\t\t\t\t\t     NavLink works that way — this sits outside #outlet, so a\n\t\t\t\t\t     variant chosen at render time would freeze. -->")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = ui.IconSettings().Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Href:    "/settings",
-			Size:    button.SizeIconSm,
-			Variant: button.VariantGhost,
-			Class:   "aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground",
-			Attributes: templ.Attributes{
-				"aria-label":    "Open settings",
-				"title":         "Settings",
-				"data-nav-link": "true",
-				"aria-current":  ui.Current(router.Current(ctx) == "/settings"),
-			},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div></div><!-- Who is looking, when guard has been told to ask. Absent on an\n\t\t\t\t     instance with no sign-in configured, which is why it is a\n\t\t\t\t     branch rather than an empty row: there is nobody to name. -->")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		viewer := state.Get[model.Viewer](ctx)
-		if viewer.SignedIn() {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"mt-3 flex items-center gap-2.5 rounded-xl border border-border bg-card p-3\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if viewer.Picture != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<img src=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var7 string
-				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(viewer.Picture)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 98, Col: 32}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" alt=\"\" width=\"28\" height=\"28\" class=\"size-7 shrink-0 rounded-full object-cover\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"grid size-7 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var8 string
-				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(viewer.Initial())
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 100, Col: 140}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"min-w-0 flex-1\"><div class=\"truncate text-xs font-medium\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var9 string
-			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(viewer.Display())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 103, Col: 67}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div><div class=\"truncate text-[.65rem] text-muted-foreground\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(viewer.Email)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 104, Col: 79}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div><!-- A form, not a link: signing out changes something, and a\n\t\t\t\t\t\t     GET that changes something is a GET some prefetcher will\n\t\t\t\t\t\t     eventually make for you. --><form method=\"post\" action=\"/auth/logout\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-				if !templ_7745c5c3_IsBuffer {
-					defer func() {
-						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-						if templ_7745c5c3_Err == nil {
-							templ_7745c5c3_Err = templ_7745c5c3_BufErr
-						}
-					}()
-				}
-				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = ui.IconSignOut().Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				return nil
-			})
-			templ_7745c5c3_Err = button.Button(button.Props{
-				Type:       button.TypeSubmit,
-				Variant:    button.VariantGhost,
-				Size:       button.SizeIconSm,
-				Attributes: templ.Attributes{"aria-label": "Sign out", "title": "Sign out"},
-			}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</form></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<!-- The live tick's own control, in the sidebar rather than a bar\n\t\t\t\t     across the top: it is one thing about the whole session, like\n\t\t\t\t     the endpoint under it and the version under that, and it was the\n\t\t\t\t     only reason that row existed. guard.js drives every element\n\t\t\t\t     carrying these attributes, so moving them is all this took. -->")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<span class=\"signal-dot\" data-live-dot></span> <span data-live-status>connecting</span> <span data-live-action class=\"ml-auto text-muted-foreground\">Pause</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantGhost,
-			Size:       button.SizeSm,
-			Class:      "mt-3 w-full justify-start gap-2 px-2 text-xs",
-			Attributes: templ.Attributes{"data-live-toggle": true, "aria-label": "Pause live refresh"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<!-- Who made it and which build is answering. The version is the\n\t\t\t\t     same string the OpenAPI document reports, so a bug report\n\t\t\t\t     naming what the sidebar says names something real.\n\t\t\t\t     A release is `v0.1.0`; a local build is what `git describe`\n\t\t\t\t     said, which is longer and says which commit — so it is\n\t\t\t\t     truncated with the whole of it on hover rather than\n\t\t\t\t     shortened here into something that is not the version. --><div class=\"mt-3 flex items-center justify-between gap-2 px-2 text-[.65rem] text-muted-foreground\"><span class=\"shrink-0\">Guard by <span class=\"font-medium text-foreground\">Hushkey</span></span> <span title=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(build.Tag())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 145, Col: 30}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" class=\"truncate font-mono tabular-nums\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var14 string
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(build.Tag())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 145, Col: 86}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</span></div></aside><div class=\"flex min-h-screen flex-col lg:pl-64\"><!-- No top bar. It carried a page title every page already prints as\n\t\t\t\t     its own heading, and two controls — so the controls moved to\n\t\t\t\t     where they belong and the row went with it. What is left is a\n\t\t\t\t     mobile-only handle for the drawer, floating, because below lg\n\t\t\t\t     the sidebar is off-canvas and there has to be a way back to it. --><label for=\"nav-drawer\" aria-label=\"Open navigation\" class=\"fixed left-4 top-4 z-30 grid size-9 cursor-pointer place-items-center rounded-lg border border-border bg-card/95 text-muted-foreground shadow-lg backdrop-blur hover:text-foreground lg:hidden\">☰</label><main id=\"outlet\" data-route=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(router.Current(ctx))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 159, Col: 54}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" class=\"mx-auto w-full max-w-[96rem] p-4 lg:p-8\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -357,11 +124,11 @@ func App(title, head string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</main></div><!-- Row detail. Present on every page because guard.js fills it from\n\t\t\t     whichever table was clicked; closed it is off-canvas and inert. --><div data-detail-shell class=\"fixed inset-0 z-50\"><button type=\"button\" data-detail-close aria-label=\"Close details\" class=\"absolute inset-0 bg-black/60 transition-opacity\"></button><aside data-detail-panel class=\"pointer-events-auto absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-border bg-card text-card-foreground shadow-2xl transition-transform duration-200\"><div class=\"flex items-center justify-between gap-4 border-b border-border p-5\"><div class=\"min-w-0\"><p data-detail-eyebrow class=\"text-xs font-semibold uppercase tracking-[.18em] text-primary\">Telemetry detail</p><h2 data-detail-title class=\"mt-1 truncate text-xl font-semibold\">Event</h2></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</main><!-- Row detail. Present on every page because guard.js fills it from\n\t\t\t     whichever table was clicked; closed it is off-canvas and inert. --><div data-detail-shell class=\"fixed inset-0 z-50\"><button type=\"button\" data-detail-close aria-label=\"Close details\" class=\"absolute inset-0 bg-black/60 transition-opacity\"></button><aside data-detail-panel class=\"pointer-events-auto absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-border bg-card text-card-foreground shadow-2xl transition-transform duration-200\"><div class=\"flex items-center justify-between gap-4 border-b border-border p-5\"><div class=\"min-w-0\"><p data-detail-eyebrow class=\"text-xs font-semibold uppercase tracking-[.18em] text-primary\">Telemetry detail</p><h2 data-detail-title class=\"mt-1 truncate text-xl font-semibold\">Event</h2></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var16 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var7 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -373,7 +140,7 @@ func App(title, head string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "✕")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "✕")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -383,15 +150,15 @@ func App(title, head string) templ.Component {
 			Variant:    button.VariantGhost,
 			Size:       button.SizeIconSm,
 			Attributes: templ.Attributes{"data-detail-close": true, "aria-label": "Close details"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div><div data-detail-content class=\"flex-1 space-y-6 overflow-y-auto p-5\"></div><!-- Shown when the drawer is listing what is behind a mark\n\t\t\t\t\t     rather than one event: the way back to the chart. --><div data-detail-footer hidden class=\"border-t border-border p-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div data-detail-content class=\"flex-1 space-y-6 overflow-y-auto p-5\"></div><!-- Shown when the drawer is listing what is behind a mark\n\t\t\t\t\t     rather than one event: the way back to the chart. --><div data-detail-footer hidden class=\"border-t border-border p-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var17 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var8 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -403,7 +170,7 @@ func App(title, head string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "← Back to the list")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "← Back to the list")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -414,11 +181,11 @@ func App(title, head string) templ.Component {
 			Size:       button.SizeSm,
 			Class:      "w-full",
 			Attributes: templ.Attributes{"data-detail-back": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var17), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</div></aside></div><!-- Chart furniture that outlives a navigation, next to the drawer\n\t\t\t     it feeds: every page draws, so every page needs these. -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div></aside></div><!-- Chart furniture that outlives a navigation, next to the drawer\n\t\t\t     it feeds: every page draws, so every page needs these. -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -430,7 +197,7 @@ func App(title, head string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -454,29 +221,29 @@ func NotFound(path string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var18 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var18 == nil {
-			templ_7745c5c3_Var18 = templ.NopComponent
+		templ_7745c5c3_Var9 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var9 == nil {
+			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<section class=\"grid min-h-[60vh] place-items-center text-center\"><div><p class=\"text-7xl font-black text-primary\">404</p><h1 class=\"mt-4 text-2xl font-semibold\">Nothing on watch here</h1><p class=\"mt-2 text-muted-foreground\">No route at <code class=\"font-mono\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<section class=\"grid min-h-[60vh] place-items-center text-center\"><div><p class=\"text-7xl font-black text-primary\">404</p><h1 class=\"mt-4 text-2xl font-semibold\">Nothing on watch here</h1><p class=\"mt-2 text-muted-foreground\">No route at <code class=\"font-mono\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var19 string
-		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(path)
+		var templ_7745c5c3_Var10 string
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(path)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 207, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/app.templ`, Line: 89, Col: 83}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</code>.</p>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var20 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</code>.</p>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -488,17 +255,17 @@ func NotFound(path string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "Back to overview")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "Back to overview")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Href: "/", Size: button.SizeSm, Class: "mt-6"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var20), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Href: "/", Size: button.SizeSm, Class: "mt-6"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

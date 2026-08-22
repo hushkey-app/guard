@@ -383,6 +383,136 @@ var composeImage = regexp.MustCompile(`(?m)^[ \t]*image:[ \t]*["']?([^\s"']+)["'
 // tagRef is how a compose file says "the tag guard is deploying".
 var tagRef = regexp.MustCompile(`\$\{TAG(:-[^}]*)?\}|\$TAG\b`)
 
+// envFileRef is a service saying it reads a file of variables.
+var envFileRef = regexp.MustCompile(`(?m)^[ \t]*env_file[ \t]*:`)
+
+// UndeliveredVars names the variables a template declares that would reach
+// nothing.
+//
+// This is the sharpest edge in the whole deploy path, and it is silent. Guard
+// writes its variables into a `.env` beside the compose file — and docker
+// compose reads that file for **interpolation of the compose file itself**.
+// It does not put those values inside the container. A service that does not
+// say `env_file:` and does not mention the variable anywhere starts with none
+// of them, and an application written to fall back on a default starts against
+// the default: the wrong database, the wrong URL, and a container that is up
+// and answering, so the health gate passes it.
+//
+// So a variable that is declared and then referenced nowhere is refused, for
+// the same reason a compose file that never mentions ${TAG} is refused — it
+// looks like a successful deploy of something it did not do.
+//
+// The test is deliberately generous. Any `env_file:` at all means the author
+// has thought about delivery and guard stops guessing; otherwise the name has
+// to appear somewhere in the file, which covers `${DATABASE_URL}` under
+// environment:, a bare pass-through entry, and a value used in a port or a
+// volume. Only a name that appears nowhere is refused.
+func UndeliveredVars(compose string, vars []TemplateVar) []string {
+	if envFileRef.MatchString(compose) {
+		return nil
+	}
+	var missing []string
+	for _, v := range vars {
+		key := strings.TrimSpace(v.Key)
+		if key == "" || key == "TAG" {
+			continue
+		}
+		if !strings.Contains(compose, key) {
+			missing = append(missing, key)
+		}
+	}
+	return missing
+}
+
+// ServicesInCompose lists the services a compose file declares, in order.
+//
+// Line-based rather than a YAML parse, like everything else that reads a
+// compose file here: guard stores the file as text, writes it back as text, and
+// a parse-and-reserialise would silently reformat what somebody wrote. It reads
+// the block under a top-level `services:` and takes the keys one indent in.
+func ServicesInCompose(compose string) []string {
+	var out []string
+	lines := strings.Split(compose, "\n")
+	inServices := false
+	indent := -1
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		width := len(line) - len(strings.TrimLeft(line, " \t"))
+		if width == 0 {
+			// A new top-level key ends the block — including `services:` itself.
+			inServices = strings.HasPrefix(trimmed, "services:")
+			indent = -1
+			continue
+		}
+		if !inServices {
+			continue
+		}
+		if indent == -1 {
+			indent = width
+		}
+		if width != indent {
+			continue
+		}
+		name, _, found := strings.Cut(trimmed, ":")
+		if !found {
+			continue
+		}
+		if name = strings.TrimSpace(name); servicePattern.MatchString(name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// ServiceForTag is the service a deploy is about: the one whose image carries
+// ${TAG}.
+//
+// Derived rather than guessed from the template's name, and the difference is
+// not cosmetic. The name is what a person calls the deploy ("pack-app"); the
+// service is what the compose file calls the container ("app"), and nothing
+// makes those the same string. A guess that disagrees with the file is a
+// deploy addressing a service that is not there.
+func ServiceForTag(compose string) string {
+	lines := strings.Split(compose, "\n")
+	inServices := false
+	indent := -1
+	current := ""
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		width := len(line) - len(strings.TrimLeft(line, " \t"))
+		if width == 0 {
+			inServices = strings.HasPrefix(trimmed, "services:")
+			indent, current = -1, ""
+			continue
+		}
+		if !inServices {
+			continue
+		}
+		if indent == -1 {
+			indent = width
+		}
+		if width == indent {
+			name, _, found := strings.Cut(trimmed, ":")
+			if name = strings.TrimSpace(name); found && servicePattern.MatchString(name) {
+				current = name
+			} else {
+				current = ""
+			}
+			continue
+		}
+		if current != "" && composeImage.MatchString(line) && tagRef.MatchString(line) {
+			return current
+		}
+	}
+	return ""
+}
+
 // ImageInCompose is the image a deploy is actually about: the one the compose
 // file tags with ${TAG}.
 //
@@ -471,6 +601,12 @@ func (t *DeployTemplate) Normalise() error {
 	t.Path = strings.TrimSpace(t.Path)
 	slug := Slug(t.Name)
 	if t.ServiceName == "" {
+		// The compose file first. The template's name is what a person calls
+		// the deploy; the service is what the file calls the container, and a
+		// slug of the one is not the other.
+		t.ServiceName = ServiceForTag(t.ComposeYAML)
+	}
+	if t.ServiceName == "" {
 		t.ServiceName = slug
 	}
 	if t.Path == "" && slug != "" {
@@ -504,6 +640,20 @@ func (t DeployTemplate) Validate() error {
 	if strings.TrimSpace(t.ComposeYAML) == "" {
 		return errors.New("the compose file is empty")
 	}
+	if declared := ServicesInCompose(t.ComposeYAML); len(declared) > 0 {
+		found := false
+		for _, name := range declared {
+			if name == t.ServiceName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("this compose file has no service called " + t.ServiceName +
+				" — it declares " + strings.Join(declared, ", ") +
+				". The service is what the file calls the container, not what the template is called")
+		}
+	}
 	if err := ValidateHealthPath(t.HealthPath); err != nil {
 		return err
 	}
@@ -532,6 +682,13 @@ func (t DeployTemplate) Validate() error {
 		default:
 			return errors.New(key + " has to come from somewhere: a value here, or the vault")
 		}
+	}
+	if missing := UndeliveredVars(t.ComposeYAML, t.Vars); len(missing) > 0 {
+		return errors.New(strings.Join(missing, ", ") +
+			" would reach nothing: guard writes the variables into a .env beside the compose file, and " +
+			"docker compose reads that file to fill in ${...} in the compose file itself — it does not put " +
+			"them inside the container. Add `env_file: .env` to the " + t.ServiceName + " service, or " +
+			"reference them in the file")
 	}
 	return nil
 }

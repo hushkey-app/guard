@@ -103,7 +103,13 @@ type Watch struct {
 }
 
 // Enabled reports whether there is anything to poll.
-func (w *Watch) Enabled() bool { return strings.TrimSpace(w.Repo) != "" && w.Interval != 0 }
+// A repository is the whole of it. Interval used to be part of this test, which
+// made the feature dead in production for a subtle reason: main.go constructs
+// the watcher without one, so Enabled was false, Run returned before its first
+// tick, and no instance ever polled — while every test set an interval and so
+// every test passed. Zero means "the default", exactly as the field's own
+// comment says, and Run is where that default belongs.
+func (w *Watch) Enabled() bool { return strings.TrimSpace(w.Repo) != "" }
 
 // State returns the last answer, plus what the version file currently says.
 //
@@ -134,7 +140,7 @@ func (w *Watch) Run(ctx context.Context) {
 	}
 	interval := w.Interval
 	if interval <= 0 {
-		interval = 15 * time.Minute
+		interval = DefaultInterval
 	}
 	w.Check(ctx)
 	ticker := time.NewTicker(interval)
@@ -147,6 +153,37 @@ func (w *Watch) Run(ctx context.Context) {
 			w.Check(ctx)
 		}
 	}
+}
+
+// MinimumGap is how close together two *asked-for* checks may be.
+//
+// GitHub allows an unauthenticated address sixty requests an hour and guard's
+// own timer already spends four of them. A button anybody may press is a button
+// somebody holds down, and spending the budget would take the sidebar's answer
+// down with it for the rest of the hour — so a press inside the gap returns the
+// answer that is already there rather than asking again. Ten seconds is long
+// enough that a person leaning on it cannot exhaust anything and short enough
+// that "check again" after fixing the network feels immediate.
+const MinimumGap = 10 * time.Second
+
+// CheckNow is the pressed check: the same request the timer makes, on demand,
+// with a floor under how often it may actually leave the box.
+//
+// It reports whether it asked. The page says "checked just now" either way,
+// because from the reader's side a fresh answer and a ten-second-old one are
+// the same answer — but a caller that wants to know can tell.
+func (w *Watch) CheckNow(ctx context.Context) (State, bool) {
+	if !w.Enabled() {
+		return w.State(), false
+	}
+	w.mu.RLock()
+	last := w.state.CheckedAt
+	w.mu.RUnlock()
+	if !last.IsZero() && time.Since(last) < MinimumGap {
+		return w.State(), false
+	}
+	w.Check(ctx)
+	return w.State(), true
 }
 
 // Check asks GitHub once. A failure is recorded and the last good answer is

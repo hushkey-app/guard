@@ -4,7 +4,7 @@
 // The shared vocabulary lives in core.js, the panel renderers in charts.js, and
 // everything under /views in views.js. This file imports all three; none of
 // them imports this one, so the dependency runs one way.
-import { adminHeaders, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
+import { adminHeaders, bytes, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, since, svgNS, text, timeText } from "./core.js";
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
 import { clusterNodes, refreshCluster, refreshMachine } from "./cluster.js";
@@ -574,8 +574,11 @@ async function liveTick() {
 let updateState = null;
 
 async function refreshUpdate() {
-  const card = qs("[data-update-card]");
-  if (!card) return;
+  // Either surface is reason enough to ask. The card is in the layout and the
+  // panel is on one page, and returning early when the card is missing would
+  // leave Settings -> Info permanently drawing dashes on any instance whose
+  // sidebar is not rendered.
+  if (!qs("[data-update-card]") && !qs("[data-info-version]")) return;
   try {
     updateState = await request("/api/update");
   } catch {
@@ -584,6 +587,7 @@ async function refreshUpdate() {
     return;
   }
   renderUpdate();
+  renderInfo();
 }
 
 function renderUpdate() {
@@ -624,10 +628,12 @@ function renderUpdate() {
 }
 
 async function applyUpdate() {
-  const card = qs("[data-update-card]");
-  const status = qs("[data-update-status]", card);
-  const button = qs("[data-update-apply]", card);
-  if (!updateState?.latest) return;
+  // Pressed from the sidebar card or from Settings -> Info; whichever is on
+  // screen owns the button and the line under it.
+  const onPage = Boolean(qs("[data-info-version]"));
+  const status = qs(onPage ? "[data-info-status]" : "[data-update-status]");
+  const button = qs(onPage ? "[data-info-update]" : "[data-update-apply]");
+  if (!updateState?.latest || !status || !button) return;
   button.disabled = true;
   status.textContent = "asking…";
   try {
@@ -635,7 +641,148 @@ async function applyUpdate() {
       method: "POST", headers: adminHeaders(),
       body: JSON.stringify({ version: updateState.latest }),
     });
+    status.textContent = "";
     renderUpdate();
+    renderInfo();
+  } catch (failure) {
+    status.textContent = failure.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// Settings -> Info. The sidebar card appears only when there is news, which is
+// right for a sidebar and useless for the page somebody opens *to check*. Same
+// state object, drawn in full: what is running, what the channel says, when
+// guard last asked, and what the version file pins.
+function renderInfo() {
+  const panel = qs("[data-info-version]");
+  if (!panel) return;
+  const state = updateState || {};
+  const dash = (value) => (value && String(value).trim()) || "—";
+
+  qs("[data-info-current]").textContent = dash(state.current);
+  const latest = qs("[data-info-latest]");
+  latest.textContent = dash(state.latest);
+  // No release yet means nowhere to point: a link to "#" that scrolls the page
+  // is worse than text.
+  if (state.url) {
+    latest.href = state.url;
+    latest.removeAttribute("aria-disabled");
+  } else {
+    latest.removeAttribute("href");
+  }
+  qs("[data-info-checked]").textContent = state.checked_at ? relativeTime(state.checked_at) : "never";
+  qs("[data-info-wanted]").textContent = dash(state.wanted);
+
+  const summary = qs("[data-info-summary]");
+  const update = qs("[data-info-update]");
+  update.hidden = true;
+  if (state.error) {
+    // Named rather than folded into "up to date": a check that could not reach
+    // GitHub knows nothing, and saying nothing is new would be a guess.
+    summary.hidden = false;
+    summary.textContent = `Could not reach the release repository — ${state.error}`;
+    return;
+  }
+  if (state.development) {
+    summary.hidden = false;
+    summary.textContent = "This is a development build, so there is nothing to compare it against.";
+    return;
+  }
+  if (!state.latest) {
+    summary.hidden = true;
+    return;
+  }
+  summary.hidden = false;
+  if (!state.available) {
+    summary.textContent = `Running the current release, ${state.latest}.`;
+    return;
+  }
+  if (state.wanted && state.wanted === state.latest) {
+    summary.textContent = `${state.latest} requested — the updater installs it within 15 minutes.`;
+    return;
+  }
+  if (!state.managed) {
+    summary.textContent = "A newer release exists, but this instance updates itself elsewhere.";
+    return;
+  }
+  summary.textContent = `${state.latest} is available.`;
+  update.hidden = false;
+}
+
+// The box guard is on. Read on mount rather than on the tick: it describes
+// hardware and a database size, neither of which moves in three seconds, and a
+// settings page that re-fetched on every pass would be spending requests to
+// redraw the same words.
+async function refreshHost() {
+  const panel = qs("[data-info-host]");
+  if (!panel) return;
+  const problem = qs("[data-info-host-error]");
+  let host;
+  try {
+    host = await request("/api/info");
+  } catch (failure) {
+    problem.hidden = false;
+    problem.textContent = failure.message;
+    return;
+  }
+  problem.hidden = true;
+
+  // Unmeasurable is a dash, never a zero — the has_* flags are the server
+  // saying which is which, and "0% of memory used" is a number somebody acts
+  // on. Off Linux most of this is legitimately empty.
+  const rows = [
+    ["Operating system", host.distro || `${host.os || "—"} ${host.arch || ""}`.trim()],
+    ["Kernel", host.kernel || "—"],
+    ["Hostname", host.hostname || "—"],
+    ["CPU", host.cpu_model ? `${host.cpu_model} · ${host.cpu_count} cores` : (host.cpu_count ? `${host.cpu_count} cores` : "—")],
+    ["Load", host.has_cpu
+      ? `${host.load_1.toFixed(2)} · ${host.load_5.toFixed(2)} · ${host.load_15.toFixed(2)}` +
+        (host.cpu_count ? ` over ${host.cpu_count}` : "")
+      : "—"],
+    ["Memory", host.has_memory
+      ? `${bytes(host.mem_used_kb * 1024)} of ${bytes(host.mem_total_kb * 1024)}` +
+        ` (${Math.round((host.mem_used_kb / host.mem_total_kb) * 100)}%)`
+      : "—"],
+    ["Disk", host.has_disk
+      ? `${bytes(host.disk_used_kb * 1024)} of ${bytes(host.disk_total_kb * 1024)}` +
+        ` (${Math.round((host.disk_used_kb / host.disk_total_kb) * 100)}%) on ${host.disk_path}`
+      : "—"],
+    ["Database", host.database_path
+      ? `${bytes(host.database_bytes)} at ${host.database_path}`
+      : "—"],
+    ["Host uptime", since(host.host_uptime_seconds)],
+    ["Guard uptime", since(host.process_uptime_seconds)],
+    ["Runtime", `${host.go_version || "—"} · ${host.goroutines} goroutines · ${bytes(host.heap_bytes)} heap`],
+    // Both explain something the page above cannot: no supervisor means the
+    // restart button is absent, and a container is why there is no
+    // /etc/guard and so no update button.
+    ["Process", [host.supervised ? "supervised" : "not supervised",
+      host.in_container ? "in a container" : null].filter(Boolean).join(" · ")],
+  ];
+
+  panel.replaceChildren(...rows.map(([label, value]) => {
+    const cell = el("div");
+    cell.append(
+      el("dt", "text-xs font-medium uppercase tracking-wider text-muted-foreground", label),
+      el("dd", "mt-1 text-sm break-words", value || "—"),
+    );
+    return cell;
+  }));
+}
+
+async function checkForUpdates() {
+  const button = qs("[data-info-check]");
+  const status = qs("[data-info-status]");
+  if (!button) return;
+  button.disabled = true;
+  status.textContent = "asking…";
+  try {
+    updateState = await request("/api/update/check", { method: "POST", headers: adminHeaders() });
+    status.textContent = "";
+    renderUpdate();
+    renderInfo();
   } catch (failure) {
     status.textContent = failure.message;
   } finally {
@@ -645,6 +792,8 @@ async function applyUpdate() {
 
 document.addEventListener("click", (event) => {
   if (event.target.closest("[data-update-apply]")) applyUpdate();
+  if (event.target.closest("[data-info-check]")) checkForUpdates();
+  if (event.target.closest("[data-info-update]")) applyUpdate();
 });
 
 // On a mount, and then rarely: the answer changes when somebody publishes a
@@ -667,9 +816,10 @@ globalThis.guardPageMount = (page) => {
     // and stayed there. So the page's own pass runs here as well; the store
     // shares in-flight loads by key, so this is not a second round of
     // requests, and everything it does put in the store is already drawn.
-    return Promise.allSettled([pending, refreshPage({ facets: true })]);
+    return Promise.allSettled([pending, refreshPage({ facets: true }), refreshHost()]);
   }
   initializedPage = page;
+  if (page === "info") return refreshHost();
   if (page === "views") return mountViews();
   return refreshPage({ facets: true });
 };

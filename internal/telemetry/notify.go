@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS cluster_monitor_state (
 
 // Webhooks lists the destinations, without their tokens.
 func (s *Store) Webhooks() ([]model.Webhook, error) {
-	rows, err := s.db.Query(`SELECT id,name,url,header,
+	rows, err := s.rdb.Query(`SELECT id,name,url,header,
 token IS NOT NULL AND length(token) > 0, created_ns, last_sent_ns, last_error
 FROM webhooks ORDER BY name COLLATE NOCASE, id`)
 	if err != nil {
@@ -138,7 +138,7 @@ func (s *Store) SaveWebhook(hook model.Webhook) (model.Webhook, error) {
 func (s *Store) Webhook(id int64) (model.Webhook, error) {
 	var hook model.Webhook
 	var created, sent int64
-	err := s.db.QueryRow(`SELECT id,name,url,header,
+	err := s.rdb.QueryRow(`SELECT id,name,url,header,
 token IS NOT NULL AND length(token) > 0, created_ns, last_sent_ns, last_error
 FROM webhooks WHERE id = ?`, id).
 		Scan(&hook.ID, &hook.Name, &hook.URL, &hook.Header, &hook.HasToken, &created, &sent, &hook.LastError)
@@ -185,7 +185,7 @@ func (s *Store) DeleteWebhook(id int64) error {
 func (s *Store) DestinationFor(id int64) (notify.Destination, error) {
 	var destination notify.Destination
 	var sealed []byte
-	err := s.db.QueryRow(`SELECT id,name,url,header,token FROM webhooks WHERE id = ?`, id).
+	err := s.rdb.QueryRow(`SELECT id,name,url,header,token FROM webhooks WHERE id = ?`, id).
 		Scan(&destination.ID, &destination.Name, &destination.URL, &destination.Header, &sealed)
 	if err != nil {
 		return notify.Destination{}, err
@@ -211,7 +211,7 @@ func (s *Store) RecordDelivery(id int64, at time.Time, failure string) error {
 
 // Monitors lists the rules, each with where it stands.
 func (s *Store) Monitors() ([]model.Monitor, error) {
-	rows, err := s.db.Query(`SELECT m.id,m.node_id,COALESCE(n.name,''),m.metric,m.op,m.threshold,
+	rows, err := s.rdb.Query(`SELECT m.id,m.node_id,COALESCE(n.name,''),m.metric,m.op,m.threshold,
 m.for_seconds,m.webhook_id,m.enabled
 FROM cluster_monitors m LEFT JOIN cluster_nodes n ON n.id = m.node_id
 ORDER BY m.node_id, m.metric, m.id`)
@@ -242,7 +242,7 @@ ORDER BY m.node_id, m.metric, m.id`)
 }
 
 func (s *Store) monitorStates() (map[int64][]model.MonitorState, error) {
-	rows, err := s.db.Query(`SELECT s.monitor_id,s.node_id,COALESCE(n.name,''),s.firing,s.since_ns,s.alerted_ns,s.value
+	rows, err := s.rdb.Query(`SELECT s.monitor_id,s.node_id,COALESCE(n.name,''),s.firing,s.since_ns,s.alerted_ns,s.value
 FROM cluster_monitor_state s LEFT JOIN cluster_nodes n ON n.id = s.node_id`)
 	if err != nil {
 		return nil, err

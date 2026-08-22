@@ -191,6 +191,11 @@ var Entries = []Entry{
 		Help: "127.0.0.1 serves this box alone; the private address serves the VPC. Never 0.0.0.0.",
 	},
 	{
+		Name: "GUARD_VAULT_PROXY", Group: GroupVault, Label: "Serve /v1/secrets on guard's port too", Kind: KindText,
+		Help: "1 also answers /v1/secrets here, forwarded to the vault — for an application that cannot reach :4319. " +
+			"Guard's port is usually the published one, so this makes a leaked key usable wherever that port is. Empty is off.",
+	},
+	{
 		Name: "GUARD_GOOGLE_CLIENT_ID", Group: GroupGoogle, Label: "Google client id", Kind: KindText,
 		Help: "Set both halves to draw the Google button. Half a configuration is fatal at startup, on purpose.",
 	},
@@ -280,11 +285,19 @@ type Set struct {
 // supervisor's own word rather than a setting somebody has to keep true.
 func Supervised() bool { return os.Getenv("INVOCATION_ID") != "" }
 
-// Ignored reports whether stored configuration is being skipped this start.
-func Ignored() bool {
-	value := strings.TrimSpace(os.Getenv("GUARD_CONFIG_IGNORE"))
+// On reports whether a switch in the environment is set.
+//
+// One rule for every yes/no value guard reads, so `1`, `true` and `yes` all
+// work and nobody has to remember which spelling a particular variable wanted.
+// Empty, `0` and `false` are off; anything else is on, because a value somebody
+// typed on purpose should not be silently ignored for not being the magic word.
+func On(name string) bool {
+	value := strings.TrimSpace(os.Getenv(name))
 	return value != "" && value != "0" && !strings.EqualFold(value, "false")
 }
+
+// Ignored reports whether stored configuration is being skipped this start.
+func Ignored() bool { return On("GUARD_CONFIG_IGNORE") }
 
 // Apply puts the stored values into the process environment.
 //

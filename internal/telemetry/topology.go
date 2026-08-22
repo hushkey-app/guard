@@ -218,11 +218,11 @@ func (s *Store) ClusterTopology() (model.ClusterTopology, error) {
 
 func (s *Store) topologyShape() (topologyShape, error) {
 	var shape topologyShape
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM cluster_nodes`).Scan(&shape.nodes); err != nil {
+	if err := s.rdb.QueryRow(`SELECT COUNT(*) FROM cluster_nodes`).Scan(&shape.nodes); err != nil {
 		return shape, err
 	}
 	var newest sql.NullInt64
-	if err := s.db.QueryRow(`SELECT COUNT(*), MAX(last_seen_ns) FROM event_instances`).Scan(&shape.instances, &newest); err != nil {
+	if err := s.rdb.QueryRow(`SELECT COUNT(*), MAX(last_seen_ns) FROM event_instances`).Scan(&shape.instances, &newest); err != nil {
 		return shape, err
 	}
 	shape.newest = newest.Int64
@@ -235,7 +235,7 @@ func (s *Store) topologyShape() (topologyShape, error) {
 // few hundred events is an instance running there, and reading a million rows
 // to find the same answer would make this the most expensive thing on the page.
 func (s *Store) hostsFor(service, instance string) (map[string]bool, error) {
-	rows, err := s.db.Query(`SELECT attributes_json FROM events
+	rows, err := s.rdb.Query(`SELECT attributes_json FROM events
 WHERE service = ? AND instance = ? AND json_type(attributes_json) = 'object'
 ORDER BY id DESC LIMIT 300`, service, instance)
 	if err != nil {

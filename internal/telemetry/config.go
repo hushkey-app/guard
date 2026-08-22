@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS config (
 // start over one unreadable timeout would be a guard that cannot be fixed from
 // the dashboard that stores it.
 func (s *Store) Config() (map[string]string, error) {
-	rows, err := s.db.Query(`SELECT name, value FROM config`)
+	rows, err := s.rdb.Query(`SELECT name, value FROM config`)
 	if err != nil {
 		return nil, err
 	}

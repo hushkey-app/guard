@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS auth_members (
 // Members lists everyone on the list, admins first and then alphabetically —
 // the order somebody reads it in when the question is "who can get in".
 func (s *Store) Members() ([]model.Member, error) {
-	rows, err := s.db.Query(`SELECT email, role, name, provider, added_by, added_at_ns, last_seen_ns
+	rows, err := s.rdb.Query(`SELECT email, role, name, provider, added_by, added_at_ns, last_seen_ns
 FROM auth_members ORDER BY role = 'admin' DESC, email`)
 	if err != nil {
 		return nil, err
@@ -60,7 +60,7 @@ FROM auth_members ORDER BY role = 'admin' DESC, email`)
 
 // Member reads one by address, matched the way every address in guard is.
 func (s *Store) Member(email string) (model.Member, error) {
-	row := s.db.QueryRow(`SELECT email, role, name, provider, added_by, added_at_ns, last_seen_ns
+	row := s.rdb.QueryRow(`SELECT email, role, name, provider, added_by, added_at_ns, last_seen_ns
 FROM auth_members WHERE email = ?`, model.NormalizeEmail(email))
 	return scanMember(row)
 }

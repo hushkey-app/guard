@@ -29,6 +29,11 @@ import (
 // machine's own row afterwards. It is not what you are thinking about while
 // typing a name and a URL, and a form that asks for a root password before it
 // has ever reached the box is a form people abandon.
+// ClusterForm is two steps driven by two radios and sibling selectors — no
+// JavaScript, and nothing for guard.js to know about: every [data-node] input
+// is in the DOM on both steps, so the submit handler reads the same form it
+// always did. The required fields are on step one, which is why hiding step two
+// cannot leave the browser trying to focus an invalid field it is not showing.
 func ClusterForm() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -74,6 +79,18 @@ func ClusterForm() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form data-cluster-form class=\"space-y-5\"><input id=\"machine-step-1\" type=\"radio\" name=\"machine-step\" checked class=\"peer/one sr-only\"> <input id=\"machine-step-2\" type=\"radio\" name=\"machine-step\" class=\"peer/two sr-only\"><!-- The steps name themselves. Two of seven fields are optional\n\t\t\t\t     and they are all on step two, so the split is the sentence:\n\t\t\t\t     this is what guard needs to watch it, that is what it needs\n\t\t\t\t     to log in. --><div class=\"flex items-center gap-2 text-xs\"><label for=\"machine-step-1\" class=\"cursor-pointer rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground peer-checked/one:bg-sidebar-accent peer-checked/one:text-foreground\">1 · Where it answers</label>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = ui.Icon("chevron", "size-3 -rotate-90 opacity-40").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<label for=\"machine-step-2\" class=\"cursor-pointer rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground peer-checked/two:bg-sidebar-accent peer-checked/two:text-foreground\">2 · How to log in <span class=\"opacity-60\">(optional)</span></label></div><div class=\"hidden peer-checked/one:block\"><p class=\"mb-4 text-sm text-muted-foreground\">Guard fetches the health address on a timer and records whether it answered.</p><div class=\"grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 				templ_7745c5c3_Var4 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -86,81 +103,7 @@ func ClusterForm() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "Add a machine")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					return nil
-				})
-				templ_7745c5c3_Err = card.Title().Render(templ.WithChildren(ctx, templ_7745c5c3_Var4), templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Var5 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-					if !templ_7745c5c3_IsBuffer {
-						defer func() {
-							templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-							if templ_7745c5c3_Err == nil {
-								templ_7745c5c3_Err = templ_7745c5c3_BufErr
-							}
-						}()
-					}
-					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "Guard fetches the health address on a timer and records whether it answered.")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					return nil
-				})
-				templ_7745c5c3_Err = card.Description().Render(templ.WithChildren(ctx, templ_7745c5c3_Var5), templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				return nil
-			})
-			templ_7745c5c3_Err = card.Header().Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-				if !templ_7745c5c3_IsBuffer {
-					defer func() {
-						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-						if templ_7745c5c3_Err == nil {
-							templ_7745c5c3_Err = templ_7745c5c3_BufErr
-						}
-					}()
-				}
-				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<form data-cluster-form class=\"space-y-4\"><div class=\"grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Var7 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-					if !templ_7745c5c3_IsBuffer {
-						defer func() {
-							templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-							if templ_7745c5c3_Err == nil {
-								templ_7745c5c3_Err = templ_7745c5c3_BufErr
-							}
-						}()
-					}
-					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var8 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var5 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -172,17 +115,17 @@ func ClusterForm() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "Name")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "Name")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-name"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-name"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var5), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -197,11 +140,11 @@ func ClusterForm() templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var4), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var9 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -213,7 +156,7 @@ func ClusterForm() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var7 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -225,17 +168,17 @@ func ClusterForm() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "Address")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "Address")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-domain"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-domain"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -251,11 +194,11 @@ func ClusterForm() templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var8 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -267,7 +210,7 @@ func ClusterForm() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var9 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -279,17 +222,17 @@ func ClusterForm() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "Group")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "Group")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-group"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-group"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -303,11 +246,11 @@ func ClusterForm() templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var13 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -319,7 +262,7 @@ func ClusterForm() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var14 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -331,17 +274,17 @@ func ClusterForm() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "Health path")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "Health path")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-health"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-health"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -356,15 +299,23 @@ func ClusterForm() templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var13), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><!-- The way in, here rather than hidden behind the row: it is the\n\t\t\t\t     second thing anybody sets up, and a login that has to be\n\t\t\t\t     found before it can be typed is a login nobody types.\n\t\t\t\t     Optional — a machine watched through a load balancer is\n\t\t\t\t     never logged in to. --><div class=\"grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div class=\"mt-4 flex justify-end\"><label for=\"machine-step-2\" class=\"inline-flex cursor-pointer items-center gap-2 rounded-lg border border-input px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent\">Next")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var15 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Err = ui.Icon("chevron", "size-3.5 -rotate-90 opacity-70").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</label></div></div><!-- Optional, and last: a machine watched through a load balancer\n\t\t\t\t     is never logged in to. Kept in the form rather than behind\n\t\t\t\t     the row, because a login that has to be found before it can\n\t\t\t\t     be typed is a login nobody types. --><div class=\"hidden peer-checked/two:block\"><p class=\"mb-4 text-sm text-muted-foreground\">Leave these empty to watch the machine without logging in to it.</p><div class=\"grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -376,7 +327,7 @@ func ClusterForm() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var16 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var13 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -388,17 +339,17 @@ func ClusterForm() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "Every")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "Every")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-interval"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-interval"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var13), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, " <div class=\"flex items-stretch\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " <div class=\"flex items-stretch\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -412,17 +363,17 @@ func ClusterForm() templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<span class=\"grid shrink-0 place-items-center rounded-r-lg border border-l-0 border-input px-2 text-sm text-muted-foreground\">s</span></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<span class=\"grid shrink-0 place-items-center rounded-r-lg border border-l-0 border-input px-2 text-sm text-muted-foreground\">s</span></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var17 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var14 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -434,7 +385,7 @@ func ClusterForm() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var18 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var15 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -446,17 +397,17 @@ func ClusterForm() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "SSH address")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "SSH address")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-ssh"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var18), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-ssh"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -471,11 +422,11 @@ func ClusterForm() templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var17), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var19 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var16 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -487,7 +438,7 @@ func ClusterForm() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var20 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var17 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -499,17 +450,17 @@ func ClusterForm() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "SSH password")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "SSH password")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-password"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var20), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = field.Label(field.LabelProps{For: "node-password"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var17), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -525,15 +476,23 @@ func ClusterForm() templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var19), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div><!-- The button goes last and to the right, where a form ends.\n\t\t\t\t     Wedged into the field grid it competed with the inputs for\n\t\t\t\t     width and pushed the address boxes down to nothing. --><div class=\"flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4\"><p class=\"max-w-xl text-xs text-muted-foreground\">The health path hangs off the address — guard fetches it from the server, so it can be a name only the server resolves. A login, if you give one, has to connect before the machine is added.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div><div class=\"mt-4 flex justify-start\"><label for=\"machine-step-1\" class=\"inline-flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var21 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Err = ui.Icon("chevron", "size-3.5 rotate-90 opacity-70").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "Back</label></div></div><!-- The submit is outside both steps: adding a machine is legal\n\t\t\t\t     from step one, because everything step two asks for is\n\t\t\t\t     optional and a form that hides its own submit button behind\n\t\t\t\t     a step is a form people think is unfinished. --><div class=\"flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4\"><p class=\"max-w-md text-xs text-muted-foreground\">The health path hangs off the address — guard fetches it from the server, so it can be a name only the server resolves. A login, if you give one, has to connect before the machine is added.</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Var18 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -545,23 +504,23 @@ func ClusterForm() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "Add machine")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "Add machine")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = button.Button(button.Props{Type: button.TypeSubmit, Class: "ml-auto"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var21), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = button.Button(button.Props{Type: button.TypeSubmit, Class: "ml-auto"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var18), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div><p data-cluster-status class=\"text-sm text-muted-foreground empty:hidden\"></p></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div><p data-cluster-status class=\"text-sm text-muted-foreground empty:hidden\"></p></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = card.Content().Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = card.Content(card.ContentProps{Class: "pt-6"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -594,12 +553,12 @@ func ClusterList() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var22 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var22 == nil {
-			templ_7745c5c3_Var22 = templ.NopComponent
+		templ_7745c5c3_Var19 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var19 == nil {
+			templ_7745c5c3_Var19 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var23 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var20 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -611,37 +570,7 @@ func ClusterList() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"flex flex-wrap items-center justify-between gap-3 border-b border-border p-5\"><div><h2 class=\"font-medium\">Watched machines</h2><p data-cluster-summary class=\"mt-0.5 text-xs text-muted-foreground\">Loading…</p></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Var24 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-				if !templ_7745c5c3_IsBuffer {
-					defer func() {
-						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-						if templ_7745c5c3_Err == nil {
-							templ_7745c5c3_Err = templ_7745c5c3_BufErr
-						}
-					}()
-				}
-				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "Check now")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				return nil
-			})
-			templ_7745c5c3_Err = button.Button(button.Props{
-				Variant:    button.VariantOutline,
-				Size:       button.SizeSm,
-				Attributes: templ.Attributes{"data-cluster-check": true},
-			}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var24), templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div><div data-cluster-rows class=\"divide-y divide-border\"></div><div data-cluster-empty class=\"p-8\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<!-- No summary and no \"Check now\" here: ClusterOps carries both at the\n\t\t     top of the page, and cluster.js writes every element matching those\n\t\t     attributes — two of each would be two counts saying the same thing\n\t\t     and two buttons doing the same work. --> <div class=\"border-b border-border p-5\"><h2 class=\"font-medium\">Watched machines</h2><p class=\"mt-0.5 text-xs text-muted-foreground\">Edit an address, rotate a login, or lock a machine's commands.</p></div><div data-cluster-rows class=\"divide-y divide-border\"></div><div data-cluster-empty class=\"p-8\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -649,13 +578,13 @@ func ClusterList() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = card.Card(card.Props{Class: "gap-0 py-0"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var23), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = card.Card(card.Props{Class: "gap-0 py-0"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var20), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -689,16 +618,16 @@ func ClusterRow() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var25 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var25 == nil {
-			templ_7745c5c3_Var25 = templ.NopComponent
+		templ_7745c5c3_Var21 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var21 == nil {
+			templ_7745c5c3_Var21 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<template data-cluster-row-template><div data-node-row><!-- The whole strip is the disclosure: the chevron is a target the\n\t\t\t     width of a thumbnail, and on a narrow card it used to be the\n\t\t\t     first thing pushed out of reach. Clicking anywhere that is not\n\t\t\t     itself a control opens the machine. --><div data-node-head class=\"flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 p-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<template data-cluster-row-template><div data-node-row><!-- The whole strip is the disclosure: the chevron is a target the\n\t\t\t     width of a thumbnail, and on a narrow card it used to be the\n\t\t\t     first thing pushed out of reach. Clicking anywhere that is not\n\t\t\t     itself a control opens the machine. --><div data-node-head class=\"flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 p-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var26 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var22 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -721,15 +650,15 @@ func ClusterRow() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "shrink-0 text-muted-foreground",
 			Attributes: templ.Attributes{"data-node-toggle": true, "aria-label": "Show this machine's settings"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var26), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var22), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<span data-node-dot class=\"size-2.5 shrink-0 rounded-full\" title=\"status\"></span><!-- The machine's own favicon when it has one. Hidden by default:\n\t\t\t\t     most do not, and an alt-text box where an icon should be is\n\t\t\t\t     worse than no icon at all. --><img data-node-icon hidden alt=\"\" width=\"16\" height=\"16\" class=\"size-4 shrink-0 rounded-sm\"><div class=\"min-w-0 flex-1\"><div class=\"flex items-center gap-2\"><p data-node-name class=\"truncate font-medium\"></p><span data-node-badge class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span> <span data-node-lock-badge hidden class=\"cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span></div><div class=\"flex flex-wrap items-center gap-x-3 gap-y-0.5\"><a data-node-url target=\"_blank\" rel=\"noreferrer noopener\" class=\"truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline\"></a><!-- Never a link. This address is reached from guard's\n\t\t\t\t\t\t     network, and the browser reading this page is\n\t\t\t\t\t\t     usually somewhere else entirely. --><span data-node-internal class=\"truncate font-mono text-xs text-muted-foreground empty:hidden\" title=\"Checked by guard from the server — your browser cannot open this\"></span></div><p data-node-error class=\"mt-0.5 truncate text-xs text-destructive empty:hidden\"></p><div data-node-tags class=\"mt-1 flex flex-wrap items-center gap-1.5 empty:hidden\"></div></div><!-- Allowed to shrink and to wrap. Fixed at its natural width it\n\t\t\t\t     ran past the edge of the card on a narrow window, taking the\n\t\t\t\t     buttons with it. --><div class=\"flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-2\"><div class=\"text-right\"><p data-node-latency class=\"font-mono text-sm tabular-nums\"></p><p data-node-checked class=\"text-[.65rem] text-muted-foreground\"></p></div><div class=\"text-right\"><p data-node-uptime class=\"font-mono text-sm tabular-nums\"></p><p data-node-checks class=\"text-[.65rem] text-muted-foreground\">24h uptime</p></div><!-- Editable in place. A machine's cadence is the one thing\n\t\t\t\t\t     about it that gets tuned, and a dialog to change one number\n\t\t\t\t\t     is a dialog nobody opens. --><label class=\"flex shrink-0 items-center gap-1 text-[.65rem] text-muted-foreground\" title=\"How often to check this machine\">every <input type=\"number\" data-node-interval min=\"1\" max=\"3600\" class=\"cn-input h-7 w-14 px-1.5 text-center font-mono text-xs tabular-nums\"> s</label><div data-node-strip class=\"hidden h-6 w-24 items-end gap-px xl:flex\" title=\"the last sixty checks\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span data-node-dot class=\"size-2.5 shrink-0 rounded-full\" title=\"status\"></span><!-- The machine's own favicon when it has one. Hidden by default:\n\t\t\t\t     most do not, and an alt-text box where an icon should be is\n\t\t\t\t     worse than no icon at all. --><img data-node-icon hidden alt=\"\" width=\"16\" height=\"16\" class=\"size-4 shrink-0 rounded-sm\"><div class=\"min-w-0 flex-1\"><div class=\"flex items-center gap-2\"><p data-node-name class=\"truncate font-medium\"></p><span data-node-badge class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span> <span data-node-lock-badge hidden class=\"cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span></div><div class=\"flex flex-wrap items-center gap-x-3 gap-y-0.5\"><a data-node-url target=\"_blank\" rel=\"noreferrer noopener\" class=\"truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline\"></a><!-- Never a link. This address is reached from guard's\n\t\t\t\t\t\t     network, and the browser reading this page is\n\t\t\t\t\t\t     usually somewhere else entirely. --><span data-node-internal class=\"truncate font-mono text-xs text-muted-foreground empty:hidden\" title=\"Checked by guard from the server — your browser cannot open this\"></span></div><p data-node-error class=\"mt-0.5 truncate text-xs text-destructive empty:hidden\"></p><div data-node-tags class=\"mt-1 flex flex-wrap items-center gap-1.5 empty:hidden\"></div></div><!-- Allowed to shrink and to wrap. Fixed at its natural width it\n\t\t\t\t     ran past the edge of the card on a narrow window, taking the\n\t\t\t\t     buttons with it. --><div class=\"flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-2\"><div class=\"text-right\"><p data-node-latency class=\"font-mono text-sm tabular-nums\"></p><p data-node-checked class=\"text-[.65rem] text-muted-foreground\"></p></div><div class=\"text-right\"><p data-node-uptime class=\"font-mono text-sm tabular-nums\"></p><p data-node-checks class=\"text-[.65rem] text-muted-foreground\">24h uptime</p></div><!-- Editable in place. A machine's cadence is the one thing\n\t\t\t\t\t     about it that gets tuned, and a dialog to change one number\n\t\t\t\t\t     is a dialog nobody opens. --><label class=\"flex shrink-0 items-center gap-1 text-[.65rem] text-muted-foreground\" title=\"How often to check this machine\">every <input type=\"number\" data-node-interval min=\"1\" max=\"3600\" class=\"cn-input h-7 w-14 px-1.5 text-center font-mono text-xs tabular-nums\"> s</label><div data-node-strip class=\"hidden h-6 w-24 items-end gap-px xl:flex\" title=\"the last sixty checks\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var27 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var23 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -752,11 +681,11 @@ func ClusterRow() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground",
 			Attributes: templ.Attributes{"data-node-duplicate": true, "aria-label": "Duplicate this machine", "title": "Copy the address, the cadence and the commands onto a new machine"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var27), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var23), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var28 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var24 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -768,7 +697,7 @@ func ClusterRow() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span data-node-pause-icon>⏸</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<span data-node-pause-icon>⏸</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -779,11 +708,11 @@ func ClusterRow() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground",
 			Attributes: templ.Attributes{"data-node-pause": true, "aria-label": "Pause or resume watching"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var28), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var24), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var29 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var25 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -806,11 +735,11 @@ func ClusterRow() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground hover:text-destructive",
 			Attributes: templ.Attributes{"data-node-delete": true, "aria-label": "Stop watching this machine"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var29), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var25), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -818,7 +747,7 @@ func ClusterRow() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</div></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -852,12 +781,122 @@ func clusterDetail() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var30 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var30 == nil {
-			templ_7745c5c3_Var30 = templ.NopComponent
+		templ_7745c5c3_Var26 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var26 == nil {
+			templ_7745c5c3_Var26 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div data-node-detail hidden class=\"space-y-5 border-t border-border bg-muted/30 p-4\"><section class=\"space-y-3\"><div class=\"flex items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Address</h3><p data-node-probe class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p></div><div class=\"grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]\"><label class=\"grid gap-1.5 text-xs text-muted-foreground\">Where the service answers <input data-node-field=\"domain\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"https://vps-1.example.com\" class=\"cn-input h-9 font-mono text-xs\"></label> <label class=\"grid gap-1.5 text-xs text-muted-foreground\">Health path <input data-node-field=\"health_path\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"/api/health\" class=\"cn-input h-9 font-mono text-xs\"></label><!-- Where the machine *is*, which the cluster page lays itself\n\t\t\t\t     out by. Free text: guard cannot know whether the boundary\n\t\t\t\t     somebody cares about is a VPC, a region or a floor. --><label class=\"grid gap-1.5 text-xs text-muted-foreground sm:col-span-2\">Group <input data-node-field=\"group\" list=\"cluster-groups\" maxlength=\"60\" autocomplete=\"off\" placeholder=\"VPC-1 — empty means Ungrouped\" class=\"cn-input h-9 text-xs\"></label><!-- The status page. Two controls rather than one, because \"is\n\t\t\t\t     this machine public\" and \"what do strangers call it\" are\n\t\t\t\t     different questions: the name on the card is the one\n\t\t\t\t     somebody SSHes into, and publishing it tells a reader the\n\t\t\t\t     naming scheme, the provider and the shape of the fleet.\n\t\t\t\t     Empty falls back to the machine's name, which is a choice\n\t\t\t\t     somebody can make on purpose. --><label class=\"grid gap-1.5 text-xs text-muted-foreground sm:col-span-2\">Public name <input data-node-field=\"public_name\" maxlength=\"60\" autocomplete=\"off\" placeholder=\"Database — empty publishes the machine name itself\" class=\"cn-input h-9 text-xs\"></label> <label class=\"flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2\"><input data-node-field=\"public\" type=\"checkbox\" class=\"size-4 accent-primary\"> <span>Show this machine on the public status page at <code class=\"font-mono\">/status</code></span></label></div><datalist id=\"cluster-groups\"></datalist><div class=\"flex flex-wrap items-center justify-between gap-3\"><p class=\"max-w-lg text-xs text-muted-foreground\">Guard fetches this from the server, so it can be an address only the server can reach. The machine's own IP goes under SSH — that is a way in, not a health check.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div data-node-detail hidden class=\"space-y-5 border-t border-border bg-muted/30 p-4\"><section class=\"space-y-3\"><div class=\"flex items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Address</h3><p data-node-probe class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p></div><div class=\"grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]\"><label class=\"grid gap-1.5 text-xs text-muted-foreground\">Where the service answers <input data-node-field=\"domain\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"https://vps-1.example.com\" class=\"cn-input h-9 font-mono text-xs\"></label> <label class=\"grid gap-1.5 text-xs text-muted-foreground\">Health path <input data-node-field=\"health_path\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"/api/health\" class=\"cn-input h-9 font-mono text-xs\"></label><!-- Where the machine *is*, which the cluster page lays itself\n\t\t\t\t     out by. Free text: guard cannot know whether the boundary\n\t\t\t\t     somebody cares about is a VPC, a region or a floor. --><label class=\"grid gap-1.5 text-xs text-muted-foreground sm:col-span-2\">Group <input data-node-field=\"group\" list=\"cluster-groups\" maxlength=\"60\" autocomplete=\"off\" placeholder=\"VPC-1 — empty means Ungrouped\" class=\"cn-input h-9 text-xs\"></label><!-- The status page. Two controls rather than one, because \"is\n\t\t\t\t     this machine public\" and \"what do strangers call it\" are\n\t\t\t\t     different questions: the name on the card is the one\n\t\t\t\t     somebody SSHes into, and publishing it tells a reader the\n\t\t\t\t     naming scheme, the provider and the shape of the fleet.\n\t\t\t\t     Empty falls back to the machine's name, which is a choice\n\t\t\t\t     somebody can make on purpose. --><label class=\"grid gap-1.5 text-xs text-muted-foreground sm:col-span-2\">Public name <input data-node-field=\"public_name\" maxlength=\"60\" autocomplete=\"off\" placeholder=\"Database — empty publishes the machine name itself\" class=\"cn-input h-9 text-xs\"></label> <label class=\"flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2\"><input data-node-field=\"public\" type=\"checkbox\" class=\"size-4 accent-primary\"> <span>Show this machine on the public status page at <code class=\"font-mono\">/status</code></span></label></div><datalist id=\"cluster-groups\"></datalist><div class=\"flex flex-wrap items-center justify-between gap-3\"><p class=\"max-w-lg text-xs text-muted-foreground\">Guard fetches this from the server, so it can be an address only the server can reach. The machine's own IP goes under SSH — that is a way in, not a health check.</p>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var27 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "Save address")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Class: "ml-auto", Attributes: templ.Attributes{"data-node-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var27), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</div></section><!-- The way in. Two fields on a line of their own, because the password\n\t\t     box shared a row with the buttons before and came out narrow enough\n\t\t     to be missed entirely. Stored encrypted, shown as dots, and never\n\t\t     sent back to the browser — the page is told a password exists. --><section class=\"space-y-3 border-t border-border pt-4\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">SSH</h3><div class=\"grid gap-3 sm:grid-cols-2\"><label class=\"grid gap-1.5 text-xs text-muted-foreground\">Address <input data-node-field=\"ssh_address\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"root@10.10.10.10\" class=\"cn-input h-9 font-mono text-xs\"></label><div class=\"grid gap-1.5 text-xs text-muted-foreground\"><span>Password</span><div class=\"flex items-center gap-2\"><input data-node-password type=\"password\" autocomplete=\"new-password\" placeholder=\"not set\" class=\"cn-input h-9 min-w-0 flex-1 font-mono text-xs tracking-widest\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var28 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "Change")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Class:      "h-9 shrink-0",
+			Attributes: templ.Attributes{"data-node-password-edit": true},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var28), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</div></div></div><!-- The same login, used for the one thing guard asks a machine on\n\t\t\t     a timer: how it is doing. Slower than the health check by two\n\t\t\t     orders of magnitude, because each sample is a fresh SSH\n\t\t\t     handshake rather than a request on a connection already open. --><label class=\"flex flex-wrap items-center gap-2 text-xs text-muted-foreground\">Sample this machine every <input type=\"number\" data-node-field=\"stats_interval\" min=\"0\" max=\"3600\" class=\"cn-input h-8 w-16 px-1.5 text-center font-mono text-xs tabular-nums\"> seconds — CPU, memory, disk and the containers it is running. <span class=\"opacity-70\">0 turns it off; it needs a stored login.</span></label><div class=\"flex flex-wrap items-center justify-between gap-3\"><p data-node-fingerprint class=\"truncate font-mono text-[.65rem] text-muted-foreground empty:hidden\"></p><div class=\"ml-auto flex flex-wrap items-center gap-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var29 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "Lock")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantGhost,
+			Size:       button.SizeSm,
+			Class:      "text-muted-foreground hover:text-destructive",
+			Attributes: templ.Attributes{"data-node-lock": true, "title": "Freeze the login and close the command list for good. The only way back is deleting the machine."},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var29), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var30 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "Test connection")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Attributes: templ.Attributes{"data-node-ssh-test": true},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var30), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -873,17 +912,17 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "Save address")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "Save login")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Class: "ml-auto", Attributes: templ.Attributes{"data-node-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var31), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-node-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var31), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div></section><!-- The way in. Two fields on a line of their own, because the password\n\t\t     box shared a row with the buttons before and came out narrow enough\n\t\t     to be missed entirely. Stored encrypted, shown as dots, and never\n\t\t     sent back to the browser — the page is told a password exists. --><section class=\"space-y-3 border-t border-border pt-4\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">SSH</h3><div class=\"grid gap-3 sm:grid-cols-2\"><label class=\"grid gap-1.5 text-xs text-muted-foreground\">Address <input data-node-field=\"ssh_address\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"root@10.10.10.10\" class=\"cn-input h-9 font-mono text-xs\"></label><div class=\"grid gap-1.5 text-xs text-muted-foreground\"><span>Password</span><div class=\"flex items-center gap-2\"><input data-node-password type=\"password\" autocomplete=\"new-password\" placeholder=\"not set\" class=\"cn-input h-9 min-w-0 flex-1 font-mono text-xs tracking-widest\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</div></div><p data-node-lock-note hidden class=\"text-xs text-warning\">Locked. The login is frozen and the command list is closed — nothing can be added, edited or removed, here or through the API. The buttons below are the buttons there will ever be, and the only way back is deleting the machine.</p></section><!-- What this machine is, in the words of whoever has to find it again.\n\t\t     Guard attaches no meaning to a tag — it does not know what postgres\n\t\t     is — so the label and the colour are both somebody's choice, and\n\t\t     the palette is fixed so that a wall of cards stays legible. --><section class=\"space-y-3 border-t border-border pt-4\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Tags</h3><div data-tag-chips class=\"flex flex-wrap items-center gap-1.5 empty:hidden\"></div><div class=\"flex flex-wrap items-end gap-2\"><label class=\"grid min-w-0 flex-1 gap-1.5 text-xs text-muted-foreground\">Label <input data-tag-input spellcheck=\"false\" autocomplete=\"off\" maxlength=\"24\" placeholder=\"postgres\" class=\"cn-input h-9 text-xs\"></label><!-- Swatches rather than a select: the thing being chosen is a\n\t\t\t\t     colour, and a dropdown reading \"indigo\" makes somebody\n\t\t\t\t     imagine it. Filled by cluster.js, because a background\n\t\t\t\t     assembled from a variable is a class Tailwind never emits. --><div data-tag-swatches class=\"flex flex-wrap items-center gap-1 pb-1.5\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -899,7 +938,7 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "Change")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "Add tag")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -908,13 +947,13 @@ func clusterDetail() templ.Component {
 		templ_7745c5c3_Err = button.Button(button.Props{
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
-			Class:      "h-9 shrink-0",
-			Attributes: templ.Attributes{"data-node-password-edit": true},
+			Class:      "h-9",
+			Attributes: templ.Attributes{"data-tag-add": true},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var32), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div></div></div><!-- The same login, used for the one thing guard asks a machine on\n\t\t\t     a timer: how it is doing. Slower than the health check by two\n\t\t\t     orders of magnitude, because each sample is a fresh SSH\n\t\t\t     handshake rather than a request on a connection already open. --><label class=\"flex flex-wrap items-center gap-2 text-xs text-muted-foreground\">Sample this machine every <input type=\"number\" data-node-field=\"stats_interval\" min=\"0\" max=\"3600\" class=\"cn-input h-8 w-16 px-1.5 text-center font-mono text-xs tabular-nums\"> seconds — CPU, memory, disk and the containers it is running. <span class=\"opacity-70\">0 turns it off; it needs a stored login.</span></label><div class=\"flex flex-wrap items-center justify-between gap-3\"><p data-node-fingerprint class=\"truncate font-mono text-[.65rem] text-muted-foreground empty:hidden\"></p><div class=\"ml-auto flex flex-wrap items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div><div class=\"flex justify-end\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -930,18 +969,17 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "Lock")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "Save tags")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantGhost,
-			Size:       button.SizeSm,
-			Class:      "text-muted-foreground hover:text-destructive",
-			Attributes: templ.Attributes{"data-node-lock": true, "title": "Freeze the login and close the command list for good. The only way back is deleting the machine."},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var33), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-node-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var33), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</div></section><!-- The cloud account behind the machine, if there is one. Only the\n\t\t     link is set here: what it unlocks — the power switch, the\n\t\t     snapshots — belongs on /cluster, where things are run, and this\n\t\t     page is where they are declared. --><section data-node-cloud class=\"space-y-3 border-t border-border pt-4\"><div class=\"flex items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Cloud</h3><span data-cloud-linked hidden class=\"cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\">linked</span></div><div class=\"grid gap-3 sm:grid-cols-2\"><label class=\"grid gap-1.5 text-xs text-muted-foreground\">Account <select data-cloud-account class=\"cn-native-select h-9 text-xs text-foreground [&amp;_option]:bg-popover [&amp;_option]:text-popover-foreground\"></select></label> <label class=\"grid gap-1.5 text-xs text-muted-foreground\">Instance <select data-cloud-instance class=\"cn-native-select h-9 text-xs text-foreground [&amp;_option]:bg-popover [&amp;_option]:text-popover-foreground\"></select></label></div><div class=\"flex flex-wrap items-center justify-between gap-3\"><p data-cloud-note class=\"max-w-lg text-xs text-muted-foreground\">Linking adds what a health check cannot see: whether the box is powered on at all, what it costs, and what it can be rolled back to. The instance is checked before it is stored, and the machine is still watched without one.</p><div class=\"ml-auto flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -957,7 +995,7 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "Test connection")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "Unlink")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -966,7 +1004,7 @@ func clusterDetail() templ.Component {
 		templ_7745c5c3_Err = button.Button(button.Props{
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-node-ssh-test": true},
+			Attributes: templ.Attributes{"data-cloud-unlink": true},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var34), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -983,17 +1021,17 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "Save login")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "Link")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-node-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var35), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-cloud-link": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var35), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div></div><p data-node-lock-note hidden class=\"text-xs text-warning\">Locked. The login is frozen and the command list is closed — nothing can be added, edited or removed, here or through the API. The buttons below are the buttons there will ever be, and the only way back is deleting the machine.</p></section><!-- What this machine is, in the words of whoever has to find it again.\n\t\t     Guard attaches no meaning to a tag — it does not know what postgres\n\t\t     is — so the label and the colour are both somebody's choice, and\n\t\t     the palette is fixed so that a wall of cards stays legible. --><section class=\"space-y-3 border-t border-border pt-4\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Tags</h3><div data-tag-chips class=\"flex flex-wrap items-center gap-1.5 empty:hidden\"></div><div class=\"flex flex-wrap items-end gap-2\"><label class=\"grid min-w-0 flex-1 gap-1.5 text-xs text-muted-foreground\">Label <input data-tag-input spellcheck=\"false\" autocomplete=\"off\" maxlength=\"24\" placeholder=\"postgres\" class=\"cn-input h-9 text-xs\"></label><!-- Swatches rather than a select: the thing being chosen is a\n\t\t\t\t     colour, and a dropdown reading \"indigo\" makes somebody\n\t\t\t\t     imagine it. Filled by cluster.js, because a background\n\t\t\t\t     assembled from a variable is a class Tailwind never emits. --><div data-tag-swatches class=\"flex flex-wrap items-center gap-1 pb-1.5\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</div></div></section><!-- The machine's environment. Not a file to declare: a box of KEY=value\n\t\t     lines, saved here and then put on the machine — /etc/environment for\n\t\t     logins and a systemd drop-in for services — so everything running on\n\t\t     that box takes the same set. Two presses on purpose: saving changes\n\t\t     nothing on the machine, injecting is what reaches into it. --><section class=\"space-y-3 border-t border-border pt-4\"><div class=\"flex flex-wrap items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Environment</h3><span data-env-state class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span></div><textarea data-env-text rows=\"8\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"DATABASE_URL=postgres://user:pass@10.0.0.5:5432/app&#10;OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.2:4318&#10;# comments and quoted values are fine\" class=\"cn-input min-h-[10rem] w-full font-mono text-xs leading-relaxed\"></textarea><p data-env-skipped class=\"text-[.65rem] text-warning empty:hidden\"></p><div class=\"flex flex-wrap items-center justify-between gap-3\"><p class=\"max-w-lg text-xs text-muted-foreground\">Injecting writes <code class=\"font-mono\">/etc/environment</code> and <code class=\"font-mono\">/etc/systemd/system.conf.d/10-guard-env.conf</code>, keeping the previous copies as <code class=\"font-mono\">.guard-bak</code>. Services already running keep their old environment until they are restarted.</p><div class=\"ml-auto flex flex-wrap items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1009,7 +1047,7 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "Add tag")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "Save")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1018,13 +1056,8 @@ func clusterDetail() templ.Component {
 		templ_7745c5c3_Err = button.Button(button.Props{
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
-			Class:      "h-9",
-			Attributes: templ.Attributes{"data-tag-add": true},
+			Attributes: templ.Attributes{"data-env-save": true},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var36), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</div><div class=\"flex justify-end\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1040,17 +1073,17 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "Save tags")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "Inject on machine")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-node-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var37), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-env-inject": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var37), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</div></section><!-- The cloud account behind the machine, if there is one. Only the\n\t\t     link is set here: what it unlocks — the power switch, the\n\t\t     snapshots — belongs on /cluster, where things are run, and this\n\t\t     page is where they are declared. --><section data-node-cloud class=\"space-y-3 border-t border-border pt-4\"><div class=\"flex items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Cloud</h3><span data-cloud-linked hidden class=\"cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\">linked</span></div><div class=\"grid gap-3 sm:grid-cols-2\"><label class=\"grid gap-1.5 text-xs text-muted-foreground\">Account <select data-cloud-account class=\"cn-native-select h-9 text-xs text-foreground [&amp;_option]:bg-popover [&amp;_option]:text-popover-foreground\"></select></label> <label class=\"grid gap-1.5 text-xs text-muted-foreground\">Instance <select data-cloud-instance class=\"cn-native-select h-9 text-xs text-foreground [&amp;_option]:bg-popover [&amp;_option]:text-popover-foreground\"></select></label></div><div class=\"flex flex-wrap items-center justify-between gap-3\"><p data-cloud-note class=\"max-w-lg text-xs text-muted-foreground\">Linking adds what a health check cannot see: whether the box is powered on at all, what it costs, and what it can be rolled back to. The instance is checked before it is stored, and the machine is still watched without one.</p><div class=\"ml-auto flex items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</div></div></section><!-- Commands somebody keeps for this machine. Guard does not know what\n\t\t     they do: the point is that the line you already type at 3am lives\n\t\t     next to the machine you type it at. --><section class=\"space-y-3 border-t border-border pt-4\"><div class=\"flex items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Actions</h3>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1066,7 +1099,7 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "Unlink")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "Add action")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1075,8 +1108,12 @@ func clusterDetail() templ.Component {
 		templ_7745c5c3_Err = button.Button(button.Props{
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-cloud-unlink": true},
+			Attributes: templ.Attributes{"data-action-add": true},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var38), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</div><div data-action-rows class=\"space-y-2\"></div><p data-action-empty class=\"text-xs text-muted-foreground\">Nothing saved yet. An action is a name and a command — “Reboot” and <code class=\"font-mono\">reboot</code>, or “Update” and <code class=\"font-mono\">apt-get update &amp;&amp; apt-get upgrade -y</code>.</p><div class=\"flex justify-end\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1092,125 +1129,17 @@ func clusterDetail() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "Link")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "Save actions")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-cloud-link": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var39), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-actions-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var39), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</div></div></section><!-- The machine's environment. Not a file to declare: a box of KEY=value\n\t\t     lines, saved here and then put on the machine — /etc/environment for\n\t\t     logins and a systemd drop-in for services — so everything running on\n\t\t     that box takes the same set. Two presses on purpose: saving changes\n\t\t     nothing on the machine, injecting is what reaches into it. --><section class=\"space-y-3 border-t border-border pt-4\"><div class=\"flex flex-wrap items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Environment</h3><span data-env-state class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span></div><textarea data-env-text rows=\"8\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"DATABASE_URL=postgres://user:pass@10.0.0.5:5432/app&#10;OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.2:4318&#10;# comments and quoted values are fine\" class=\"cn-input min-h-[10rem] w-full font-mono text-xs leading-relaxed\"></textarea><p data-env-skipped class=\"text-[.65rem] text-warning empty:hidden\"></p><div class=\"flex flex-wrap items-center justify-between gap-3\"><p class=\"max-w-lg text-xs text-muted-foreground\">Injecting writes <code class=\"font-mono\">/etc/environment</code> and <code class=\"font-mono\">/etc/systemd/system.conf.d/10-guard-env.conf</code>, keeping the previous copies as <code class=\"font-mono\">.guard-bak</code>. Services already running keep their old environment until they are restarted.</p><div class=\"ml-auto flex flex-wrap items-center gap-2\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var40 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "Save")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantOutline,
-			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-env-save": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var40), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var41 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "Inject on machine")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-env-inject": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var41), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</div></div></section><!-- Commands somebody keeps for this machine. Guard does not know what\n\t\t     they do: the point is that the line you already type at 3am lives\n\t\t     next to the machine you type it at. --><section class=\"space-y-3 border-t border-border pt-4\"><div class=\"flex items-center justify-between gap-3\"><h3 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Actions</h3>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var42 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "Add action")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantOutline,
-			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-action-add": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var42), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</div><div data-action-rows class=\"space-y-2\"></div><p data-action-empty class=\"text-xs text-muted-foreground\">Nothing saved yet. An action is a name and a command — “Reboot” and <code class=\"font-mono\">reboot</code>, or “Update” and <code class=\"font-mono\">apt-get update &amp;&amp; apt-get upgrade -y</code>.</p><div class=\"flex justify-end\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var43 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "Save actions")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-actions-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var43), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</div><div data-node-output hidden class=\"space-y-1\"><p data-node-output-head class=\"font-mono text-[.65rem] text-muted-foreground\"></p><pre data-node-output-body class=\"max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap\"></pre></div></section></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</div><div data-node-output hidden class=\"space-y-1\"><p data-node-output-head class=\"font-mono text-[.65rem] text-muted-foreground\"></p><pre data-node-output-body class=\"max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap\"></pre></div></section></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1237,16 +1166,16 @@ func clusterActionRow() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var44 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var44 == nil {
-			templ_7745c5c3_Var44 = templ.NopComponent
+		templ_7745c5c3_Var40 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var40 == nil {
+			templ_7745c5c3_Var40 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<template data-action-row-template><div data-action class=\"grid gap-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto] sm:items-center\"><input data-action-field=\"name\" maxlength=\"60\" placeholder=\"Reboot\" class=\"cn-input h-8 text-xs\"> <input data-action-field=\"command\" spellcheck=\"false\" placeholder=\"sudo reboot\" class=\"cn-input h-8 font-mono text-xs\"><div class=\"flex items-center gap-1\"><span data-action-last class=\"mr-1 text-[.65rem] text-muted-foreground empty:hidden\"></span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<template data-action-row-template><div data-action class=\"grid gap-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto] sm:items-center\"><input data-action-field=\"name\" maxlength=\"60\" placeholder=\"Reboot\" class=\"cn-input h-8 text-xs\"> <input data-action-field=\"command\" spellcheck=\"false\" placeholder=\"sudo reboot\" class=\"cn-input h-8 font-mono text-xs\"><div class=\"flex items-center gap-1\"><span data-action-last class=\"mr-1 text-[.65rem] text-muted-foreground empty:hidden\"></span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var45 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var41 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1258,7 +1187,7 @@ func clusterActionRow() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "Run")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "Run")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1268,11 +1197,11 @@ func clusterActionRow() templ.Component {
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-action-run": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var45), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var41), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var46 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var42 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1295,11 +1224,11 @@ func clusterActionRow() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground hover:text-destructive",
 			Attributes: templ.Attributes{"data-action-remove": true, "aria-label": "Remove this action"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var46), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var42), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "</div><!-- The second line is the unattended half: when guard runs this by\n\t\t\t     itself, and how long it may go without succeeding before\n\t\t\t     somebody is told. Both empty is the normal case — a command\n\t\t\t     that is only ever a button. --><div class=\"flex flex-wrap items-center gap-2 sm:col-span-3\"><input data-action-field=\"schedule\" maxlength=\"60\" spellcheck=\"false\" placeholder=\"0 */6 * * * (UTC), or @every 6h\" title=\"A cron expression in UTC, or @every 6h. Empty means this only runs when somebody presses it.\" class=\"cn-input h-8 w-56 font-mono text-xs\"> <label class=\"flex items-center gap-1 text-[.65rem] text-muted-foreground\">alert if no success in <input data-action-field=\"stale\" type=\"number\" min=\"1\" step=\"1\" placeholder=\"420\" title=\"Minutes. Empty means nobody is watching this command.\" class=\"cn-input h-8 w-24 text-xs\"> min</label> <span data-action-next class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span></div></div></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</div><!-- The second line is the unattended half: when guard runs this by\n\t\t\t     itself, and how long it may go without succeeding before\n\t\t\t     somebody is told. Both empty is the normal case — a command\n\t\t\t     that is only ever a button. --><div class=\"flex flex-wrap items-center gap-2 sm:col-span-3\"><input data-action-field=\"schedule\" maxlength=\"60\" spellcheck=\"false\" placeholder=\"0 */6 * * * (UTC), or @every 6h\" title=\"A cron expression in UTC, or @every 6h. Empty means this only runs when somebody presses it.\" class=\"cn-input h-8 w-56 font-mono text-xs\"> <label class=\"flex items-center gap-1 text-[.65rem] text-muted-foreground\">alert if no success in <input data-action-field=\"stale\" type=\"number\" min=\"1\" step=\"1\" placeholder=\"420\" title=\"Minutes. Empty means nobody is watching this command.\" class=\"cn-input h-8 w-24 text-xs\"> min</label> <span data-action-next class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span></div></div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1334,16 +1263,16 @@ func ConfirmDialog() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var47 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var47 == nil {
-			templ_7745c5c3_Var47 = templ.NopComponent
+		templ_7745c5c3_Var43 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var43 == nil {
+			templ_7745c5c3_Var43 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<!-- Centred by a rule in app.css, not by a utility: the stylesheet's base\n\t     margin for block elements outranks m-auto, and a modal in the top-left\n\t     corner is what that costs. --><dialog data-confirm class=\"w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60\"><form method=\"dialog\" class=\"space-y-4 p-6\"><div class=\"space-y-1.5\"><h2 data-confirm-title class=\"text-lg font-semibold tracking-tight\"></h2><p data-confirm-body class=\"text-sm text-muted-foreground\"></p></div><pre data-confirm-detail class=\"max-h-40 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap empty:hidden\"></pre><label data-confirm-typed hidden class=\"grid gap-1.5 text-xs text-muted-foreground\"><span>Type <b data-confirm-phrase class=\"font-mono text-foreground\"></b> to confirm</span> <input data-confirm-input autocomplete=\"off\" spellcheck=\"false\" class=\"cn-input h-9 font-mono text-sm\"></label><div class=\"flex flex-wrap items-center justify-end gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<!-- Centred by a rule in app.css, not by a utility: the stylesheet's base\n\t     margin for block elements outranks m-auto, and a modal in the top-left\n\t     corner is what that costs. --><dialog data-confirm class=\"w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60\"><form method=\"dialog\" class=\"space-y-4 p-6\"><div class=\"space-y-1.5\"><h2 data-confirm-title class=\"text-lg font-semibold tracking-tight\"></h2><p data-confirm-body class=\"text-sm text-muted-foreground\"></p></div><pre data-confirm-detail class=\"max-h-40 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap empty:hidden\"></pre><label data-confirm-typed hidden class=\"grid gap-1.5 text-xs text-muted-foreground\"><span>Type <b data-confirm-phrase class=\"font-mono text-foreground\"></b> to confirm</span> <input data-confirm-input autocomplete=\"off\" spellcheck=\"false\" class=\"cn-input h-9 font-mono text-sm\"></label><div class=\"flex flex-wrap items-center justify-end gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var48 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var44 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1355,7 +1284,7 @@ func ConfirmDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "Cancel")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "Cancel")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1366,11 +1295,11 @@ func ConfirmDialog() templ.Component {
 			Size:       button.SizeSm,
 			Type:       button.TypeSubmit,
 			Attributes: templ.Attributes{"data-confirm-cancel": true, "value": "cancel"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var48), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var44), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var49 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var45 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1382,7 +1311,7 @@ func ConfirmDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "Confirm")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "Confirm")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1393,11 +1322,11 @@ func ConfirmDialog() templ.Component {
 			Size:       button.SizeSm,
 			Type:       button.TypeSubmit,
 			Attributes: templ.Attributes{"data-confirm-ok": true, "value": "ok"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var49), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var45), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</div></form></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "</div></form></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1424,12 +1353,12 @@ func Topology() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var50 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var50 == nil {
-			templ_7745c5c3_Var50 = templ.NopComponent
+		templ_7745c5c3_Var46 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var46 == nil {
+			templ_7745c5c3_Var46 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var51 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var47 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1441,7 +1370,7 @@ func Topology() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Var52 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var48 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -1453,7 +1382,7 @@ func Topology() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Var53 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var49 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -1465,21 +1394,21 @@ func Topology() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "Cluster")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "Cluster")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = card.Title().Render(templ.WithChildren(ctx, templ_7745c5c3_Var53), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = card.Title().Render(templ.WithChildren(ctx, templ_7745c5c3_Var49), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var54 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var50 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -1491,21 +1420,21 @@ func Topology() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "Machines watched from the outside, with what runs on them")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "Machines watched from the outside, with what runs on them")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = card.Description().Render(templ.WithChildren(ctx, templ_7745c5c3_Var54), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = card.Description().Render(templ.WithChildren(ctx, templ_7745c5c3_Var50), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var55 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var51 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -1517,7 +1446,7 @@ func Topology() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var56 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var52 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -1529,33 +1458,33 @@ func Topology() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "Manage →")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "Manage →")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = button.Button(button.Props{Href: "/settings/cluster", Variant: button.VariantGhost, Size: button.SizeSm}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var56), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = button.Button(button.Props{Href: "/cluster", Variant: button.VariantGhost, Size: button.SizeSm}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var52), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = card.Action().Render(templ.WithChildren(ctx, templ_7745c5c3_Var55), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = card.Action().Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = card.Header().Render(templ.WithChildren(ctx, templ_7745c5c3_Var52), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = card.Header().Render(templ.WithChildren(ctx, templ_7745c5c3_Var48), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var57 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var53 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -1567,7 +1496,7 @@ func Topology() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<div data-topology class=\"space-y-4\"></div><div data-cluster-empty>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<div data-topology class=\"space-y-4\"></div><div data-cluster-empty>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1575,19 +1504,19 @@ func Topology() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = card.Content(card.ContentProps{Class: "space-y-4"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var57), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = card.Content(card.ContentProps{Class: "space-y-4"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var53), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = card.Card().Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = card.Card().Render(templ.WithChildren(ctx, templ_7745c5c3_Var47), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1612,12 +1541,12 @@ func TopologyGroup() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var58 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var58 == nil {
-			templ_7745c5c3_Var58 = templ.NopComponent
+		templ_7745c5c3_Var54 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var54 == nil {
+			templ_7745c5c3_Var54 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<template data-topology-group-template><section data-group class=\"rounded-xl border border-border\"><div data-group-head class=\"flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5\"><span data-node-dot class=\"size-2.5 shrink-0 rounded-full\"></span> <img data-node-icon hidden alt=\"\" width=\"16\" height=\"16\" class=\"size-4 shrink-0 rounded-sm\"><p data-node-name class=\"font-medium\"></p><span data-node-badge class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span> <span data-node-hosts class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></span> <span data-node-count class=\"ml-auto shrink-0 text-xs text-muted-foreground\"></span></div><div data-group-instances class=\"divide-y divide-border\"></div></section></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<template data-topology-group-template><section data-group class=\"rounded-xl border border-border\"><div data-group-head class=\"flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5\"><span data-node-dot class=\"size-2.5 shrink-0 rounded-full\"></span> <img data-node-icon hidden alt=\"\" width=\"16\" height=\"16\" class=\"size-4 shrink-0 rounded-sm\"><p data-node-name class=\"font-medium\"></p><span data-node-badge class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span> <span data-node-hosts class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></span> <span data-node-count class=\"ml-auto shrink-0 text-xs text-muted-foreground\"></span></div><div data-group-instances class=\"divide-y divide-border\"></div></section></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1643,12 +1572,12 @@ func TopologyInstance() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var59 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var59 == nil {
-			templ_7745c5c3_Var59 = templ.NopComponent
+		templ_7745c5c3_Var55 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var55 == nil {
+			templ_7745c5c3_Var55 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<template data-topology-instance-template><div class=\"flex items-center gap-3 px-4 py-2.5\"><span class=\"signal-dot\"></span><div class=\"min-w-0 flex-1\"><p data-instance-service class=\"truncate text-sm font-medium\"></p><p data-instance-id class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p></div><span data-instance-counts class=\"shrink-0 text-[.65rem] text-muted-foreground\"></span> <span data-instance-seen class=\"shrink-0 text-xs text-muted-foreground\"></span><!-- Where it runs, when the telemetry cannot say. A browser runs on\n\t\t\t     nobody's machine, and a service behind a balancer reports the\n\t\t\t     balancer's host — neither is a reason to add a box to the\n\t\t\t     cluster that nobody wants to watch. --><span class=\"relative flex shrink-0 items-center\"><select data-instance-node class=\"cn-native-select h-7 min-w-36 py-0 text-xs text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground\" aria-label=\"Which machine this runs on\"></select>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<template data-topology-instance-template><div class=\"flex items-center gap-3 px-4 py-2.5\"><span class=\"signal-dot\"></span><div class=\"min-w-0 flex-1\"><p data-instance-service class=\"truncate text-sm font-medium\"></p><p data-instance-id class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p></div><span data-instance-counts class=\"shrink-0 text-[.65rem] text-muted-foreground\"></span> <span data-instance-seen class=\"shrink-0 text-xs text-muted-foreground\"></span><!-- Where it runs, when the telemetry cannot say. A browser runs on\n\t\t\t     nobody's machine, and a service behind a balancer reports the\n\t\t\t     balancer's host — neither is a reason to add a box to the\n\t\t\t     cluster that nobody wants to watch. --><span class=\"relative flex shrink-0 items-center\"><select data-instance-node class=\"cn-native-select h-7 min-w-36 py-0 text-xs text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground\" aria-label=\"Which machine this runs on\"></select>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1656,7 +1585,7 @@ func TopologyInstance() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</span> <span data-instance-placement class=\"w-16 shrink-0 text-[.6rem] uppercase tracking-wider text-muted-foreground\"></span></div></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "</span> <span data-instance-placement class=\"w-16 shrink-0 text-[.6rem] uppercase tracking-wider text-muted-foreground\"></span></div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1687,12 +1616,12 @@ func iconCopy() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var60 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var60 == nil {
-			templ_7745c5c3_Var60 = templ.NopComponent
+		templ_7745c5c3_Var56 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var56 == nil {
+			templ_7745c5c3_Var56 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<svg class=\"size-4\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"9\" y=\"9\" width=\"12\" height=\"12\" rx=\"2\"></rect> <path d=\"M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\"></path></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<svg class=\"size-4\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"9\" y=\"9\" width=\"12\" height=\"12\" rx=\"2\"></rect> <path d=\"M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\"></path></svg>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1716,12 +1645,12 @@ func chevronDisclosure() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var61 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var61 == nil {
-			templ_7745c5c3_Var61 = templ.NopComponent
+		templ_7745c5c3_Var57 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var57 == nil {
+			templ_7745c5c3_Var57 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<svg data-node-chevron class=\"size-4 transition-transform\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"></path></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<svg data-node-chevron class=\"size-4 transition-transform\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"></path></svg>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1745,12 +1674,12 @@ func chevronSmall() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var62 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var62 == nil {
-			templ_7745c5c3_Var62 = templ.NopComponent
+		templ_7745c5c3_Var58 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var58 == nil {
+			templ_7745c5c3_Var58 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<svg class=\"cn-native-select-icon pointer-events-none absolute\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"></path></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<svg class=\"cn-native-select-icon pointer-events-none absolute\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"></path></svg>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1780,16 +1709,16 @@ func ClusterOps() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var63 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var63 == nil {
-			templ_7745c5c3_Var63 = templ.NopComponent
+		templ_7745c5c3_Var59 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var59 == nil {
+			templ_7745c5c3_Var59 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<div class=\"space-y-6\"><div class=\"flex flex-wrap items-center justify-between gap-3\"><p data-cluster-summary class=\"text-sm text-muted-foreground\">Loading…</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<div class=\"space-y-6\"><div class=\"flex flex-wrap items-center justify-between gap-3\"><p data-cluster-summary class=\"text-sm text-muted-foreground\">Loading…</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var64 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var60 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1801,7 +1730,7 @@ func ClusterOps() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "Check all now")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "Check all now")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1811,19 +1740,19 @@ func ClusterOps() templ.Component {
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-cluster-check": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var64), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var60), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "</div><!-- A column of groups, each with its own grid inside: the layout is by\n\t\t     group because that is how a fleet is held in somebody's head. --><div data-cluster-cards class=\"space-y-8\"></div><datalist id=\"cluster-groups\"></datalist><div data-cluster-cards-empty hidden>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</div><!-- A column of groups, each with its own grid inside: the layout is by\n\t\t     group because that is how a fleet is held in somebody's head. --><div data-cluster-cards class=\"space-y-8\"></div><datalist id=\"cluster-groups\"></datalist><div data-cluster-cards-empty hidden>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ui.Empty("No machines watched yet. Declare one under Settings → Cluster and it appears here.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.Empty("No machines watched yet. Add one below and it appears here.").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1850,16 +1779,16 @@ func ClusterOpsCard() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var65 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var65 == nil {
-			templ_7745c5c3_Var65 = templ.NopComponent
+		templ_7745c5c3_Var61 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var61 == nil {
+			templ_7745c5c3_Var61 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "<template data-cluster-card-template><!-- A row, not a card. Cards were two to a line and mostly whitespace;\n\t\t     a machine is a line, and twenty machines should be twenty lines you\n\t\t     can run an eye down. Everything needed to *find* the one you want\n\t\t     is in the head — state, name, tags, address, and the five numbers —\n\t\t     and everything needed to *act* on it is behind the fold. --><article data-node-id class=\"bg-card text-card-foreground\"><div data-card-head class=\"flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-muted/30\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<template data-cluster-card-template><!-- A row, not a card. Cards were two to a line and mostly whitespace;\n\t\t     a machine is a line, and twenty machines should be twenty lines you\n\t\t     can run an eye down. Everything needed to *find* the one you want\n\t\t     is in the head — state, name, tags, address, and the five numbers —\n\t\t     and everything needed to *act* on it is behind the fold. --><article data-node-id class=\"bg-card text-card-foreground\"><div data-card-head class=\"flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-muted/30\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var66 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var62 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1882,15 +1811,15 @@ func ClusterOpsCard() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "shrink-0 text-muted-foreground",
 			Attributes: templ.Attributes{"data-card-toggle": true, "aria-label": "Show this machine"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var66), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var62), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<span data-node-dot class=\"size-2.5 shrink-0 rounded-full\" title=\"status\"></span> <img data-node-icon hidden alt=\"\" width=\"16\" height=\"16\" class=\"size-4 shrink-0 rounded-sm\"><div class=\"flex min-w-0 flex-1 flex-col gap-0.5\"><div class=\"flex min-w-0 items-center gap-2\"><p data-node-name class=\"truncate font-medium\"></p><span data-node-badge class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span> <span data-node-lock-badge hidden class=\"cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span><div data-node-tags class=\"flex min-w-0 flex-wrap items-center gap-1.5 empty:hidden\"></div></div><div class=\"flex min-w-0 items-center gap-2\"><a data-node-url target=\"_blank\" rel=\"noreferrer noopener\" class=\"truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline\"></a> <span data-node-internal class=\"truncate font-mono text-xs text-muted-foreground empty:hidden\" title=\"Checked by guard from the server — your browser cannot open this\"></span><p data-node-error class=\"truncate text-xs text-destructive empty:hidden\"></p></div></div><!-- The five numbers, in fixed columns so they line up down the\n\t\t\t\t     list: that alignment is the whole reason a list beats a wall\n\t\t\t\t     of cards for finding the machine that is unlike the others. -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<span data-node-dot class=\"size-2.5 shrink-0 rounded-full\" title=\"status\"></span> <img data-node-icon hidden alt=\"\" width=\"16\" height=\"16\" class=\"size-4 shrink-0 rounded-sm\"><div class=\"flex min-w-0 flex-1 flex-col gap-0.5\"><div class=\"flex min-w-0 items-center gap-2\"><p data-node-name class=\"truncate font-medium\"></p><span data-node-badge class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span> <span data-node-lock-badge hidden class=\"cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span><div data-node-tags class=\"flex min-w-0 flex-wrap items-center gap-1.5 empty:hidden\"></div></div><div class=\"flex min-w-0 items-center gap-2\"><a data-node-url target=\"_blank\" rel=\"noreferrer noopener\" class=\"truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline\"></a> <span data-node-internal class=\"truncate font-mono text-xs text-muted-foreground empty:hidden\" title=\"Checked by guard from the server — your browser cannot open this\"></span><p data-node-error class=\"truncate text-xs text-destructive empty:hidden\"></p></div></div><!-- The five numbers, in fixed columns so they line up down the\n\t\t\t\t     list: that alignment is the whole reason a list beats a wall\n\t\t\t\t     of cards for finding the machine that is unlike the others. -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var67 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var63 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1902,17 +1831,17 @@ func ClusterOpsCard() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<p data-node-latency class=\"font-mono text-sm tabular-nums\"></p><p data-node-checked class=\"text-[.6rem] text-muted-foreground\"></p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<p data-node-latency class=\"font-mono text-sm tabular-nums\"></p><p data-node-checked class=\"text-[.6rem] text-muted-foreground\"></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = headFigure("Response").Render(templ.WithChildren(ctx, templ_7745c5c3_Var67), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = headFigure("Response").Render(templ.WithChildren(ctx, templ_7745c5c3_Var63), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var68 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var64 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1924,13 +1853,13 @@ func ClusterOpsCard() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<p data-node-uptime class=\"font-mono text-sm tabular-nums\"></p><p data-node-checks class=\"text-[.6rem] text-muted-foreground\"></p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "<p data-node-uptime class=\"font-mono text-sm tabular-nums\"></p><p data-node-checks class=\"text-[.6rem] text-muted-foreground\"></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = headFigure("Uptime").Render(templ.WithChildren(ctx, templ_7745c5c3_Var68), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = headFigure("Uptime").Render(templ.WithChildren(ctx, templ_7745c5c3_Var64), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1946,11 +1875,11 @@ func ClusterOpsCard() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "<div data-node-strip class=\"hidden h-7 w-20 shrink-0 items-end gap-px xl:flex\" title=\"the last sixty checks\"></div></div><div data-card-body hidden class=\"space-y-4 border-t border-border bg-background/40 px-4 py-4\"><!-- The machine's own numbers, with their bars. The head carries\n\t\t\t\t     the same figures as text; here they are drawn, because a bar\n\t\t\t\t     answers \"how close to full\" faster than a percentage does. --><div data-host hidden class=\"space-y-3\"><div class=\"flex items-center justify-between gap-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Machine</p><div class=\"flex items-center gap-2\"><span data-host-uptime class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<div data-node-strip class=\"hidden h-7 w-20 shrink-0 items-end gap-px xl:flex\" title=\"the last sixty checks\"></div></div><div data-card-body hidden class=\"space-y-4 border-t border-border bg-background/40 px-4 py-4\"><!-- The machine's own numbers, with their bars. The head carries\n\t\t\t\t     the same figures as text; here they are drawn, because a bar\n\t\t\t\t     answers \"how close to full\" faster than a percentage does. --><div data-host hidden class=\"space-y-3\"><div class=\"flex items-center justify-between gap-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Machine</p><div class=\"flex items-center gap-2\"><span data-host-uptime class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var69 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var65 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1962,7 +1891,7 @@ func ClusterOpsCard() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "↻")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "↻")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1973,11 +1902,11 @@ func ClusterOpsCard() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "shrink-0 text-muted-foreground",
 			Attributes: templ.Attributes{"data-host-sample": true, "aria-label": "Sample this machine now", "title": "Ask the machine now instead of waiting for its next sample"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var69), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var65), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</div></div><div class=\"grid gap-3 sm:grid-cols-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "</div></div><div class=\"grid gap-3 sm:grid-cols-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1993,7 +1922,7 @@ func ClusterOpsCard() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "</div><div class=\"flex items-center justify-between gap-3\"><p data-host-load class=\"font-mono text-[.65rem] text-muted-foreground empty:hidden\"></p><div data-host-strip class=\"flex h-5 w-24 items-end gap-px\" title=\"CPU over the last hour\"></div></div><div data-host-containers class=\"flex flex-wrap items-center gap-1.5 empty:hidden\"></div><p data-host-note class=\"text-xs text-muted-foreground empty:hidden\"></p><p data-host-error class=\"text-xs text-destructive empty:hidden\"></p></div><!-- What is actually running on this machine, from the telemetry\n\t\t\t\t     rather than from anything declared. --><div data-card-instances-wrap hidden class=\"space-y-2 border-t border-border pt-4\"><div class=\"flex items-baseline justify-between gap-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Running here</p><span data-card-instances-count class=\"text-[.65rem] text-muted-foreground\"></span></div><div data-card-instances class=\"flex flex-wrap items-center gap-1.5\"></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</div><div class=\"flex items-center justify-between gap-3\"><p data-host-load class=\"font-mono text-[.65rem] text-muted-foreground empty:hidden\"></p><div data-host-strip class=\"flex h-5 w-24 items-end gap-px\" title=\"CPU over the last hour\"></div></div><div data-host-containers class=\"flex flex-wrap items-center gap-1.5 empty:hidden\"></div><p data-host-note class=\"text-xs text-muted-foreground empty:hidden\"></p><p data-host-error class=\"text-xs text-destructive empty:hidden\"></p></div><!-- What is actually running on this machine, from the telemetry\n\t\t\t\t     rather than from anything declared. --><div data-card-instances-wrap hidden class=\"space-y-2 border-t border-border pt-4\"><div class=\"flex items-baseline justify-between gap-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Running here</p><span data-card-instances-count class=\"text-[.65rem] text-muted-foreground\"></span></div><div data-card-instances class=\"flex flex-wrap items-center gap-1.5\"></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2001,11 +1930,11 @@ func ClusterOpsCard() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<!-- What this machine's environment is, and the press that puts it\n\t\t\t\t     there. Editing it is under Settings → Cluster; this page is\n\t\t\t\t     where things are done to machines. --><div data-card-env-wrap hidden class=\"flex flex-wrap items-center gap-3 border-t border-border pt-4\"><div class=\"min-w-0 flex-1\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Environment</p><p data-card-env-note class=\"truncate text-xs text-muted-foreground\"></p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<!-- What this machine's environment is, and the press that puts it\n\t\t\t\t     there. Editing it is under Settings → Cluster; this page is\n\t\t\t\t     where things are done to machines. --><div data-card-env-wrap hidden class=\"flex flex-wrap items-center gap-3 border-t border-border pt-4\"><div class=\"min-w-0 flex-1\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Environment</p><p data-card-env-note class=\"truncate text-xs text-muted-foreground\"></p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var70 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var66 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2017,7 +1946,7 @@ func ClusterOpsCard() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "Inject on machine")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "Inject on machine")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2027,15 +1956,15 @@ func ClusterOpsCard() templ.Component {
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-env-inject": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var70), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var66), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "</div><div class=\"space-y-2 border-t border-border pt-4\"><div class=\"flex items-center justify-between gap-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Commands</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "</div><div class=\"space-y-2 border-t border-border pt-4\"><div class=\"flex items-center justify-between gap-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Commands</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var71 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var67 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2047,7 +1976,7 @@ func ClusterOpsCard() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "History")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "History")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2058,15 +1987,15 @@ func ClusterOpsCard() templ.Component {
 			Size:       button.SizeSm,
 			Class:      "shrink-0 text-muted-foreground",
 			Attributes: templ.Attributes{"data-card-history": true, "title": "The last runs on this machine"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var71), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var67), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "</div><div data-card-actions class=\"space-y-1.5\"></div><p data-card-actions-empty hidden class=\"text-xs text-muted-foreground\">Nothing saved for this machine — commands are kept under <a href=\"/settings/cluster\" class=\"underline underline-offset-2 hover:text-foreground\">Settings → Cluster</a>.</p><div data-node-output hidden class=\"space-y-1\"><p data-node-output-head class=\"font-mono text-[.65rem] text-muted-foreground\"></p><pre data-node-output-body class=\"max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap\"></pre></div></div></div></article></template><template data-card-action-template><div data-card-action class=\"flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2\"><div class=\"min-w-0 flex-1\"><p data-card-action-name class=\"truncate text-sm font-medium\"></p><p data-card-action-command class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p><p data-card-action-schedule class=\"truncate text-[.65rem] text-muted-foreground empty:hidden\"></p></div><span data-card-action-last class=\"shrink-0 text-[.65rem] text-muted-foreground empty:hidden\"></span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "</div><div data-card-actions class=\"space-y-1.5\"></div><p data-card-actions-empty hidden class=\"text-xs text-muted-foreground\">Nothing saved for this machine — commands are kept with the machine on <a href=\"/cluster\" class=\"underline underline-offset-2 hover:text-foreground\">Cluster</a>.</p><div data-node-output hidden class=\"space-y-1\"><p data-node-output-head class=\"font-mono text-[.65rem] text-muted-foreground\"></p><pre data-node-output-body class=\"max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap\"></pre></div></div></div></article></template><template data-card-action-template><div data-card-action class=\"flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2\"><div class=\"min-w-0 flex-1\"><p data-card-action-name class=\"truncate text-sm font-medium\"></p><p data-card-action-command class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p><p data-card-action-schedule class=\"truncate text-[.65rem] text-muted-foreground empty:hidden\"></p></div><span data-card-action-last class=\"shrink-0 text-[.65rem] text-muted-foreground empty:hidden\"></span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var72 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var68 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2078,7 +2007,7 @@ func ClusterOpsCard() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "Run")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "Run")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2088,11 +2017,11 @@ func ClusterOpsCard() templ.Component {
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-card-run": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var72), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var68), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "</div></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "</div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2120,16 +2049,16 @@ func cloudStrip() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var73 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var73 == nil {
-			templ_7745c5c3_Var73 = templ.NopComponent
+		templ_7745c5c3_Var69 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var69 == nil {
+			templ_7745c5c3_Var69 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<!-- What the provider says, for a machine that has one. It sits\n\t     above the commands because it answers a question the\n\t     commands cannot: a box that is powered off does not fail\n\t     an SSH command, it fails to have one run at all. --><div data-cloud hidden class=\"space-y-3 border-t border-border pt-4\"><div class=\"flex items-center justify-between gap-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Cloud</p><span data-cloud-state class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span></div><p data-cloud-meta class=\"truncate font-mono text-[.65rem] text-muted-foreground empty:hidden\"></p><div data-cloud-transfer-wrap class=\"space-y-1\"><div class=\"h-1.5 w-full overflow-hidden rounded-full bg-muted\"><div data-cloud-transfer-bar class=\"h-full rounded-full bg-primary\" style=\"width:0%\"></div></div><p data-cloud-transfer class=\"text-[.65rem] text-muted-foreground empty:hidden\"></p></div><div class=\"flex flex-wrap items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<!-- What the provider says, for a machine that has one. It sits\n\t     above the commands because it answers a question the\n\t     commands cannot: a box that is powered off does not fail\n\t     an SSH command, it fails to have one run at all. --><div data-cloud hidden class=\"space-y-3 border-t border-border pt-4\"><div class=\"flex items-center justify-between gap-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Cloud</p><span data-cloud-state class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span></div><p data-cloud-meta class=\"truncate font-mono text-[.65rem] text-muted-foreground empty:hidden\"></p><div data-cloud-transfer-wrap class=\"space-y-1\"><div class=\"h-1.5 w-full overflow-hidden rounded-full bg-muted\"><div data-cloud-transfer-bar class=\"h-full rounded-full bg-primary\" style=\"width:0%\"></div></div><p data-cloud-transfer class=\"text-[.65rem] text-muted-foreground empty:hidden\"></p></div><div class=\"flex flex-wrap items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var74 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var70 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2141,7 +2070,7 @@ func cloudStrip() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "Start")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "Start")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2151,11 +2080,11 @@ func cloudStrip() templ.Component {
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-cloud-power": "start", "title": "Power the instance on"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var74), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var70), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var75 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var71 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2167,7 +2096,7 @@ func cloudStrip() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "Reboot")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "Reboot")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2177,11 +2106,11 @@ func cloudStrip() templ.Component {
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-cloud-power": "reboot", "title": "Power-cycle the instance — not the same as a reboot over SSH"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var75), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var71), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var76 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var72 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2193,7 +2122,7 @@ func cloudStrip() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "Halt")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "Halt")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2203,11 +2132,11 @@ func cloudStrip() templ.Component {
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-cloud-power": "halt", "title": "Stop the instance. It keeps its disk, its address and its bill."},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var76), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var72), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var77 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var73 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2219,7 +2148,7 @@ func cloudStrip() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "Snapshot")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "Snapshot")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2230,11 +2159,11 @@ func cloudStrip() templ.Component {
 			Size:       button.SizeSm,
 			Class:      "ml-auto",
 			Attributes: templ.Attributes{"data-cloud-snapshot": true, "title": "Take an image of this machine's disk"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var77), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var73), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var78 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var74 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2257,11 +2186,11 @@ func cloudStrip() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "shrink-0 text-muted-foreground",
 			Attributes: templ.Attributes{"data-cloud-snapshots-toggle": true, "aria-label": "Show this machine's snapshots"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var78), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var74), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</div><div data-cloud-snapshots hidden class=\"space-y-1.5\"></div><p data-cloud-error class=\"text-xs text-destructive empty:hidden\"></p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</div><div data-cloud-snapshots hidden class=\"space-y-1.5\"></div><p data-cloud-error class=\"text-xs text-destructive empty:hidden\"></p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2287,33 +2216,33 @@ func headFigure(label string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var79 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var79 == nil {
-			templ_7745c5c3_Var79 = templ.NopComponent
+		templ_7745c5c3_Var75 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var75 == nil {
+			templ_7745c5c3_Var75 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "<div class=\"hidden w-24 shrink-0 flex-col md:flex\" title=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "<div class=\"hidden w-24 shrink-0 flex-col md:flex\" title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var80 string
-		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
+		var templ_7745c5c3_Var76 string
+		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 996, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1017, Col: 65}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templ_7745c5c3_Var79.Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</div>")
+		templ_7745c5c3_Err = templ_7745c5c3_Var75.Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2341,25 +2270,25 @@ func headLabel(label string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var81 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var81 == nil {
-			templ_7745c5c3_Var81 = templ.NopComponent
+		templ_7745c5c3_Var77 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var77 == nil {
+			templ_7745c5c3_Var77 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "<p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "<p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var82 string
-		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		var templ_7745c5c3_Var78 string
+		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1006, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1027, Col: 81}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2385,51 +2314,51 @@ func headStat(key, label string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var83 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var83 == nil {
-			templ_7745c5c3_Var83 = templ.NopComponent
+		templ_7745c5c3_Var79 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var79 == nil {
+			templ_7745c5c3_Var79 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "<div data-head-stat=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "<div data-head-stat=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var84 string
-		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
+		var templ_7745c5c3_Var80 string
+		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1012, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1033, Col: 26}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "\" class=\"hidden w-16 shrink-0 flex-col lg:flex\"><p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var85 string
-		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(label)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1013, Col: 82}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "\" class=\"hidden w-16 shrink-0 flex-col lg:flex\"><p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</p><p data-head-value=\"")
+		var templ_7745c5c3_Var81 string
+		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1034, Col: 82}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var86 string
-		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1014, Col: 26}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "</p><p data-head-value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "\" class=\"font-mono text-sm tabular-nums\"></p></div>")
+		var templ_7745c5c3_Var82 string
+		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1035, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "\" class=\"font-mono text-sm tabular-nums\"></p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2453,51 +2382,51 @@ func hostMeter(key, label string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var87 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var87 == nil {
-			templ_7745c5c3_Var87 = templ.NopComponent
+		templ_7745c5c3_Var83 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var83 == nil {
+			templ_7745c5c3_Var83 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "<div data-host-tile class=\"space-y-1\"><p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<div data-host-tile class=\"space-y-1\"><p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var88 string
-		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		var templ_7745c5c3_Var84 string
+		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1020, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1041, Col: 82}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "</p><p data-host-value=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var89 string
-		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1021, Col: 26}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</p><p data-host-value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\" class=\"font-mono text-sm tabular-nums\"></p><div class=\"h-1.5 w-full overflow-hidden rounded-full bg-muted\"><div data-host-bar=\"")
+		var templ_7745c5c3_Var85 string
+		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1042, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var85)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var90 string
-		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1023, Col: 27}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "\" class=\"font-mono text-sm tabular-nums\"></p><div class=\"h-1.5 w-full overflow-hidden rounded-full bg-muted\"><div data-host-bar=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "\" class=\"h-full rounded-full bg-primary\" style=\"width:0%\"></div></div></div>")
+		var templ_7745c5c3_Var86 string
+		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1044, Col: 27}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "\" class=\"h-full rounded-full bg-primary\" style=\"width:0%\"></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2523,33 +2452,33 @@ func cardMetric(label string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var91 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var91 == nil {
-			templ_7745c5c3_Var91 = templ.NopComponent
+		templ_7745c5c3_Var87 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var87 == nil {
+			templ_7745c5c3_Var87 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "<div class=\"space-y-1\"><p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "<div class=\"space-y-1\"><p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var92 string
-		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		var templ_7745c5c3_Var88 string
+		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1032, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/cluster.templ`, Line: 1053, Col: 82}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "</p>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templ_7745c5c3_Var91.Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</div>")
+		templ_7745c5c3_Err = templ_7745c5c3_Var87.Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2574,12 +2503,12 @@ func ClusterCard() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var93 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var93 == nil {
-			templ_7745c5c3_Var93 = templ.NopComponent
+		templ_7745c5c3_Var89 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var89 == nil {
+			templ_7745c5c3_Var89 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var94 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var90 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2591,7 +2520,7 @@ func ClusterCard() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Var95 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var91 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -2603,7 +2532,7 @@ func ClusterCard() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Var96 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var92 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -2615,21 +2544,21 @@ func ClusterCard() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "Cluster")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "Cluster")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = card.Title().Render(templ.WithChildren(ctx, templ_7745c5c3_Var96), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = card.Title().Render(templ.WithChildren(ctx, templ_7745c5c3_Var92), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var97 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var93 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -2641,21 +2570,21 @@ func ClusterCard() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "Machines watched from the outside")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "Machines watched from the outside")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = card.Description().Render(templ.WithChildren(ctx, templ_7745c5c3_Var97), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = card.Description().Render(templ.WithChildren(ctx, templ_7745c5c3_Var93), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var98 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var94 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -2667,7 +2596,7 @@ func ClusterCard() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Var99 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var95 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -2679,33 +2608,33 @@ func ClusterCard() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "Manage →")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "Manage →")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = button.Button(button.Props{Href: "/settings/cluster", Variant: button.VariantGhost, Size: button.SizeSm}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var99), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = button.Button(button.Props{Href: "/cluster", Variant: button.VariantGhost, Size: button.SizeSm}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var95), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = card.Action().Render(templ.WithChildren(ctx, templ_7745c5c3_Var98), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = card.Action().Render(templ.WithChildren(ctx, templ_7745c5c3_Var94), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = card.Header().Render(templ.WithChildren(ctx, templ_7745c5c3_Var95), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = card.Header().Render(templ.WithChildren(ctx, templ_7745c5c3_Var91), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var100 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var96 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -2717,27 +2646,27 @@ func ClusterCard() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "<!-- The same rows as the settings page, with the controls hidden\n\t\t\t     by one CSS rule rather than a second near-identical template\n\t\t\t     that would drift the first time a column is added. --> <div data-cluster-compact><div data-cluster-rows class=\"divide-y divide-border\"></div></div><div data-cluster-empty>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "<!-- The same rows as the settings page, with the controls hidden\n\t\t\t     by one CSS rule rather than a second near-identical template\n\t\t\t     that would drift the first time a column is added. --> <div data-cluster-compact><div data-cluster-rows class=\"divide-y divide-border\"></div></div><div data-cluster-empty>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = ui.Empty("No machines watched yet — add one in settings.").Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = ui.Empty("No machines watched yet — add one on the cluster page.").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = card.Content(card.ContentProps{Class: "space-y-2"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var100), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = card.Content(card.ContentProps{Class: "space-y-2"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var96), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = card.Card().Render(templ.WithChildren(ctx, templ_7745c5c3_Var94), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = card.Card().Render(templ.WithChildren(ctx, templ_7745c5c3_Var90), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2750,15 +2679,39 @@ func ClusterCard() templ.Component {
 // Only on /cluster/{id}: the list has no room for it, and a command box beside
 // twenty machines is a box you can aim at the wrong one.
 //
-// **Run** runs the line as typed — `POST /api/cluster/exec`, admin, refused on a
+// **Run** runs what is typed — `POST /api/cluster/exec`, admin, refused on a
 // locked machine, and logged into the same history the stored commands write to.
 // The stored commands are still the vetted list: what is scheduled, what has a
 // staleness budget, what a card offers as a button. This is the thing you reach
 // for instead of opening a terminal, which is what people were doing anyway.
 //
-// The output is a plain `<pre>`, so it selects and copies like a terminal does,
-// and there is a Copy button for the whole of it — the reason to run `docker ps`
-// from here is usually to paste a line of it somewhere else.
+// It is built to be used like a terminal rather than like a form, because the
+// form version was one line, one output, and a pane that was replaced on every
+// run — so reading what you did two commands ago meant remembering it:
+//
+//   - **The pane is a transcript.** Every run appends: the command on a prompt
+//     line, then its output, then how it ended. Nothing is thrown away until
+//     Clear, and it scrolls to the bottom the way a terminal does.
+//   - **Up and Down walk the history**, seeded from what this machine has
+//     actually run rather than from this tab — so a command from last week, or
+//     from somebody else's browser, is one keypress away.
+//   - **A textarea, not an input.** Paste four lines and four lines run, one
+//     after another. Enter runs, Shift+Enter is a newline, and the box grows to
+//     what is in it.
+//   - **`cd` works.** Each exec is its own SSH session, so a directory would
+//     normally last exactly one line — `cd ..`, `ls`, and the same listing
+//     again, which reads as the terminal ignoring you. The browser carries the
+//     directory instead: it is put back in front of the next command and read
+//     back from the machine afterwards, so the prompt and the box agree with
+//     where you actually are.
+//   - **No confirmation.** A dialog in front of every command is in front of
+//     `ls` as often as anything else, which is how a confirmation stops being
+//     read. What guards this is the endpoint being admin, a locked machine
+//     refusing it, and every line landing in the run log.
+//
+// The transcript is a `<pre>`, so it selects and copies like a terminal does,
+// and Copy takes the whole of it — the reason to run `docker ps` from here is
+// usually to paste a line of it somewhere else.
 func MachineTerminal() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -2775,16 +2728,16 @@ func MachineTerminal() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var101 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var101 == nil {
-			templ_7745c5c3_Var101 = templ.NopComponent
+		templ_7745c5c3_Var97 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var97 == nil {
+			templ_7745c5c3_Var97 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "<section class=\"space-y-3 rounded-xl border border-border bg-card p-4\"><div class=\"flex flex-wrap items-center justify-between gap-3\"><h2 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Command line</h2><span data-machine-hint class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span></div><div class=\"flex items-stretch gap-2\"><input data-machine-command spellcheck=\"false\" autocomplete=\"off\" autocapitalize=\"off\" placeholder=\"docker ps\" class=\"cn-input h-9 min-w-0 flex-1 font-mono text-xs\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "<section class=\"space-y-3 rounded-xl border border-border bg-card p-4\"><div class=\"flex flex-wrap items-center justify-between gap-3\"><h2 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Command line</h2><span data-machine-hint class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span></div><!-- The transcript. Taller than the pane on a card, because this page is\n\t\t     where somebody reads output rather than glances at it. --><div class=\"space-y-1\"><div class=\"flex flex-wrap items-center justify-between gap-2\"><p data-machine-output-head class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p><div class=\"flex items-center gap-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var102 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var98 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2796,33 +2749,7 @@ func MachineTerminal() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "Run")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Class: "h-9 shrink-0", Attributes: templ.Attributes{"data-machine-run": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var102), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "</div><!-- The terminal. Taller than the pane on a card, because this page is\n\t\t     where somebody reads output rather than glances at it, and scrolled to\n\t\t     the bottom on every write like a terminal is. --><div class=\"space-y-1\"><div class=\"flex flex-wrap items-center justify-between gap-2\"><p data-machine-output-head class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p><div class=\"flex items-center gap-1\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var103 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "Copy")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "Copy")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2833,11 +2760,11 @@ func MachineTerminal() templ.Component {
 			Size:       button.SizeSm,
 			Class:      "h-7 px-2 text-[.65rem] text-muted-foreground",
 			Attributes: templ.Attributes{"data-machine-copy": true, "title": "Copy everything in the pane"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var103), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var98), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var104 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var99 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2849,7 +2776,7 @@ func MachineTerminal() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "History")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "History")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2860,11 +2787,11 @@ func MachineTerminal() templ.Component {
 			Size:       button.SizeSm,
 			Class:      "h-7 px-2 text-[.65rem] text-muted-foreground",
 			Attributes: templ.Attributes{"data-machine-history": true, "title": "The last runs on this machine"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var104), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var99), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var105 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var100 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -2876,7 +2803,7 @@ func MachineTerminal() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "Clear")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "Clear")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2887,11 +2814,37 @@ func MachineTerminal() templ.Component {
 			Size:       button.SizeSm,
 			Class:      "h-7 px-2 text-[.65rem] text-muted-foreground",
 			Attributes: templ.Attributes{"data-machine-clear": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var105), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var100), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "</div></div><pre data-machine-output class=\"max-h-[28rem] min-h-[10rem] select-text overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap\">Nothing has run from this page yet.</pre></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "</div></div><pre data-machine-output class=\"max-h-[28rem] min-h-[10rem] select-text overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap\">Nothing has run from this page yet.</pre></div><!-- The prompt sits under the transcript, where a terminal's is. --><div class=\"flex items-start gap-2\"><span aria-hidden=\"true\" class=\"select-none pt-2 font-mono text-xs text-primary\">$</span> <textarea data-machine-command rows=\"1\" spellcheck=\"false\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" placeholder=\"docker ps\" class=\"cn-input max-h-40 min-h-9 min-w-0 flex-1 resize-none overflow-y-auto py-2 font-mono text-xs leading-relaxed\"></textarea>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var101 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "Run")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Class: "h-9 shrink-0", Attributes: templ.Attributes{"data-machine-run": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var101), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "</div><p class=\"text-[.65rem] leading-relaxed text-muted-foreground\">Enter runs · Shift+Enter for a new line · ↑ ↓ for what ran before. Each command is its own session; the directory you are in is carried between them, and the prompt says which it is.</p></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

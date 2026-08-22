@@ -1,0 +1,104 @@
+#cloud-config
+#
+# Docker and the compose plugin. Nothing else, and nothing about guard.
+#
+# This is the box you drive yourself: you run `docker login` on it, you keep the
+# compose file on it, you deploy from a shell on it. Guard is not involved and
+# nothing here is waiting for it — there is no /guard directory, no deploy
+# account it has to prove, and no assumption about what you are going to run.
+#
+# The two files beside this one are the ones that expect guard:
+#   deploy/cloud-init.yaml      — the box guard itself runs on
+#   deploy/cloud-init-app.yaml  — a box guard deploys to
+#
+# WHAT IT DOES NOT DO
+#
+#   * No firewall. The public perimeter is the provider's, and two allowlists
+#     that have to agree is how somebody gets locked out editing one over the
+#     other. Publish 80/443 in the provider's firewall group and keep 22 to the
+#     addresses you reach from.
+#   * No application, no registry login, no swap, no tuning, no agent. Docker
+#     from Docker's own repository, started, and out of the way.
+#
+# BEFORE YOU PASTE IT
+#
+#   Replace the ssh_authorized_keys line. That is the one thing here with no
+#   sensible default.
+#
+#   Ubuntu and Debian. The repository line reads /etc/os-release, so either
+#   works unchanged; anything else needs its own install step.
+
+# The docker group, created before the account that is put in it. cloud-init
+# creates users before runcmd, and docker-ce is what would otherwise create this
+# group — so without this line the account is made without it, silently, and the
+# first `docker ps` after logging in says permission denied.
+groups:
+  - docker
+
+users:
+  # A named account in the docker group. Being in that group is equivalent to
+  # root on any box — the difference that matters is that revoking access is
+  # removing one key rather than changing root's password.
+  - name: ops
+    groups: [docker, sudo]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAA_REPLACE_WITH_YOUR_PUBLIC_KEY
+
+write_files:
+  # Log rotation, because the default is none: a container that logs steadily
+  # fills the disk, and the first symptom is something unrelated failing to
+  # write. Ten megabytes, three files, per container.
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "10m", "max-file": "3" }
+      }
+
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+
+runcmd:
+  # Docker's own repository rather than the distribution's package. The
+  # distribution's docker.io is usually old enough that the compose plugin is
+  # not in it at all, and `docker compose` then does not exist on a box where
+  # docker plainly does.
+  - install -m 0755 -d /etc/apt/keyrings
+  - >
+    curl -fsSL https://download.docker.com/linux/$(. /etc/os-release && echo $ID)/gpg
+    -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - >
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc]
+    https://download.docker.com/linux/$(. /etc/os-release && echo $ID)
+    $(. /etc/os-release && echo $VERSION_CODENAME) stable"
+    > /etc/apt/sources.list.d/docker.list
+  - apt-get update -qq
+  - >
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+  # Belt and braces: if the group was made by the package rather than by the
+  # groups: block above, the account still ends up in it.
+  - usermod -aG docker ops
+
+  # Keys only. cloud-init usually does this already; saying it here means the
+  # box is the same whether or not the image's defaults changed.
+  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+  - systemctl reload ssh || systemctl reload sshd || true
+
+  # The proof, in the log. `cloud-init status --long` and
+  # /var/log/cloud-init-output.log carry these two lines, so "did it work" is
+  # answerable without logging in and guessing.
+  - docker --version
+  - docker compose version
+
+final_message: "docker ready after $UPTIME seconds"

@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS cluster_env_state (
 // changed or the row came from another instance, and a page that refused to load
 // over one unreadable variable is a page nobody can fix.
 func (s *Store) NodeEnv(nodeID int64) ([]model.NodeEnvVar, error) {
-	rows, err := s.db.Query(`SELECT key, COALESCE(value, x'') FROM cluster_env
+	rows, err := s.rdb.Query(`SELECT key, COALESCE(value, x'') FROM cluster_env
 WHERE node_id = ? ORDER BY position, key`, nodeID)
 	if err != nil {
 		return nil, err
@@ -165,7 +165,7 @@ ON CONFLICT(node_id) DO UPDATE SET injected_ns=excluded.injected_ns, injected_co
 // envStateByNode is when each machine's environment was last saved and last put
 // on the box — the two dates the page needs to say "saved, not injected yet".
 func (s *Store) envStateByNode() (map[int64]model.NodeEnvState, error) {
-	rows, err := s.db.Query(`SELECT node_id, saved_ns, injected_ns FROM cluster_env_state`)
+	rows, err := s.rdb.Query(`SELECT node_id, saved_ns, injected_ns FROM cluster_env_state`)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +190,7 @@ func (s *Store) envStateByNode() (map[int64]model.NodeEnvState, error) {
 
 // envCountByNode is how many variables each machine has, for the list.
 func (s *Store) envCountByNode() (map[int64]int, error) {
-	rows, err := s.db.Query(`SELECT node_id, COUNT(*) FROM cluster_env GROUP BY node_id`)
+	rows, err := s.rdb.Query(`SELECT node_id, COUNT(*) FROM cluster_env GROUP BY node_id`)
 	if err != nil {
 		return nil, err
 	}

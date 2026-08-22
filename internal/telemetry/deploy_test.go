@@ -16,7 +16,9 @@ func template(t *testing.T, store *Store) model.DeployTemplate {
 		ServiceName: "app",
 		Image:       "sjc.vultrcr.com/pack/app",
 		Path:        "/srv/pack",
-		ComposeYAML: "services:\n  app:\n    image: pack:${TAG}\n",
+		// env_file, because a template declaring a variable and not delivering
+		// it is now refused — which is the point of the check.
+		ComposeYAML: "services:\n  app:\n    image: pack:${TAG}\n    env_file: .env\n",
 		HealthPath:  "/health",
 		Vars:        []model.TemplateVar{{Key: "LOG_LEVEL", Source: model.VarStatic, Value: "info"}},
 	})
@@ -73,7 +75,7 @@ func TestSavingATemplateWritesTheNextVersion(t *testing.T) {
 	}
 
 	edited := first
-	edited.ComposeYAML = "services:\n  app:\n    image: pack:${TAG}\n    restart: always\n"
+	edited.ComposeYAML = "services:\n  app:\n    image: pack:${TAG}\n    env_file: .env\n    restart: always\n"
 	second, err := store.SaveDeployTemplate(edited)
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +149,8 @@ func TestVaultVariablesAreResolvedAtDeployTime(t *testing.T) {
 	}
 
 	saved, err := store.SaveDeployTemplate(model.DeployTemplate{
-		Name: "pack", ServiceName: "app", Image: "r/app", Path: "/srv/pack", ComposeYAML: "services: {}",
+		Name: "pack", ServiceName: "app", Image: "r/app", Path: "/srv/pack",
+		ComposeYAML: "services:\n  app:\n    image: r/app:${TAG}\n    env_file: .env\n",
 		SecretEnvID: env.ID,
 		Vars: []model.TemplateVar{
 			{Key: "LOG_LEVEL", Source: model.VarStatic, Value: "info"},
@@ -391,7 +394,12 @@ func TestATemplateIsThreeAnswersRatherThanEight(t *testing.T) {
 	if saved.Path != "/guard/pack-web" {
 		t.Fatalf("writes to %q", saved.Path)
 	}
-	if saved.ServiceName != "pack-web" {
+	// The service comes off the compose file, not off the template's name. This
+	// used to assert "pack-web" — a slug of what a person calls the deploy —
+	// and that template would have deployed nothing, because the file calls the
+	// container "web". Nothing noticed while a deploy ran `up -d` over the
+	// whole file.
+	if saved.ServiceName != "web" {
 		t.Fatalf("service is %q", saved.ServiceName)
 	}
 	// The image is the one the compose file tags. A separate field could name a

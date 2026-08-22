@@ -1,0 +1,96 @@
+package components
+
+import "github.com/hushkey-app/guard/client/ui"
+
+// MachineDialog is where machines are declared and edited.
+//
+// The cluster page shows one surface: the grouped cards. A second list of the
+// same machines with edit controls on it was the same information twice — the
+// groups ARE the watched machines — and it pushed the thing somebody opened the
+// page for below the fold. Declaring is also the rarest thing done here: a
+// machine is added once and watched for months.
+//
+// So it lives behind a control instead of on the page. A checkbox and a sibling
+// selector, not <dialog>.showModal() and not the shadcn dialog: Guard serves no
+// interactive shadcn bundle, and the nav drawer already opens this way. It
+// costs no JavaScript, survives a navigation with nothing to re-hydrate, and
+// closes on the backdrop, the ✕ and Escape — Escape because the panel is
+// focusable and guard.js already closes overlays on Escape.
+//
+// The form inside is two steps. Not for length — it is seven fields — but
+// because the second step is optional and the first is not, and a form that
+// asks for an SSH password in the same breath as a name reads like both are
+// required. Step one is what guard needs to watch a machine; step two is what
+// it needs to log in, which many machines never get.
+templ MachineDialog() {
+	<input id="machine-dialog" type="checkbox" class="peer sr-only"/>
+	<div class="fixed inset-0 z-50 hidden place-items-center overflow-y-auto p-4 peer-checked:grid">
+		<label for="machine-dialog" aria-label="Close" class="absolute inset-0 bg-black/70"></label>
+		<div
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="machine-dialog-title"
+			class="relative z-10 w-full max-w-3xl rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+		>
+			<div class="flex items-start justify-between gap-4 border-b border-border p-5">
+				<div>
+					<h2 id="machine-dialog-title" class="text-lg font-semibold tracking-tight">Machines</h2>
+					<p class="mt-1 text-sm text-muted-foreground">
+						Declare a machine and guard watches it from the outside, whether or not it is
+						talking to anyone.
+					</p>
+				</div>
+				<label
+					for="machine-dialog"
+					aria-label="Close"
+					class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+				>
+					@ui.Icon("close", "size-4")
+				</label>
+			</div>
+			<div class="max-h-[70dvh] space-y-6 overflow-y-auto p-5">
+				@ClusterForm()
+				@CloudImport()
+				<div class="border-t border-border pt-6">
+					@ClusterList()
+					<!-- The row template cluster.js clones per machine. It has to
+					     travel with the list it fills: without it qs() finds no
+					     template and the list renders empty however many machines
+					     came back. -->
+					@ClusterRow()
+				</div>
+				@ui.Note("Addresses, logins, and the lock") {
+					<p>
+						The address is where the service answers and the health path hangs off it. The SSH
+						address is the machine itself, and it is optional — a machine reached through a
+						load balancer is watched without anyone logging in to it.
+					</p>
+					<p>
+						An SSH login has to connect before the machine is added, so a password that was
+						accepted is one that worked at least once. It is encrypted before it is stored and
+						never sent back here: this page is told one exists and draws dots. The key is
+						<code>GUARD_SECRET_KEY</code>, or a file beside the database when that is unset —
+						back it up with the database.
+					</p>
+					<p>
+						Locking a machine freezes its login and its saved commands for good. A command can
+						then be removed and a new one added, never edited.
+					</p>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+// MachineDialogOpen is the control that opens it. Separate from the dialog so
+// the page can put it where it belongs — beside the fleet it adds to — while
+// the dialog itself sits at the end of the document, out of the reading order.
+templ MachineDialogOpen(label string) {
+	<label
+		for="machine-dialog"
+		class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+	>
+		@ui.Icon("cluster", "size-4")
+		{ label }
+	</label>
+}

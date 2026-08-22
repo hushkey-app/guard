@@ -10,6 +10,7 @@ import (
 	"github.com/hushkey-app/guard/internal/cloud"
 	"github.com/hushkey-app/guard/internal/config"
 	deploy2 "github.com/hushkey-app/guard/internal/deploy"
+	"github.com/hushkey-app/guard/internal/hostinfo"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vultr"
@@ -84,6 +85,11 @@ func (c *Client) CheckClusterNow(ctx context.Context) ([]model.Node, error) {
 // CheckClusterSSH calls POST /api/cluster/ssh.
 func (c *Client) CheckClusterSSH(ctx context.Context, body contract.NodeRequest) (model.Run, error) {
 	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/ssh", nil, body)
+}
+
+// CheckForUpdates calls POST /api/update/check.
+func (c *Client) CheckForUpdates(ctx context.Context) (release.State, error) {
+	return api.Call[release.State](ctx, c.Transport, "POST", "/api/update/check", nil, nil)
 }
 
 // CloudAccounts calls GET /api/cloud/accounts.
@@ -322,6 +328,11 @@ func (c *Client) ImportSecrets(ctx context.Context, body model.Import) (model.Im
 // InjectMachineEnvironment calls POST /api/cluster/env/inject.
 func (c *Client) InjectMachineEnvironment(ctx context.Context, body env.Target) (env.Injected, error) {
 	return api.Call[env.Injected](ctx, c.Transport, "POST", "/api/cluster/env/inject", nil, body)
+}
+
+// InstanceInfo calls GET /api/info.
+func (c *Client) InstanceInfo(ctx context.Context) (hostinfo.Instance, error) {
+	return api.Call[hostinfo.Instance](ctx, c.Transport, "GET", "/api/info", nil, nil)
 }
 
 // LinkMachineToCloud calls PUT /api/cluster/provider/link.

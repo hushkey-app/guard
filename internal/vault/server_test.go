@@ -277,7 +277,9 @@ func TestAFetchIsRecordedAndNeverBlocks(t *testing.T) {
 
 	// And with the database gone from under it, the fetch still answers: the
 	// bookkeeping is worth having and never worth failing a boot for.
-	server.Store.db.Close()
+	// The whole store, not one handle: reads and writes have their own pool
+	// now, and closing only the writer would leave the read path answering.
+	server.Store.Close()
 	response := serve(t, server, "GET", "/v1/secrets", key.Token, nil)
 	if response.Code == http.StatusOK {
 		t.Fatal("a closed database answered with secrets")

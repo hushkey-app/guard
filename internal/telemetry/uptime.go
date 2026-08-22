@@ -94,7 +94,7 @@ func (s *Store) pruneUptimeDays() error {
 // "connection refused at 10.19.96.4:5432" would be an inventory of the private
 // network, published, in service of a green dot.
 func (s *Store) PublicStatus() (model.PublicStatus, error) {
-	rows, err := s.db.Query(`SELECT id, COALESCE(NULLIF(public_name,''), name)
+	rows, err := s.rdb.Query(`SELECT id, COALESCE(NULLIF(public_name,''), name)
 FROM cluster_nodes WHERE public = 1 AND enabled = 1 ORDER BY name`)
 	if err != nil {
 		return model.PublicStatus{}, err
@@ -131,7 +131,7 @@ FROM cluster_nodes WHERE public = 1 AND enabled = 1 ORDER BY name`)
 			Days: make([]model.PublicDay, 0, StatusDays),
 		}
 
-		history, err := s.db.Query(`SELECT day, checks, ok FROM cluster_uptime_days
+		history, err := s.rdb.Query(`SELECT day, checks, ok FROM cluster_uptime_days
 WHERE node_id = ? AND day >= ? ORDER BY day`, item.id, first)
 		if err != nil {
 			return model.PublicStatus{}, err
@@ -181,7 +181,7 @@ WHERE node_id = ? AND day >= ? ORDER BY day`, item.id, first)
 		// Only `ok` is read. The status code, the latency and the error text
 		// all exist on that row and none of them belong on a public page.
 		var latest sql.NullBool
-		err = s.db.QueryRow(`SELECT ok FROM cluster_checks WHERE node_id = ?
+		err = s.rdb.QueryRow(`SELECT ok FROM cluster_checks WHERE node_id = ?
 ORDER BY checked_at_ns DESC LIMIT 1`, item.id).Scan(&latest)
 		switch {
 		case err != nil && !errors.Is(err, sql.ErrNoRows):

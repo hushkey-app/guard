@@ -126,7 +126,7 @@ func SettingsNav(current string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = settingsLink("/settings/cluster", "◈", "Cluster", "Machines to watch", current).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = settingsLink("/settings/cloud", "▣", "Cloud accounts", "One key: registries, machines, storage", current).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -134,7 +134,7 @@ func SettingsNav(current string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = settingsLink("/settings/cloud", "▣", "Cloud accounts", "One key: registries, machines, storage", current).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = settingsLink("/settings/alerts", "◔", "Alerts", "Where events go, and when", current).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -142,7 +142,7 @@ func SettingsNav(current string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = settingsLink("/settings/alerts", "◔", "Alerts", "Where events go, and when", current).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = settingsLink("/settings/members", "◉", "Members", "Who may sign in", current).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -150,7 +150,7 @@ func SettingsNav(current string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = settingsLink("/settings/members", "◉", "Members", "Who may sign in", current).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = settingsLink("/settings/security", "⛨", "Security", "Sign-in providers and sessions", current).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -158,7 +158,7 @@ func SettingsNav(current string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = settingsLink("/settings/security", "⛨", "Security", "Sign-in providers and sessions", current).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = settingsLink("/settings/config", "⌘", "Configuration", "Every variable Guard reads", current).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -166,7 +166,7 @@ func SettingsNav(current string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = settingsLink("/settings/config", "⌘", "Configuration", "Every variable Guard reads", current).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = settingsLink("/settings/backup", "⇅", "Backup", "Export and restore the configuration", current).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -174,7 +174,7 @@ func SettingsNav(current string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = settingsLink("/settings/backup", "⇅", "Backup", "Export and restore the configuration", current).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = settingsLink("/settings/info", "ⓘ", "Info", "What this instance is running", current).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

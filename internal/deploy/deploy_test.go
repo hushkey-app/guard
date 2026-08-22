@@ -668,3 +668,118 @@ func TestPreparingSaysWhetherItChangedAnything(t *testing.T) {
 		t.Fatalf("a machine that printed nothing familiar was reported as unchanged: %+v", done)
 	}
 }
+
+// The deploy recreates the service it names, and the project only when it has
+// to. Guard rewrites the .env on every deploy, so a plain `up -d` recreates
+// every service that reads it — including a proxy holding :80, which then
+// races its own outgoing container for the port. Only the named service is
+// this template's business; a fresh box, where nothing is up yet, is the case
+// that still needs the whole file started.
+func TestOnlyTheNamedServiceIsRecreatedWhenTheProjectIsAlreadyUp(t *testing.T) {
+	command, err := Command(model.DeployTemplate{
+		ServiceName: "app", Path: "/srv/pack",
+		ComposeYAML: "services:\n  app:\n    image: r/app:${TAG}\n",
+	}, "v2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"$dc pull app;",                   // not every image in the file
+		"$dc config --services",           // what the file declares
+		"$dc ps -q",                       // and what is actually up
+		`up="$dc up -d --no-deps app"`,    // everything up: touch one service
+		`up="$dc up -d --remove-orphans"`, // something missing: bring the project up
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("the command does not contain %q:\n%s", want, command)
+		}
+	}
+}
+
+// A port still held after a recreate is docker not having released the outgoing
+// container's binding, and the only honest cure is scoped to this project: down
+// and up, through compose, in this directory. Never a hunt for whatever holds
+// the port — that process is usually docker's own proxy, and on a box where it
+// is somebody's nginx, killing it is an outage guard caused.
+func TestAHeldPortIsRetriedThroughComposeAndOnlyOnce(t *testing.T) {
+	command, err := Command(model.DeployTemplate{
+		ServiceName: "app", Path: "/srv/pack",
+		ComposeYAML: "services:\n  app:\n    image: r/app:${TAG}\n",
+	}, "v2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(command, "port is already allocated") {
+		t.Fatal("the retry does not look for the failure it cures")
+	}
+	if !strings.Contains(command, "$dc down --remove-orphans; $dc up -d --remove-orphans;") {
+		t.Fatalf("the recovery is not a scoped down and up:\n%s", command)
+	}
+	if strings.Contains(command, "lsof") || strings.Contains(command, "fuser") || strings.Contains(command, "kill") {
+		t.Fatal("the command goes looking for a process to kill")
+	}
+	// Once. A port held by something that is not ours never comes free, and a
+	// loop would only take longer to say so.
+	if strings.Count(command, "$dc down") != 1 {
+		t.Fatal("the recovery runs more than once")
+	}
+}
+
+// The service name is the one field that reaches the shell as a bare word
+// rather than as base64, so this package checks it too rather than trusting
+// that whoever built the struct went through Validate.
+//
+// The compose file here declares no services, so there is nothing to correct
+// to and the check is the last thing standing. Where the file *does* declare
+// services, a name that is not one of them never reaches the shell at all — it
+// is replaced by the service carrying ${TAG}, and only names the file itself
+// declared can survive, which servicePattern already limits.
+func TestAServiceNameThatIsNotOneIsRefused(t *testing.T) {
+	for _, name := range []string{"", "app; rm -rf /", "app caddy", "$(id)", "-app"} {
+		if _, err := Command(model.DeployTemplate{
+			ServiceName: name, Path: "/srv/pack",
+			ComposeYAML: "services: {}\n",
+		}, "v2", nil); err == nil {
+			t.Fatalf("%q was accepted as a service name", name)
+		}
+	}
+}
+
+// A template stored before guard read the service off the compose file carries
+// a slug of the *template's* name — "pack-app" where the file says "app". That
+// was harmless while a deploy ran `up -d` over the whole file; addressing one
+// service makes it fatal, and the machine reports it as
+// `docker exited 1: no such service: pack-app`. The file is the authority, and
+// the correction is announced rather than made quietly.
+func TestAStoredServiceNameTheComposeFileDoesNotHaveIsCorrectedOutLoud(t *testing.T) {
+	command, err := Command(model.DeployTemplate{
+		ServiceName: "pack-app", Path: "/guard/pack-app",
+		ComposeYAML: "services:\n  app:\n    image: r/app:${TAG}\n    env_file: .env\n  caddy:\n    image: caddy:2-alpine\n",
+	}, "v2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(command, `$dc pull app;`) || !strings.Contains(command, `--no-deps app"`) {
+		t.Fatalf("the deploy does not address the service the file has:\n%s", command)
+	}
+	if strings.Contains(command, "pull pack-app") {
+		t.Fatal("the deploy still addresses the stored name")
+	}
+	if !strings.Contains(command, "which the compose file does not have") {
+		t.Fatalf("the correction is silent:\n%s", command)
+	}
+}
+
+// And where there is nothing to correct to, it refuses rather than guessing.
+func TestAComposeFileWithNoTaggedServiceIsRefusedByName(t *testing.T) {
+	_, err := Command(model.DeployTemplate{
+		ServiceName: "pack-app", Path: "/guard/pack-app",
+		ComposeYAML: "services:\n  caddy:\n    image: caddy:2-alpine\n",
+	}, "v2", nil)
+	if err == nil {
+		t.Fatal("a compose file with no tagged service was accepted")
+	}
+	if !strings.Contains(err.Error(), "caddy") {
+		t.Fatalf("the refusal does not say what the file has: %v", err)
+	}
+}
