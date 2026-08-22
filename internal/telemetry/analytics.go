@@ -25,7 +25,11 @@ package telemetry
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"time"
+
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 func migrateAnalytics(db *sql.DB) error {
@@ -102,4 +106,115 @@ CREATE UNIQUE INDEX IF NOT EXISTS analytics_path_rules_pattern ON analytics_path
 		return fmt.Errorf("migrate analytics: %w", err)
 	}
 	return nil
+}
+
+// actionPageView is the one reserved name. It is counted like any other action
+// — it is what the Views column is — but it is never offered as a column of its
+// own, so it is not a discovery anybody has to decide about.
+const actionPageView = "page_view"
+
+// AddAnalytics folds one beacon into the tables that count: the raw row
+// somebody instrumenting a page is watching, the seen row that makes the
+// session count exact, and the rollup that outlives both.
+//
+// One transaction per beacon rather than one per event, because a batch is what
+// the tracker actually sends and fifty commits would be fifty trips through the
+// single writer everything else in guard is already queued behind.
+func (s *Store) AddAnalytics(b model.Beacon) error {
+	return s.addAnalyticsAt(b, time.Now().UTC())
+}
+
+// addAnalyticsAt is AddAnalytics with the clock passed in, which is how the
+// tests cross a day boundary without waiting for one.
+//
+// The day is guard's clock, never the browser's. An event's own timestamp is
+// kept on the raw row because it is what orders a session, but it comes from a
+// stranger's machine: a rollup keyed on it would let one visitor with a wrong
+// laptop write a day into next year, and the seen row that is supposed to make
+// that day's count exact would be filed under the same wrong day forever.
+func (s *Store) addAnalyticsAt(b model.Beacon, at time.Time) error {
+	// Validated here as well as at the door. These action names become the
+	// grid's columns, so "a name that can be a column" has to be true of the
+	// store rather than of one handler — a second caller must not be able to
+	// write one that cannot.
+	if err := b.Validate(); err != nil {
+		return err
+	}
+	// Normalised again for the same reason: the door is public, so the path is
+	// whatever somebody posted, and a path that skipped it would be a second
+	// row for a page that already has one.
+	path := model.NormalisePath(b.Path)
+	day := epochDay(at)
+	receivedNS := at.UTC().UnixNano()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	raw, err := tx.Prepare(`INSERT INTO analytics_events(received_at_ns, timestamp_ns, session, path, action, props_json) VALUES(?,?,?,?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer raw.Close()
+	seen, err := tx.Prepare(`INSERT OR IGNORE INTO analytics_seen(day, path, action, session) VALUES(?,?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer seen.Close()
+	rollup, err := tx.Prepare(`INSERT INTO analytics_rollup(day, path, action, events, sessions) VALUES(?,?,?,1,?)
+ON CONFLICT(day, path, action) DO UPDATE SET events = events + 1, sessions = sessions + ?`)
+	if err != nil {
+		return err
+	}
+	defer rollup.Close()
+	discovered, err := tx.Prepare(`INSERT INTO analytics_actions(name, first_seen_ns, last_seen_ns) VALUES(?,?,?)
+ON CONFLICT(name) DO UPDATE SET last_seen_ns = excluded.last_seen_ns`)
+	if err != nil {
+		return err
+	}
+	defer discovered.Close()
+
+	for _, event := range b.Events {
+		props := "{}"
+		if len(event.Props) > 0 {
+			// A nil or empty map marshals to `null` and to `{}` respectively,
+			// and a column of `null` text is a column every reader has to
+			// special-case.
+			encoded, err := json.Marshal(event.Props)
+			if err != nil {
+				return fmt.Errorf("encode analytics props: %w", err)
+			}
+			props = string(encoded)
+		}
+		timestampNS := receivedNS
+		if event.At > 0 {
+			timestampNS = event.At * int64(time.Millisecond)
+		}
+		if _, err := raw.Exec(receivedNS, timestampNS, b.Session, path, event.Name, props); err != nil {
+			return fmt.Errorf("store analytics event: %w", err)
+		}
+		result, err := seen.Exec(day, path, event.Name, b.Session)
+		if err != nil {
+			return fmt.Errorf("record analytics session: %w", err)
+		}
+		// The write that changed nothing is the whole distinct count: the row
+		// is its own key, so an ignored insert means this session had already
+		// done this on this path today and only `events` moves.
+		firstToday, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if _, err := rollup.Exec(day, path, event.Name, firstToday, firstToday); err != nil {
+			return fmt.Errorf("roll up analytics event: %w", err)
+		}
+		if event.Name == actionPageView {
+			continue
+		}
+		if _, err := discovered.Exec(event.Name, receivedNS, receivedNS); err != nil {
+			return fmt.Errorf("record analytics action: %w", err)
+		}
+	}
+	return tx.Commit()
 }
