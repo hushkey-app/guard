@@ -153,3 +153,13 @@ on its own. `ralph.sh` greps for it.
   against it could only show a rule doing nothing). `previewPaths = 100` is a
   const beside its reader. Save is admin; the preview declares no role, like the
   view builder's — C4 is the last endpoint.
+
+## C4 — the health endpoint, counts as counts and "off" as a value
+- commit: (this one)
+- gates: build ok / wasm ok / howl ok / make test ok
+- notes: `GET /api/analytics/health` over `model.AnalyticsHealth` — no contract
+  type, because B3's model already *is* the answer and wrapping it would be a
+  second place for the shape to be wrong. No role, like the rules read and the
+  preview: it names nothing and counts refusals. `Enabled` is the load-bearing
+  field for D3 — the page's "analytics is off" state must come from a value,
+  since a configured tracker nobody has visited yet draws the same empty grid.

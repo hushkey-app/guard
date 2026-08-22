@@ -342,3 +342,29 @@ func TestAnalyticsPathRuleWritesNeedTheToken(t *testing.T) {
 		t.Fatalf("reading with the token = %d", code)
 	}
 }
+
+// The counters reach the wire, and "off" is a value rather than an absence of
+// rows: the page has to be able to say "analytics is not configured" without
+// inferring it from an empty grid, which is also what a working tracker that
+// nobody has visited yet looks like.
+func TestAnalyticsHealthCarriesWhatWasThrownAway(t *testing.T) {
+	store, srv := server(t, "")
+	visit(t, store, "a1", "/pricing", "page_view", "signup_click")
+	store.AnalyticsRejected()
+
+	var body model.AnalyticsHealth
+	if code := get(t, srv.URL+"/api/analytics/health", &body); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	// Nothing mounted the browser door on this server, so the counters are
+	// real and analytics is still off.
+	if body.Enabled {
+		t.Error("a server with no browser door says analytics is on")
+	}
+	if body.Rejected != 1 || body.Actions != 1 || body.SeenRows != 2 {
+		t.Fatalf("health = %#v", body)
+	}
+	if body.LastEvent.IsZero() {
+		t.Error("a beacon landed and the health says nothing has ever arrived")
+	}
+}

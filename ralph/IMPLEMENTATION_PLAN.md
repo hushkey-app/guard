@@ -192,7 +192,7 @@ convention, not a choice.
     100 distinct paths before it is stored.
   - Verify: `make apis && go build ./... && go test ./server/...`
 
-- [ ] **C4 — the health endpoint**
+- [x] **C4 — the health endpoint**
   - Depends: C3
   - Files: `server/apis/analytics/health.api.go`
   - Verify: `make apis && go build ./...`
