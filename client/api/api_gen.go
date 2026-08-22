@@ -72,6 +72,11 @@ func (c *Client) AnalyticsHealth(ctx context.Context) (model.AnalyticsHealth, er
 	return api.Call[model.AnalyticsHealth](ctx, c.Transport, "GET", "/api/analytics/health", nil, nil)
 }
 
+// AnalyticsPath calls GET /api/analytics/path.
+func (c *Client) AnalyticsPath(ctx context.Context, query contract.AnalyticsPathQuery) ([]model.PathPoint, error) {
+	return api.Call[[]model.PathPoint](ctx, c.Transport, "GET", "/api/analytics/path", query, nil)
+}
+
 // AnalyticsPathRules calls GET /api/analytics/rules.
 func (c *Client) AnalyticsPathRules(ctx context.Context) ([]model.PathRule, error) {
 	return api.Call[[]model.PathRule](ctx, c.Transport, "GET", "/api/analytics/rules", nil, nil)

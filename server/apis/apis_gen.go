@@ -45,6 +45,7 @@ func FsApiRoutes() []api.Route {
 		api.At("GET", "/api/analytics/actions", e0.Actions),
 		api.At("POST", "/api/analytics/actions", e0.Pin),
 		api.At("GET", "/api/analytics/health", e0.Health),
+		api.At("GET", "/api/analytics/path", e0.Path),
 		api.At("POST", "/api/analytics/preview", e0.Preview),
 		api.At("GET", "/api/analytics/rules", e0.Rules),
 		api.At("POST", "/api/analytics/rules", e0.SaveRules),

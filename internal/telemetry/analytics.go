@@ -916,6 +916,45 @@ FROM analytics_rollup WHERE day BETWEEN ? AND ? GROUP BY path, action`, first, l
 	return out, nil
 }
 
+// AnalyticsPathSeries is one path's days: page views and the sessions behind
+// them, oldest first, for the chart under an opened row.
+//
+// Its own read rather than a field on every PathRow, which is the one place the
+// fold is allowed to ask twice. The grid is a thousand paths at the cardinality
+// cap and a window is ninety days, so carrying every series in the grid's
+// answer would put ninety thousand points on the wire — on a timer — to draw
+// the one row somebody opened.
+//
+// The path is matched whole and bound as a parameter. It arrives from a query
+// string, so it is a value rather than a pattern: a LIKE here would let one
+// opened row read every path in the product.
+func (s *Store) AnalyticsPathSeries(path string, from, to time.Time) ([]model.PathPoint, error) {
+	first, last := analyticsDays(from, to)
+	rows, err := s.rdb.Query(`SELECT day, events, sessions FROM analytics_rollup
+WHERE path = ? AND action = ? AND day BETWEEN ? AND ? ORDER BY day`, path, actionPageView, first, last)
+	if err != nil {
+		return nil, fmt.Errorf("read analytics path series: %w", err)
+	}
+	defer rows.Close()
+
+	// Empty rather than nil: the endpoint answers JSON, and `null` where the
+	// caller expects a list is a renderer that has to guard what an empty array
+	// already says.
+	points := []model.PathPoint{}
+	for rows.Next() {
+		var day int64
+		var point model.PathPoint
+		if err := rows.Scan(&day, &point.Views, &point.Sessions); err != nil {
+			return nil, err
+		}
+		// Midnight UTC, because that is what the row is: a whole day, not the
+		// moment inside it that the first beacon happened to arrive.
+		point.Day = time.Unix(day*86400, 0).UTC()
+		points = append(points, point)
+	}
+	return points, rows.Err()
+}
+
 // AnalyticsSummary is the strip: the window, and the one of equal length
 // immediately before it.
 //

@@ -893,6 +893,107 @@ func TestAnalyticsPathsHaveNoRateWithoutAPageView(t *testing.T) {
 	}
 }
 
+// The chart behind an opened row: that path's days, in order, page views only.
+//
+// Oldest first, because the renderer draws what it is handed and a series that
+// arrived out of order is a line that zigzags backwards through the week.
+func TestAnalyticsPathSeriesIsOnePointPerDayOfPageViews(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	monday := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	wednesday := monday.Add(48 * time.Hour)
+	for _, b := range []model.Beacon{
+		beacon("a1", "/pricing", "page_view", "signup_click"),
+		beacon("b2", "/pricing", "page_view"),
+	} {
+		if err := store.addAnalyticsAt(b, monday); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.addAnalyticsAt(beacon("c3", "/pricing", "page_view"), wednesday); err != nil {
+		t.Fatal(err)
+	}
+	// Another path on the same days, to prove the series is one path's and not
+	// the product's.
+	if err := store.addAnalyticsAt(beacon("d4", "/docs", "page_view"), monday); err != nil {
+		t.Fatal(err)
+	}
+
+	series, err := store.AnalyticsPathSeries("/pricing", monday, wednesday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Tuesday is absent rather than zero. The rollup cannot tell a page nobody
+	// visited from a day guard was not running to hear about it, and a zero
+	// drawn for both makes an outage read as a quiet Tuesday.
+	if len(series) != 2 {
+		t.Fatalf("three days with two of them seen came back as %d points", len(series))
+	}
+	if !series[0].Day.Equal(monday.Truncate(24 * time.Hour)) {
+		t.Fatalf("the first point is %v, not the day it happened on", series[0].Day)
+	}
+	// Midnight UTC, because the point is a whole day rather than the moment
+	// inside it the first beacon happened to arrive.
+	if series[0].Day.Hour() != 0 || series[0].Day.Location() != time.UTC {
+		t.Fatalf("a day came back as %v", series[0].Day)
+	}
+	// Two sessions, and the action on one of them is not a page view: a chart
+	// counting every event would say the page was read three times.
+	if series[0].Views != 2 || series[0].Sessions != 2 {
+		t.Fatalf("monday came back as %d views over %d sessions", series[0].Views, series[0].Sessions)
+	}
+	if !series[1].Day.After(series[0].Day) {
+		t.Fatalf("the points came back %v then %v", series[0].Day, series[1].Day)
+	}
+	if series[1].Views != 1 {
+		t.Fatalf("wednesday came back as %d views", series[1].Views)
+	}
+}
+
+// The window bounds the series, the same way it bounds the grid above it — a
+// chart drawn over more days than the figures beside it is two windows on one
+// screen.
+func TestAnalyticsPathSeriesStopsAtTheWindow(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	monday := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for _, day := range []time.Time{monday, monday.Add(24 * time.Hour), monday.Add(48 * time.Hour)} {
+		if err := store.addAnalyticsAt(beacon("a1", "/pricing", "page_view"), day); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	series, err := store.AnalyticsPathSeries("/pricing", monday, monday.Add(24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(series) != 2 {
+		t.Fatalf("a two-day window came back as %d points", len(series))
+	}
+}
+
+// A path nobody has been to is an empty series rather than an error or a null:
+// the fold has to say "nothing here" in words, and it can only do that if the
+// read succeeds.
+func TestAnalyticsPathSeriesIsEmptyForAnUnknownPath(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	series, err := store.AnalyticsPathSeries("/nowhere", at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if series == nil {
+		t.Fatal("an unknown path came back as null rather than an empty series")
+	}
+	if len(series) != 0 {
+		t.Fatalf("an unknown path came back with %d points", len(series))
+	}
+}
+
 // The strip is two windows of equal length, because a number on its own is not
 // a measurement. Sessions are counted site-wide rather than summed per path —
 // one visit reading three pages is one session, and the ratio is the whole

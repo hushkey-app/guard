@@ -11,8 +11,9 @@
 // Everything goes through the store, like every other page. Walking to /traces
 // and back is a navigation, not a fetch, and the window is module state for the
 // same reason: the store lives outside the outlet, and so does this.
-import { el, muted, number, qs, request } from "./core.js";
-import { ensure } from "./store.js";
+import { adminHeaders, el, muted, number, qs, request, text } from "./core.js";
+import { draw } from "./charts.js";
+import { ensure, freshness, get, set } from "./store.js";
 
 // The window the strip and the grid are read over. Held here rather than read
 // off the select, because the markup's default is a default — once somebody
@@ -270,6 +271,185 @@ function pathRow(row, columns, track) {
   return node;
 }
 
+// One path: the line in the grid, and the panel it opens onto. The block is
+// what carries the path, because the row is a grid and the panel must not be a
+// cell of it.
+function pathBlock(row, columns, track) {
+  const block = el("div");
+  block.dataset.analyticsPath = row.path;
+  block.append(pathRow(row, columns, track));
+  showFold(block, opened.has(row.path));
+  return block;
+}
+
+// ---------------------------------------------------------------------------
+// The fold
+// ---------------------------------------------------------------------------
+
+// Which paths are opened out, remembered across navigations — the same rule
+// /cluster keeps. Shut is the default because the grid is what somebody came to
+// scan; open is remembered because a row somebody opened is a row they are
+// working on, and walking to /traces and back should not close it.
+//
+// Keyed by path rather than by position: the grid re-sorts on a press and on
+// every window, and yesterday's third row is not today's.
+const opened = new Set(JSON.parse(localStorage.getItem("guard.analytics.open") || "[]"));
+
+function rememberOpened() {
+  localStorage.setItem("guard.analytics.open", JSON.stringify([...opened]));
+}
+
+const pathOf = (path) => (paths || []).find((row) => row.path === path);
+
+// Open or shut one path. The panel is built on the way open and removed on the
+// way shut rather than hidden, because `display:none` markup is still markup to
+// every querySelector on the page: a panel that stayed would be a chart and an
+// action list rebuilt for every path anybody had ever opened, on every pass,
+// behind a fold nobody is looking at.
+function showFold(block, open) {
+  const row = block.querySelector("[data-analytics-row]");
+  row.setAttribute("aria-expanded", open ? "true" : "false");
+  const chevron = row.querySelector("[data-row-chevron]");
+  if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
+  block.querySelector("[data-analytics-fold]")?.remove();
+  if (!open) return;
+  const data = pathOf(block.dataset.analyticsPath);
+  if (data) block.append(foldPanel(data));
+}
+
+function foldPanel(row) {
+  const panel = qs("[data-analytics-fold-template]").content.firstElementChild.cloneNode(true);
+  foldActions(panel.querySelector("[data-fold-actions]"), row);
+  // Started here rather than awaited, so the panel opens now and the chart
+  // lands into a box that already has its place: a fold that waited on a read
+  // before appearing would be a press with nothing behind it.
+  fillSeries(panel.querySelector("[data-fold-chart]"), panel.querySelector("[data-fold-legend]"), row.path);
+  return panel;
+}
+
+// Every action on this path, pinned or not — the discovery half, and the only
+// place an unpinned name can be seen at all. Ordered by the sessions that did
+// it, because the list is read from the top and the one worth making a column
+// of is the one people actually do.
+function foldActions(host, row) {
+  const names = Object.keys(row.actions || {});
+  if (!names.length) {
+    host.replaceChildren(el("p", `px-2 text-xs ${muted}`, "Nothing but page views on this path in this window."));
+    return;
+  }
+  names.sort((left, right) => (row.actions[right].sessions - row.actions[left].sessions) || left.localeCompare(right));
+  host.replaceChildren(...names.map((name) => actionLine(row, name)));
+}
+
+function actionLine(row, name) {
+  const line = qs("[data-analytics-action-template]").content.firstElementChild.cloneNode(true);
+  const cell = row.actions[name];
+  const label = line.querySelector("[data-action-name]");
+  label.textContent = name;
+  label.title = `${number.format(cell.events)} event${cell.events === 1 ? "" : "s"}, from ${number.format(cell.sessions)} session${cell.sessions === 1 ? "" : "s"}`;
+  line.querySelector("[data-action-count]").textContent = number.format(cell.sessions);
+  // The same denominator the column uses, and the same silence where there is
+  // none: a share of no page views is not a small share.
+  line.querySelector("[data-action-rate]").textContent = row.sessions ? `${(cell.rate * 100).toFixed(1)}%` : "—";
+
+  const pin = line.querySelector("[data-action-pin]");
+  const isPinned = pinned.includes(name);
+  pin.dataset.actionPin = name;
+  pin.textContent = isPinned ? "Unpin" : "Pin";
+  pin.setAttribute("aria-pressed", isPinned ? "true" : "false");
+  pin.title = isPinned
+    ? `Stop drawing ${name} as a column. It is still counted.`
+    : `Draw ${name} as a column, on every path`;
+  return line;
+}
+
+// Pinning is how a column is created, and it is the whole ordered list rather
+// than a verb, because the order is part of the decision — the endpoint answers
+// with what it stored, so the page settles on that rather than on the shuffle
+// it drew. A new pin goes last: the grid is read left to right, and a column
+// that inserted itself in the middle would move the ones being read.
+async function togglePin(name) {
+  const unpinning = pinned.includes(name);
+  const next = unpinning ? pinned.filter((each) => each !== name) : [...pinned, name];
+  try {
+    const actions = await request("/api/analytics/actions", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ pinned: next }),
+    });
+    // Published rather than kept here, so a page holding the same list — and
+    // this page on the way back to it — is corrected without a round trip.
+    set("analytics.actions", actions);
+    pinned = pinnedNames(actions);
+    columnsProblem = "";
+  } catch (failure) {
+    // Said out loud and drawn nowhere else: an optimistic column that the
+    // server refused would be a grid disagreeing with what is stored, which is
+    // the one thing this endpoint answering with the whole list prevents.
+    columnsProblem = `${name} could not be ${unpinning ? "unpinned" : "pinned"}: ${failure.message}`;
+  }
+  renderGrid();
+}
+
+// A day-grain series cannot move within the minute — the rollup is keyed by
+// whole UTC days. Without this the grid rebuilding, which it does whenever a
+// count moves, would be one request per open fold every time.
+const SERIES_MAX_AGE_MS = 60_000;
+
+// Through the store like everything else, but drawn by hand: `ensure`'s render
+// callback remembers what it put on screen, and this panel is built on open and
+// thrown away on close, so that bookkeeping would be about a node that is gone.
+// Called with no renderer it is still what is wanted here — one request shared
+// between concurrent callers, and the answer published.
+async function fillSeries(host, legend, path) {
+  const key = `analytics.path.${range}.${path}`;
+  const asked = range;
+  const known = get(key);
+  if (known) drawSeries(host, legend, known);
+  if (known && Date.now() - freshness(key) < SERIES_MAX_AGE_MS) return;
+  try {
+    const points = await ensure(key, () => request(`/api/analytics/path?path=${encodeURIComponent(path)}&range=${asked}`));
+    // The fold may have been shut and the window may have moved on while this
+    // was in flight, and either makes this answer somebody else's.
+    if (host.isConnected && asked === range) drawSeries(host, legend, points);
+  } catch (failure) {
+    // Only where there is nothing on screen. A chart drawn from the last read
+    // is worth more than the reason a refresh of it failed.
+    if (host.isConnected && asked === range && !known) {
+      host.replaceChildren(el("p", `text-xs ${muted}`, failure.message));
+    }
+  }
+}
+
+// Drawn through the panel renderer every other chart in guard goes through,
+// from a frame built here — the endpoint answers days rather than a frame,
+// because what a path did is not a saved view.
+//
+// Two series in one chart rather than two charts: a day where the lines part is
+// a day one visit read the page five times, and that is only visible when they
+// are drawn against the same axis.
+function drawSeries(host, legend, points) {
+  if (!points?.length) {
+    host.replaceChildren(el("p", `text-xs ${muted}`, "No page view on this path in this window."));
+    legend.replaceChildren();
+    return;
+  }
+  const rows = [];
+  for (const point of points) rows.push([point.day, "views", point.views], [point.day, "sessions", point.sessions]);
+  // `measure` because the series are the measure here; without it the tooltip
+  // reads "events" under the line counting sessions.
+  const entries = draw(host, { panel: "timeseries", series: ["views", "sessions"], rows }, { measure: "count" });
+  legend.replaceChildren(...entries.map((entry) => {
+    // The class strings are literal so Tailwind can find them; the colour is
+    // inline for the reason it cannot be.
+    const node = el("span", "inline-flex items-center gap-2");
+    const dot = el("span", "size-2 shrink-0 rounded-full");
+    dot.style.background = entry.colour;
+    node.append(dot, text(entry.label));
+    return node;
+  }));
+}
+
 function renderGrid() {
   const host = qs("[data-analytics-grid]");
   // Nothing read yet — the markup's own "Loading paths…" is still the truth.
@@ -297,7 +477,7 @@ function renderGrid() {
     // Ties break on the path, always, so the grid does not reshuffle under
     // somebody reading it when the next window lands with the same figures.
     compare(left, right, sort.key, sort.descending) || left.path.localeCompare(right.path));
-  for (const row of ordered) table.append(pathRow(row, columns, track));
+  for (const row of ordered) table.append(pathBlock(row, columns, track));
 
   const scroller = el("div", "overflow-x-auto");
   scroller.append(table);
@@ -310,7 +490,7 @@ function renderGrid() {
   // look identical on screen and mean opposite things.
   if (!columns.length && !columnsProblem) {
     below.push(el("p", `pt-3 text-xs ${muted}`,
-      "No action is pinned, so this is page views alone. Every action is still counted, and a pinned one becomes a column here."));
+      "No action is pinned, so this is page views alone. Every action is still counted — open a path to see the ones it has, and pin one to make it a column."));
   }
   host.replaceChildren(...above, scroller, ...below);
 }
@@ -399,6 +579,23 @@ export async function refreshAnalytics() {
 document.addEventListener("click", (event) => {
   const copy = event.target.closest("[data-analytics-copy]");
   if (copy) copySnippet(copy);
+
+  const pin = event.target.closest("[data-action-pin]");
+  if (pin) {
+    togglePin(pin.dataset.actionPin).catch(() => {});
+    return;
+  }
+
+  const row = event.target.closest("[data-analytics-row]");
+  if (row) {
+    const block = row.closest("[data-analytics-path]");
+    const path = block.dataset.analyticsPath;
+    const open = opened.delete(path) ? false : (opened.add(path), true);
+    rememberOpened();
+    showFold(block, open);
+    return;
+  }
+
   const column = event.target.closest("[data-analytics-sort]");
   if (!column) return;
   const key = column.dataset.analyticsSort;

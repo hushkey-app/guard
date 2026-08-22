@@ -8,7 +8,10 @@ package components
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "github.com/axadrn/shadcn-templ/v2/components/card"
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+)
 
 // AnalyticsStat is the strip's tile, cloned once per figure by
 // client/public/analytics.js.
@@ -131,7 +134,81 @@ func AnalyticsGrid() templ.Component {
 			templ_7745c5c3_Var4 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<template data-analytics-head-template><!-- A button, because the whole heading is the target: a caret somebody\n\t\t     has to hit is a sort nobody uses. --><button type=\"button\" class=\"flex min-w-0 items-center gap-1 py-2 text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground transition-colors hover:text-foreground\"><span data-head-label class=\"truncate\"></span> <span data-head-arrow class=\"text-[0.65rem] leading-none\"></span></button></template><template data-analytics-row-template><div class=\"grid items-center gap-3 border-t border-border/60 py-2 text-sm transition-colors hover:bg-muted/40\"><span data-row-path class=\"truncate font-mono text-xs\"></span> <span data-row-views class=\"text-right tabular-nums\"></span> <span data-row-sessions class=\"text-right tabular-nums text-muted-foreground\"></span></div></template><!-- Two lines, and the count is sessions rather than events so both halves\n\t     are the same kind of thing: 96 over 38.4% of the sessions that saw the\n\t     page adds up on the row it is read on. How often the action happened is\n\t     on the cell's title, where it cannot be mistaken for the numerator. --><template data-analytics-cell-template><span class=\"text-right\"><span data-cell-count class=\"block tabular-nums\"></span> <span data-cell-rate class=\"block text-xs tabular-nums text-muted-foreground\"></span></span></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<template data-analytics-head-template><!-- A button, because the whole heading is the target: a caret somebody\n\t\t     has to hit is a sort nobody uses. --><button type=\"button\" class=\"flex min-w-0 items-center gap-1 py-2 text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground transition-colors hover:text-foreground\"><span data-head-label class=\"truncate\"></span> <span data-head-arrow class=\"text-[0.65rem] leading-none\"></span></button></template><!-- The whole row is the disclosure, chevron included: a 14-pixel arrow is a\n\t     small thing to ask somebody to hit on a page of forty rows, and it is\n\t     the first thing a narrow column pushes out of reach. A button rather\n\t     than a div with a listener, so it is reachable from a keyboard and says\n\t     what it does through aria-expanded. --><template data-analytics-row-template><button type=\"button\" data-analytics-row aria-expanded=\"false\" class=\"grid w-full items-center gap-3 border-t border-border/60 py-2 text-left text-sm transition-colors hover:bg-muted/40\"><span class=\"flex min-w-0 items-center gap-1.5\"><svg data-row-chevron class=\"size-3.5 shrink-0 text-muted-foreground transition-transform\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"></path></svg> <span data-row-path class=\"truncate font-mono text-xs\"></span></span> <span data-row-views class=\"text-right tabular-nums\"></span> <span data-row-sessions class=\"text-right tabular-nums text-muted-foreground\"></span></button></template><!-- Two lines, and the count is sessions rather than events so both halves\n\t     are the same kind of thing: 96 over 38.4% of the sessions that saw the\n\t     page adds up on the row it is read on. How often the action happened is\n\t     on the cell's title, where it cannot be mistaken for the numerator. --><template data-analytics-cell-template><span class=\"text-right\"><span data-cell-count class=\"block tabular-nums\"></span> <span data-cell-rate class=\"block text-xs tabular-nums text-muted-foreground\"></span></span></template>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// AnalyticsFold is what a path row opens onto: the days behind its figures, and
+// every action that happened on it — pinned or not.
+//
+// The two halves answer the two questions a row cannot. The chart says whether
+// the numbers on the line are a trend or one afternoon; the list is the
+// discovery half, because an action nobody has pinned is still counted and this
+// is the only place it can be seen. Pinning one from here is how a column is
+// created, which is why the button is beside the figure rather than on a
+// settings page.
+//
+// The slots:
+//
+//	data-analytics-fold-template    the panel: data-fold-chart, data-fold-legend, data-fold-actions
+//	data-analytics-action-template  one action: data-action-name, data-action-count, data-action-rate, data-action-pin
+func AnalyticsFold() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var5 == nil {
+			templ_7745c5c3_Var5 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<template data-analytics-fold-template><div data-analytics-fold class=\"border-t border-border/60 bg-muted/20 px-4 py-4\"><div class=\"grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]\"><div class=\"min-w-0\"><p class=\"text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground\">Page views and sessions</p><!-- A fixed height, because the chart is drawn into an empty\n\t\t\t\t\t     box after the row is already open: a host that sized\n\t\t\t\t\t     itself to its contents would open at nothing and jump\n\t\t\t\t\t     the rest of the page down when the read landed. --><div data-fold-chart class=\"mt-2 h-44\"></div><div data-fold-legend class=\"mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground empty:hidden\"></div></div><div class=\"min-w-0\"><p class=\"text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground\">Actions on this path</p><div data-fold-actions class=\"mt-2 space-y-0.5\"></div></div></div></div></template><template data-analytics-action-template><div class=\"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/40\"><span data-action-name class=\"min-w-0 flex-1 truncate font-mono text-xs\"></span> <span data-action-count class=\"tabular-nums\"></span> <span data-action-rate class=\"w-14 text-right text-xs tabular-nums text-muted-foreground\"></span>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "Pin")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Class:      "shrink-0",
+			Attributes: templ.Attributes{"data-action-pin": true},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

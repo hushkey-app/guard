@@ -288,6 +288,37 @@ func (q AnalyticsQuery) Window(now time.Time) (from, to time.Time) {
 	return to.Add(-d), to
 }
 
+// AnalyticsPathQuery is one opened row: the grid's window, plus the path it was
+// opened on.
+//
+// The window half delegates rather than repeating itself, so the refusal
+// AnalyticsQuery makes — analytics has no "all retained" — holds for the fold
+// too. A chart drawn over a window the grid above it cannot be read over would
+// be two windows on one screen.
+type AnalyticsPathQuery struct {
+	Path  string    `query:"path"`
+	Range string    `query:"range"`
+	From  time.Time `query:"from"`
+	To    time.Time `query:"to"`
+}
+
+func (q AnalyticsPathQuery) Validate() error {
+	if strings.TrimSpace(q.Path) == "" {
+		return api.Invalid("path", "is the path the row was opened on")
+	}
+	return q.window().Validate()
+}
+
+// Window resolves the request into the two instants the rollup is asked for,
+// by the same rules the grid's own query keeps.
+func (q AnalyticsPathQuery) Window(now time.Time) (from, to time.Time) {
+	return q.window().Window(now)
+}
+
+func (q AnalyticsPathQuery) window() AnalyticsQuery {
+	return AnalyticsQuery{Range: q.Range, From: q.From, To: q.To}
+}
+
 // ActionPins is the grid's columns: the pinned action names, in the order they
 // are drawn.
 //

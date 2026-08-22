@@ -213,6 +213,24 @@ type PathRow struct {
 	Actions  map[string]ActionCell `json:"actions,omitempty"`
 }
 
+// A PathPoint is one whole UTC day of one path, and page views alone: what the
+// chart behind an opened row is drawn from.
+//
+// Views and sessions rather than a line per action, because the fold already
+// lists the actions with their own counts — the chart is there to say whether
+// the figures beside it are a trend or one afternoon, and eleven lines say
+// neither.
+//
+// A day nothing was seen on carries no point at all. An empty day is silence
+// rather than zero: the rollup cannot tell a page nobody visited from a day
+// guard was not running to hear about it, and drawing the two the same way is
+// how an outage reads as a quiet Sunday.
+type PathPoint struct {
+	Day      time.Time `json:"day"`
+	Views    int64     `json:"views"`
+	Sessions int64     `json:"sessions"`
+}
+
 // An AnalyticsWindow is the strip's four numbers over one span of days.
 //
 // The ratios are carried rather than left to the renderer because the
