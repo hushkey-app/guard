@@ -122,6 +122,10 @@ func Page() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		templ_7745c5c3_Err = components.AnalyticsGrid().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -576,7 +580,7 @@ func analyticsLive() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div class=\"border-b border-border p-5\"><h2 class=\"font-medium\">Actions per URL</h2><p class=\"mt-1 text-xs text-muted-foreground\">One row per path, ordered by views. A dash means the action was never seen there.</p></div><div data-analytics-grid class=\"p-5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div class=\"border-b border-border p-5\"><h2 class=\"font-medium\">Actions per URL</h2><p class=\"mt-1 text-xs text-muted-foreground\">One row per path, sorted by any column. A cell is the sessions that did the action over the sessions that saw the page; a dash means it was never seen there.</p></div><div data-analytics-grid class=\"p-5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

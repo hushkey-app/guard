@@ -150,14 +150,196 @@ function renderStrip(summary) {
   }));
 }
 
-// The rows are the next task. What this draws is the one thing the wiring can
-// already prove: the window was read, and this is what came back for it.
-function renderPaths(answer, stale) {
-  const paths = answer.paths || [];
-  const line = paths.length
-    ? `${number.format(paths.length)} path${paths.length === 1 ? "" : "s"} in this window.`
-    : "No page views in this window.";
-  say(stale ? `${line} Refreshing…` : line);
+// The grid.
+//
+// Its rows are the window's paths and its columns are the pinned actions, and
+// those are two reads of two endpoints — the actions list has no window on
+// purpose, because "what actions exist" is not a measurement and a list that
+// emptied itself when somebody narrowed to a day is a list nobody could pin
+// from. So both are held here and whichever lands second draws.
+let paths = null;
+let pathsStale = false;
+let pinned = [];
+// Why the columns might be missing. Drawn rather than swallowed, because a grid
+// with no action columns reads as "nobody has pinned one" — a sentence about
+// somebody's decision, not about a fetch that failed.
+let columnsProblem = "";
+
+// Sorted by views, descending: the order the endpoint already answers in, so
+// the first draw is the server's answer rather than a re-sort of it.
+let sort = { key: "views", descending: true };
+
+// The track list, in rem, so every row lines up under every heading. Fixed
+// columns are the point of a grid over a wall of cards — the figure that is
+// unlike the others is found by scanning a column, which only works if the
+// column is a column.
+const PATH_MIN_REM = 16;
+const COUNT_REM = 6;
+const ACTION_REM = 7;
+
+function tracks(actions) {
+  const fixed = `minmax(0,1fr) ${COUNT_REM}rem ${COUNT_REM}rem`;
+  // `repeat(0, …)` is not a valid track list, and an invalid one drops the
+  // whole declaration — which would silently collapse every row into one
+  // column on the day somebody unpinned the last action.
+  return actions ? `${fixed} repeat(${actions}, ${ACTION_REM}rem)` : fixed;
+}
+
+// What a row is sorted on, and null for anything this window cannot measure.
+//
+// Views and sessions included: a path with actions and no page views is a real
+// thing — a tracker firing on a route the page view never reached — and its
+// zero is an absence rather than a measurement.
+function sortValue(row, key) {
+  if (key === "path") return row.path;
+  if (key === "views") return row.views || null;
+  if (key === "sessions") return row.sessions || null;
+  const cell = row.actions?.[key];
+  // Sorted on the rate, which is the only reason the column exists. Sorting an
+  // action by its raw count mostly reproduces the views order — busy pages have
+  // more of everything — and buries the small page that converts, which is the
+  // row somebody opened this grid to find.
+  if (!cell || !row.sessions) return null;
+  return cell.rate;
+}
+
+function compare(left, right, key, descending) {
+  const a = sortValue(left, key);
+  const b = sortValue(right, key);
+  // A dash is not a small number. Unmeasurable sorts last in both directions:
+  // ascending by an action, the top of the page would otherwise be every path
+  // the action has never been on.
+  if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
+  if (typeof a === "string") return descending ? b.localeCompare(a) : a.localeCompare(b);
+  return descending ? b - a : a - b;
+}
+
+function head(column) {
+  const cell = qs("[data-analytics-head-template]").content.firstElementChild.cloneNode(true);
+  cell.dataset.analyticsSort = column.key;
+  cell.querySelector("[data-head-label]").textContent = column.label;
+  if (column.key !== "path") cell.classList.add("justify-end");
+  if (column.title) cell.title = column.title;
+  const active = sort.key === column.key;
+  cell.setAttribute("aria-sort", active ? (sort.descending ? "descending" : "ascending") : "none");
+  if (active) {
+    cell.classList.add("text-foreground");
+    cell.querySelector("[data-head-arrow]").textContent = sort.descending ? "▼" : "▲";
+  }
+  return cell;
+}
+
+function actionCell(row, name) {
+  const cell = qs("[data-analytics-cell-template]").content.firstElementChild.cloneNode(true);
+  const count = cell.querySelector("[data-cell-count]");
+  const seen = row.actions?.[name];
+  if (!seen) {
+    // A dash, never a zero. `0` under a column for a button that page does not
+    // have reads as a page failing to convert rather than one the action was
+    // never on, and it is a lie told in a fixed-width font.
+    count.textContent = "—";
+    count.classList.add(muted);
+    cell.title = `${name} was never seen on ${row.path} in this window`;
+    return cell;
+  }
+  count.textContent = number.format(seen.sessions);
+  const events = `${number.format(seen.events)} event${seen.events === 1 ? "" : "s"}`;
+  if (!row.sessions) {
+    // No denominator is no rate. The store refuses to invent one and so does
+    // this: the counts are real, the share of nothing is not.
+    cell.querySelector("[data-cell-rate]").textContent = "—";
+    cell.title = `${name}: ${events}, and no page view on this path to measure them against`;
+    return cell;
+  }
+  cell.querySelector("[data-cell-rate]").textContent = `${(seen.rate * 100).toFixed(1)}%`;
+  cell.title = `${name}: ${events}, from ${number.format(seen.sessions)} of ${number.format(row.sessions)} sessions that saw ${row.path}`;
+  return cell;
+}
+
+function pathRow(row, columns, track) {
+  const node = qs("[data-analytics-row-template]").content.firstElementChild.cloneNode(true);
+  node.style.gridTemplateColumns = track;
+  const path = node.querySelector("[data-row-path]");
+  path.textContent = row.path;
+  path.title = row.path;
+  node.querySelector("[data-row-views]").textContent = row.views ? number.format(row.views) : "—";
+  node.querySelector("[data-row-sessions]").textContent = row.sessions ? number.format(row.sessions) : "—";
+  // Appended to the row itself rather than into a wrapper: the cells have to be
+  // children of the grid, or they are one column between them.
+  for (const column of columns) node.append(actionCell(row, column.key));
+  return node;
+}
+
+function renderGrid() {
+  const host = qs("[data-analytics-grid]");
+  // Nothing read yet — the markup's own "Loading paths…" is still the truth.
+  if (!host || !paths) return;
+  if (!paths.length) {
+    say("No page views in this window.");
+    return;
+  }
+
+  const columns = pinned.map((name) => ({ key: name, label: name, title: `${name} — the share of each path's sessions that did it` }));
+  const track = tracks(columns.length);
+  const table = el("div");
+  // The grid is as wide as its columns need, and the scroller is what gives
+  // way. Set here rather than as a class for the reason the track list is:
+  // the number of columns is data.
+  table.style.minWidth = `${PATH_MIN_REM + COUNT_REM * 2 + columns.length * ACTION_REM}rem`;
+
+  const heads = el("div", "grid items-end gap-3");
+  heads.style.gridTemplateColumns = track;
+  heads.append(head({ key: "path", label: "Path" }), head({ key: "views", label: "Views" }), head({ key: "sessions", label: "Sessions" }));
+  for (const column of columns) heads.append(head(column));
+  table.append(heads);
+
+  const ordered = paths.slice().sort((left, right) =>
+    // Ties break on the path, always, so the grid does not reshuffle under
+    // somebody reading it when the next window lands with the same figures.
+    compare(left, right, sort.key, sort.descending) || left.path.localeCompare(right.path));
+  for (const row of ordered) table.append(pathRow(row, columns, track));
+
+  const scroller = el("div", "overflow-x-auto");
+  scroller.append(table);
+
+  const count = `${number.format(paths.length)} path${paths.length === 1 ? "" : "s"} in this window.`;
+  const above = [el("p", `pb-1 text-xs ${muted}`, pathsStale ? `${count} Refreshing…` : count)];
+  if (columnsProblem) above.push(el("p", "pb-1 text-xs text-destructive", columnsProblem));
+  const below = [];
+  // Only when the columns are known to be absent rather than unread — the two
+  // look identical on screen and mean opposite things.
+  if (!columns.length && !columnsProblem) {
+    below.push(el("p", `pt-3 text-xs ${muted}`,
+      "No action is pinned, so this is page views alone. Every action is still counted, and a pinned one becomes a column here."));
+  }
+  host.replaceChildren(...above, scroller, ...below);
+}
+
+// The pinned names, in the order the grid draws them. The endpoint already
+// answers pinned-first in stored position order, so filtering keeps it.
+const pinnedNames = (actions) => (actions || []).filter((action) => action.pinned).map((action) => action.name);
+
+async function refreshActions() {
+  try {
+    const actions = await ensure("analytics.actions", () => request("/api/analytics/actions"), (list) => {
+      pinned = pinnedNames(list);
+      columnsProblem = "";
+      renderGrid();
+    });
+    // ensure draws only when the answer changed, so a recovery is recorded
+    // here: the read that succeeded after one that did not is still a read
+    // where nothing moved, and the warning would otherwise stay on screen.
+    if (columnsProblem) {
+      columnsProblem = "";
+      pinned = pinnedNames(actions);
+      renderGrid();
+    }
+  } catch (failure) {
+    // The rows are kept. The columns are what is in doubt, and the last known
+    // set of them is a better grid than none — as long as it says so.
+    columnsProblem = `The pinned actions could not be read, so a column may be missing: ${failure.message}`;
+    renderGrid();
+  }
 }
 
 async function refreshWindow() {
@@ -170,14 +352,24 @@ async function refreshWindow() {
     await ensure(`analytics.${asked}`, () => request(`/api/analytics?range=${asked}`), (answer, stale) => {
       if (asked !== range) return;
       renderStrip(answer.summary);
-      renderPaths(answer, stale);
+      paths = answer.paths || [];
+      pathsStale = stale;
+      renderGrid();
     });
+    // The remembered rows turned out to be the live ones, so ensure drew
+    // nothing the second time — and "Refreshing…" would sit there having
+    // already finished. Cleared here, which is the only place that knows.
+    if (asked === range && pathsStale) {
+      pathsStale = false;
+      renderGrid();
+    }
   } catch (failure) {
     if (asked !== range) return;
-    // The strip goes with the message. Four confident numbers above "the
-    // window could not be read" are four numbers from some other window, and
-    // the reader has no way to tell which.
+    // The strip and the rows go with the message. Four confident numbers above
+    // "the window could not be read" are four numbers from some other window,
+    // and the reader has no way to tell which.
     renderStrip(null);
+    paths = null;
     say(failure.message);
   }
 }
@@ -199,12 +391,22 @@ export async function refreshAnalytics() {
     say(failure.message);
     return;
   }
-  if (isLive(health)) await refreshWindow();
+  // Together, because the grid is not drawn until both have landed and neither
+  // is on the other's critical path.
+  if (isLive(health)) await Promise.all([refreshWindow(), refreshActions()]);
 }
 
 document.addEventListener("click", (event) => {
   const copy = event.target.closest("[data-analytics-copy]");
   if (copy) copySnippet(copy);
+  const column = event.target.closest("[data-analytics-sort]");
+  if (!column) return;
+  const key = column.dataset.analyticsSort;
+  // A column somebody has just reached for starts in the direction they mean
+  // by it: a path is read A to Z, and every number here is read biggest first.
+  // The same column again is the flip.
+  sort = sort.key === key ? { key, descending: !sort.descending } : { key, descending: key !== "path" };
+  renderGrid();
 });
 
 document.addEventListener("change", (event) => {

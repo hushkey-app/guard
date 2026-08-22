@@ -96,4 +96,47 @@ func AnalyticsStat() templ.Component {
 	})
 }
 
+// AnalyticsGrid is the grid's chrome: a sortable header cell, one path row, and
+// one action cell. All three are cloned by client/public/analytics.js, which is
+// the only thing that knows how many columns there are.
+//
+// The column count is data — the pinned actions — so the track list is an
+// inline style set per grid rather than a class. `grid-cols-${n}` assembled
+// from a variable is a class Tailwind never emits, and the failure is silent:
+// the rows collapse into a single column and nothing says why.
+//
+// The slots:
+//
+//	data-analytics-head-template  a column heading: data-head-label, data-head-arrow
+//	data-analytics-row-template   one path: data-row-path, data-row-views, data-row-sessions
+//	data-analytics-cell-template  one action on one path: data-cell-count, data-cell-rate
+func AnalyticsGrid() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var4 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var4 == nil {
+			templ_7745c5c3_Var4 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<template data-analytics-head-template><!-- A button, because the whole heading is the target: a caret somebody\n\t\t     has to hit is a sort nobody uses. --><button type=\"button\" class=\"flex min-w-0 items-center gap-1 py-2 text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground transition-colors hover:text-foreground\"><span data-head-label class=\"truncate\"></span> <span data-head-arrow class=\"text-[0.65rem] leading-none\"></span></button></template><template data-analytics-row-template><div class=\"grid items-center gap-3 border-t border-border/60 py-2 text-sm transition-colors hover:bg-muted/40\"><span data-row-path class=\"truncate font-mono text-xs\"></span> <span data-row-views class=\"text-right tabular-nums\"></span> <span data-row-sessions class=\"text-right tabular-nums text-muted-foreground\"></span></div></template><!-- Two lines, and the count is sessions rather than events so both halves\n\t     are the same kind of thing: 96 over 38.4% of the sessions that saw the\n\t     page adds up on the row it is read on. How often the action happened is\n\t     on the cell's title, where it cannot be mistaken for the numerator. --><template data-analytics-cell-template><span class=\"text-right\"><span data-cell-count class=\"block tabular-nums\"></span> <span data-cell-rate class=\"block text-xs tabular-nums text-muted-foreground\"></span></span></template>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
 var _ = templruntime.GeneratedTemplate
