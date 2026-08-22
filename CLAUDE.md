@@ -578,11 +578,11 @@ that sets everything in its unit file behaves exactly as it did.
 Guard's configuration is one file, and the telemetry is never in it — read
 `docs/backup.md` before changing any of it. **Settings → Backup** exports
 machines, commands, machine environments, deploy groups, compose templates,
-cloud accounts, saved views, alert rules, destinations, secrets, members and
-stored settings; logs, traces,
-metrics, health history, command runs, host samples and open sessions stay
-behind, because none of them says how guard is configured and all of them are
-the part that grows.
+cloud accounts, saved views, alert rules, destinations, secrets, members,
+analytics actions and path rules, and stored settings; logs, traces,
+metrics, what analytics counted, health history, command runs, host samples and
+open sessions stay behind, because none of them says how guard is configured and
+all of them are the part that grows.
 
 - **The catalogue is `backupTables`** in `internal/telemetry/backup.go`, with
   `backupExcluded` written out beside it — so "is my telemetry in this file" has
