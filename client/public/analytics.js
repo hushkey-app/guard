@@ -11,9 +11,10 @@
 // Everything goes through the store, like every other page. Walking to /traces
 // and back is a navigation, not a fetch, and the window is module state for the
 // same reason: the store lives outside the outlet, and so does this.
-import { adminHeaders, el, muted, number, qs, request, text } from "./core.js";
+import { adminHeaders, el, muted, number, qs, qsa, relativeTime, request, text } from "./core.js";
 import { draw } from "./charts.js";
-import { ensure, freshness, get, set } from "./store.js";
+import { ask } from "./cluster.js";
+import { ensure, forget, freshness, get, set } from "./store.js";
 
 // The window the strip and the grid are read over. Held here rather than read
 // off the select, because the markup's default is a default — once somebody
@@ -169,6 +170,13 @@ let columnsProblem = "";
 // Sorted by views, descending: the order the endpoint already answers in, so
 // the first draw is the server's answer rather than a re-sort of it.
 let sort = { key: "views", descending: true };
+
+// Every window key this page has read. Deleting an action purges what was
+// counted under it from all of them at once, and `ensure` would otherwise hand
+// a remembered grid straight back with a column of numbers that no longer
+// exist. The per-path series are not in here on purpose: they count page views
+// and sessions, which an action's deletion does not touch.
+const windowsRead = new Set();
 
 // The track list, in rem, so every row lines up under every heading. Fixed
 // columns are the point of a grid over a wall of cards — the figure that is
@@ -363,14 +371,10 @@ function actionLine(row, name) {
   return line;
 }
 
-// Pinning is how a column is created, and it is the whole ordered list rather
-// than a verb, because the order is part of the decision — the endpoint answers
-// with what it stored, so the page settles on that rather than on the shuffle
-// it drew. A new pin goes last: the grid is read left to right, and a column
-// that inserted itself in the middle would move the ones being read.
-async function togglePin(name) {
-  const unpinning = pinned.includes(name);
-  const next = unpinning ? pinned.filter((each) => each !== name) : [...pinned, name];
+// The columns, sent as the whole ordered list rather than as a verb, because
+// the order is part of the decision — the endpoint answers with what it stored,
+// so the page settles on that rather than on the shuffle it drew.
+async function savePins(next, whenItFails) {
   try {
     const actions = await request("/api/analytics/actions", {
       method: "POST",
@@ -386,9 +390,30 @@ async function togglePin(name) {
     // Said out loud and drawn nowhere else: an optimistic column that the
     // server refused would be a grid disagreeing with what is stored, which is
     // the one thing this endpoint answering with the whole list prevents.
-    columnsProblem = `${name} could not be ${unpinning ? "unpinned" : "pinned"}: ${failure.message}`;
+    columnsProblem = `${whenItFails}: ${failure.message}`;
   }
   renderGrid();
+  renderActions();
+}
+
+// A new pin goes last: the grid is read left to right, and a column that
+// inserted itself in the middle would move the ones being read.
+function togglePin(name) {
+  const unpinning = pinned.includes(name);
+  const next = unpinning ? pinned.filter((each) => each !== name) : [...pinned, name];
+  return savePins(next, `${name} could not be ${unpinning ? "unpinned" : "pinned"}`);
+}
+
+// One place in the order, per press. The list in the dialog is vertical and the
+// columns are horizontal, so the buttons say which of the two they mean — up in
+// the list is left on the grid.
+function movePin(name, step) {
+  const at = pinned.indexOf(name);
+  const to = at + step;
+  if (at < 0 || to < 0 || to >= pinned.length) return Promise.resolve();
+  const next = pinned.slice();
+  next.splice(to, 0, ...next.splice(at, 1));
+  return savePins(next, `${name} could not be moved`);
 }
 
 // A day-grain series cannot move within the minute — the rollup is keyed by
@@ -505,6 +530,7 @@ async function refreshActions() {
       pinned = pinnedNames(list);
       columnsProblem = "";
       renderGrid();
+      renderActions();
     });
     // ensure draws only when the answer changed, so a recovery is recorded
     // here: the read that succeeded after one that did not is still a read
@@ -513,12 +539,14 @@ async function refreshActions() {
       columnsProblem = "";
       pinned = pinnedNames(actions);
       renderGrid();
+      renderActions();
     }
   } catch (failure) {
     // The rows are kept. The columns are what is in doubt, and the last known
     // set of them is a better grid than none — as long as it says so.
     columnsProblem = `The pinned actions could not be read, so a column may be missing: ${failure.message}`;
     renderGrid();
+    renderActions();
   }
 }
 
@@ -528,8 +556,10 @@ async function refreshWindow() {
   // publishes to whoever asked, and a slow read of 90d must not repaint a page
   // that has since been switched to 24h.
   const asked = range;
+  const key = `analytics.${asked}`;
+  windowsRead.add(key);
   try {
-    await ensure(`analytics.${asked}`, () => request(`/api/analytics?range=${asked}`), (answer, stale) => {
+    await ensure(key, () => request(`/api/analytics?range=${asked}`), (answer, stale) => {
       if (asked !== range) return;
       renderStrip(answer.summary);
       paths = answer.paths || [];
@@ -576,6 +606,304 @@ export async function refreshAnalytics() {
   if (isLive(health)) await Promise.all([refreshWindow(), refreshActions()]);
 }
 
+// ---------------------------------------------------------------------------
+// The controls
+// ---------------------------------------------------------------------------
+//
+// Two dialogs, and between them the two things the grid is made of: which
+// actions are columns, and what counts as one path. Both are checkbox overlays,
+// so they are present to every querySelector on this page whether or not
+// anybody has opened one — which is why nothing below draws without asking.
+// A closed panel that kept rebuilding its rows is a page that reads as slow for
+// a reason nothing on screen explains.
+const ACTIONS_PANEL = "analytics-actions";
+const RULES_PANEL = "analytics-rules";
+
+const panelOpen = (id) => Boolean(document.getElementById(id)?.checked);
+
+function actionRow(action, index, total) {
+  const row = qs("[data-analytics-action-row-template]").content.firstElementChild.cloneNode(true);
+  row.dataset.analyticsAction = action.name;
+  row.querySelector("[data-action-row-name]").textContent = action.name;
+  row.querySelector("[data-action-row-events]").textContent =
+    action.events ? `${number.format(action.events)} event${action.events === 1 ? "" : "s"}` : "—";
+  // Last seen rather than first: the question asked of a name on a list is
+  // whether the page still fires it, and a rename leaves the old one here
+  // looking exactly like the new one until this line is read.
+  row.querySelector("[data-action-row-seen]").textContent =
+    action.last_seen ? `last seen ${relativeTime(action.last_seen)}` : "never seen";
+
+  const toggle = row.querySelector("[data-action-toggle]");
+  toggle.textContent = action.pinned ? "Unpin" : "Pin";
+  toggle.setAttribute("aria-pressed", action.pinned ? "true" : "false");
+
+  const move = row.querySelector("[data-action-move]");
+  if (!action.pinned) {
+    // An unpinned action has no position — it is not drawn — so the buttons go
+    // rather than sit there disabled asking to be pressed.
+    move.remove();
+  } else {
+    move.querySelector("[data-action-up]").disabled = index === 0;
+    move.querySelector("[data-action-down]").disabled = index === total - 1;
+  }
+  return row;
+}
+
+function actionGroup(title, lede, actions, whenEmpty) {
+  const group = el("section", "space-y-2");
+  group.append(
+    el("h3", "text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground", title),
+    el("p", `text-xs ${muted}`, lede),
+  );
+  if (!actions.length) {
+    group.append(el("p", `text-sm ${muted}`, whenEmpty));
+    return group;
+  }
+  group.append(...actions.map((action, index) => actionRow(action, index, actions.length)));
+  return group;
+}
+
+// The list is read from the store rather than held here, so the answer a pin
+// came back with, the one the grid drew its columns from and the one this
+// dialog draws are one value. Two copies is two chances to list a column
+// somebody has just unpinned.
+function renderActions() {
+  const host = qs("[data-analytics-actions]");
+  if (!host || !panelOpen(ACTIONS_PANEL)) return;
+  const known = get("analytics.actions");
+  // The same sentence the grid carries, on the surface the press was made on:
+  // a refusal drawn only behind the dialog is a refusal nobody reads.
+  const parts = columnsProblem ? [el("p", "text-xs text-destructive", columnsProblem)] : [];
+  // Nothing read yet — the markup's own "Loading actions…" is still the truth,
+  // and "nothing has been sent" is a different sentence from "not asked yet".
+  if (!known) {
+    if (columnsProblem) host.replaceChildren(...parts);
+    return;
+  }
+  if (!known.length) {
+    parts.push(el("p", `text-sm ${muted}`,
+      "Nothing but page views so far. page_view is the tracker's own and is the Views column, so it is never on this list — everything here arrives from guard.track."));
+    host.replaceChildren(...parts);
+    return;
+  }
+  // Pinned first and in stored order, which is what the endpoint already
+  // answers in: the group headings are the two states, and the order inside the
+  // first one is the order of the columns.
+  parts.push(
+    actionGroup("Columns", "Left to right, in the order the grid draws them.",
+      known.filter((action) => action.pinned),
+      "No action is pinned, so the grid is page views alone."),
+    actionGroup("Discovered", "Counted just the same, and listed under every path they happened on.",
+      known.filter((action) => !action.pinned),
+      "Every name the tracker has sent is a column."),
+  );
+  host.replaceChildren(...parts);
+}
+
+// Deleting is the one press here that cannot be undone, so it is the one that
+// asks — with the name typed in full, and with what goes with it said out loud.
+// Unpinning hides a column; this drops the history behind it.
+async function deleteAction(name) {
+  const agreed = await ask({
+    title: `Delete ${name}?`,
+    body: "This removes the name and everything counted under it: the rollup, the sessions that did it and the raw events. "
+      + "The page views on those paths stay, because they are a different action, and the next beacon carrying this name discovers it again — "
+      + "so this is a purge of the history, not a mute.",
+    confirm: "Delete it",
+    phrase: name,
+  });
+  if (!agreed) return;
+  try {
+    await request(`/api/analytics/${encodeURIComponent(name)}`, { method: "DELETE", headers: adminHeaders() });
+  } catch (failure) {
+    columnsProblem = `${name} could not be deleted: ${failure.message}`;
+    renderGrid();
+    renderActions();
+    return;
+  }
+  // Every window remembered a grid with this action in it, and one of them is
+  // on screen. Dropped before the refresh, or `ensure` draws the old answer
+  // first and the column comes back for a moment.
+  for (const key of windowsRead) forget(key);
+  windowsRead.clear();
+  columnsProblem = "";
+  await refreshAnalytics();
+}
+
+// ---------------------------------------------------------------------------
+// Path rules
+// ---------------------------------------------------------------------------
+//
+// The rows are the form: read out of the DOM on a save and on every preview,
+// rather than mirrored into an array here that a keystroke could get out of
+// step with. The list is small and it is only ever edited in one place.
+let previewTimer;
+let previewToken = 0;
+// Whether anything has been typed since the dialog opened. A read that lands
+// after somebody has started writing a rule must not refill the form under
+// them — that is a half-written pattern disappearing for no visible reason.
+let rulesEdited = false;
+
+function ruleRow(rule) {
+  const row = qs("[data-analytics-rule-template]").content.firstElementChild.cloneNode(true);
+  row.querySelector('[data-rule-field="pattern"]').value = rule?.pattern || "";
+  row.querySelector('[data-rule-field="replacement"]').value = rule?.replacement || "";
+  return row;
+}
+
+// A rule list can legitimately be empty — most instances never need one — so
+// the empty state is a sentence rather than a blank box that looks broken.
+function syncRulesEmpty(host) {
+  const rows = qsa("[data-analytics-rule]", host).length;
+  const said = qs("[data-rules-empty]", host);
+  if (rows && said) said.remove();
+  if (!rows && !said) {
+    const note = el("p", `text-sm ${muted}`, "No rule. Every path is counted exactly as it arrived.");
+    note.dataset.rulesEmpty = "";
+    host.append(note);
+  }
+}
+
+function drawRules(list) {
+  const host = qs("[data-analytics-rules]");
+  if (!host) return;
+  host.replaceChildren(...(list || []).map(ruleRow));
+  syncRulesEmpty(host);
+}
+
+// The rows as they stand, including a half-written one: the preview shows the
+// same refusal the save would, and being told that a rule has no replacement
+// yet is more use than a preview that quietly ignores the row.
+function collectRules() {
+  return qsa("[data-analytics-rule]").map((row) => ({
+    pattern: row.querySelector('[data-rule-field="pattern"]').value.trim(),
+    replacement: row.querySelector('[data-rule-field="replacement"]').value.trim(),
+  })).filter((rule) => rule.pattern || rule.replacement);
+}
+
+// The preview runs against the paths the tracker actually sent, which the
+// server picks — a rule proved against paths this page supplied would be a rule
+// proved against a site somebody imagined.
+async function previewRules() {
+  const host = qs("[data-analytics-preview]");
+  if (!host || !panelOpen(RULES_PANEL)) return;
+  const summary = qs("[data-rules-summary]");
+  const error = qs("[data-rules-error]");
+  const token = ++previewToken;
+  try {
+    const answers = await request("/api/analytics/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rules: collectRules() }),
+    });
+    // A slower earlier preview must not overwrite a faster later one.
+    if (token !== previewToken) return;
+    error.textContent = "";
+    drawPreview(host, summary, answers);
+  } catch (failure) {
+    if (token !== previewToken) return;
+    // Cleared rather than left. What is on screen was drawn from a rule that
+    // has since been edited, and a list describing the previous one beside a
+    // message about this one is worse than no list.
+    host.replaceChildren();
+    summary.textContent = "";
+    error.textContent = failure.message;
+  }
+}
+
+function drawPreview(host, summary, answers) {
+  if (!answers?.length) {
+    summary.textContent = "";
+    host.replaceChildren(el("p", `px-1 text-xs ${muted}`,
+      "No path has arrived yet, so there is nothing to prove a rule against."));
+    return;
+  }
+  const collapsed = answers.filter((answer) => answer.result !== answer.path);
+  const into = new Set(collapsed.map((answer) => answer.result));
+  summary.textContent = collapsed.length
+    ? `${number.format(collapsed.length)} of ${number.format(answers.length)} recent paths collapse into ${number.format(into.size)} row${into.size === 1 ? "" : "s"}.`
+    : `Nothing changes for the ${number.format(answers.length)} most recent paths.`;
+  // What the rule caught first: a preview is read to check that it did
+  // something, and the paths it left alone are the ones already understood.
+  host.replaceChildren(...[...collapsed, ...answers.filter((answer) => answer.result === answer.path)]
+    .map((answer) => previewRow(answer)));
+}
+
+function previewRow(answer) {
+  const row = qs("[data-analytics-preview-template]").content.firstElementChild.cloneNode(true);
+  const path = row.querySelector("[data-rule-path]");
+  path.textContent = answer.path;
+  path.title = answer.path;
+  if (answer.result === answer.path) {
+    // Untouched: the arrow and the second copy of the same string are noise on
+    // the ninety rows a rule does nothing to.
+    row.querySelector("[data-rule-arrow]").remove();
+    row.querySelector("[data-rule-result]").remove();
+    path.classList.add(muted);
+    return row;
+  }
+  const result = row.querySelector("[data-rule-result]");
+  result.textContent = answer.result;
+  result.title = answer.result;
+  return row;
+}
+
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => { previewRules().catch(() => {}); }, 250);
+}
+
+// Filled on open, and only then: the rules move when somebody saves them here,
+// so there is nothing for a timer to notice and everything for one to trample.
+async function fillRules() {
+  const host = qs("[data-analytics-rules]");
+  if (!host || !panelOpen(RULES_PANEL)) return;
+  rulesEdited = false;
+  const known = get("analytics.rules");
+  if (known) drawRules(known);
+  schedulePreview();
+  const status = qs("[data-rules-status]");
+  try {
+    const list = await ensure("analytics.rules", () => request("/api/analytics/rules"));
+    // The dialog may have been shut and the form may have been typed into while
+    // this was in flight, and either makes this answer somebody else's.
+    if (!panelOpen(RULES_PANEL) || rulesEdited) return;
+    drawRules(list);
+    schedulePreview();
+  } catch (failure) {
+    // Only where there is nothing on screen: a form drawn from the last read is
+    // worth more than the reason a refresh of it failed.
+    if (panelOpen(RULES_PANEL) && !known && status) status.textContent = failure.message;
+  }
+}
+
+async function saveRules() {
+  const status = qs("[data-rules-status]");
+  const error = qs("[data-rules-error]");
+  status.textContent = "Saving…";
+  try {
+    const saved = await request("/api/analytics/rules", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ rules: collectRules() }),
+    });
+    // The answer is the stored list, so the form settles on what guard kept —
+    // the trimming, the lowercasing and the order it decided.
+    set("analytics.rules", saved);
+    rulesEdited = false;
+    drawRules(saved);
+    error.textContent = "";
+    // Said every time, because it is the one thing about this feature that
+    // surprises people: the days already rolled up keep the paths they were
+    // counted under.
+    status.textContent = "Saved. It shapes what is counted from now on.";
+    schedulePreview();
+  } catch (failure) {
+    status.textContent = "";
+    error.textContent = failure.message;
+  }
+}
+
 document.addEventListener("click", (event) => {
   const copy = event.target.closest("[data-analytics-copy]");
   if (copy) copySnippet(copy);
@@ -583,6 +911,55 @@ document.addEventListener("click", (event) => {
   const pin = event.target.closest("[data-action-pin]");
   if (pin) {
     togglePin(pin.dataset.actionPin).catch(() => {});
+    return;
+  }
+
+  // The actions dialog. Every press here is about one row, and the row carries
+  // the name — an action's name is its id, because it is what the tracker sends
+  // and what the column is called.
+  const listed = event.target.closest("[data-analytics-action]");
+  if (listed) {
+    const name = listed.dataset.analyticsAction;
+    if (event.target.closest("[data-action-toggle]")) togglePin(name).catch(() => {});
+    else if (event.target.closest("[data-action-up]")) movePin(name, -1).catch(() => {});
+    else if (event.target.closest("[data-action-down]")) movePin(name, 1).catch(() => {});
+    else if (event.target.closest("[data-action-delete]")) deleteAction(name).catch(() => {});
+    return;
+  }
+
+  // The rules dialog. Adding, removing and reordering are DOM edits and nothing
+  // else: what is stored is decided by one press, and until then the rows are a
+  // form somebody is still writing.
+  if (event.target.closest("[data-rule-add]")) {
+    const rules = qs("[data-analytics-rules]");
+    const row = ruleRow();
+    rules.append(row);
+    syncRulesEmpty(rules);
+    rulesEdited = true;
+    row.querySelector('[data-rule-field="pattern"]').focus();
+    return;
+  }
+  const rule = event.target.closest("[data-analytics-rule]");
+  if (rule) {
+    const rules = rule.parentNode;
+    const step = event.target.closest("[data-rule-up]") ? -1 : event.target.closest("[data-rule-down]") ? 1 : 0;
+    // Order is the rule — the first match wins — so moving a row is an edit of
+    // the same weight as typing in one, and it re-runs the preview.
+    if (step) {
+      const sibling = step > 0 ? rule.nextElementSibling : rule.previousElementSibling;
+      if (sibling) rules.insertBefore(step > 0 ? sibling : rule, step > 0 ? rule : sibling);
+    } else if (event.target.closest("[data-rule-remove]")) {
+      rule.remove();
+      syncRulesEmpty(rules);
+    } else {
+      return;
+    }
+    rulesEdited = true;
+    schedulePreview();
+    return;
+  }
+  if (event.target.closest("[data-rules-save]")) {
+    saveRules().catch(() => {});
     return;
   }
 
@@ -606,9 +983,40 @@ document.addEventListener("click", (event) => {
   renderGrid();
 });
 
+document.addEventListener("input", (event) => {
+  if (!event.target.matches("[data-rule-field]")) return;
+  rulesEdited = true;
+  schedulePreview();
+});
+
 document.addEventListener("change", (event) => {
+  // A dialog that was drawn while it was shut would open onto whatever was
+  // true the last time something else redrew it, so both are filled on the way
+  // open — and neither is touched while it is closed.
+  if (event.target.id === ACTIONS_PANEL && event.target.checked) {
+    renderActions();
+    refreshActions().catch(() => {});
+    return;
+  }
+  if (event.target.id === RULES_PANEL && event.target.checked) {
+    fillRules().catch(() => {});
+    return;
+  }
+
   const select = event.target.closest("[data-analytics-range]");
   if (!select) return;
   range = select.value;
   refreshAnalytics().catch(() => {});
+});
+
+// Escape shuts the overlay, which a checkbox does not do by itself. Not while a
+// <dialog> is up: the typed confirmation in front of a delete is the browser's
+// modal, it handles its own Escape, and closing the panel underneath it would
+// leave somebody agreeing to something they can no longer see.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || qs("dialog[open]")) return;
+  for (const id of [ACTIONS_PANEL, RULES_PANEL]) {
+    const toggle = document.getElementById(id);
+    if (toggle?.checked) toggle.checked = false;
+  }
 });

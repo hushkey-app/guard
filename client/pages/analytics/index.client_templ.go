@@ -130,7 +130,19 @@ func Page() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<!-- The two editors and the typed confirmation, at the end of the\n\t\t     document: they are overlays, so where they sit in the markup is not\n\t\t     where they appear, and putting them here keeps the reading order the\n\t\t     page's. -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.AnalyticsControls().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ConfirmDialog().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -162,7 +174,7 @@ func analyticsOff() templ.Component {
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div data-analytics-off hidden>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div data-analytics-off hidden>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -190,7 +202,7 @@ func analyticsOff() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "Analytics is off")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "Analytics is off")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -200,7 +212,7 @@ func analyticsOff() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -216,7 +228,7 @@ func analyticsOff() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p>The browser door opens for the origins <code class=\"font-mono\">GUARD_RUM_ORIGINS</code> names, and nothing else — configured is on, unconfigured is off, the same rule signing in keeps. Set it to the origins your site is served from and restart; the tracker, this page and <code class=\"font-mono\">/v1/rum/traces</code> all come up together, because they are one door.</p><div class=\"mt-3\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<p>The browser door opens for the origins <code class=\"font-mono\">GUARD_RUM_ORIGINS</code> names, and nothing else — configured is on, unconfigured is off, the same rule signing in keeps. Set it to the origins your site is served from and restart; the tracker, this page and <code class=\"font-mono\">/v1/rum/traces</code> all come up together, because they are one door.</p><div class=\"mt-3\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -232,7 +244,7 @@ func analyticsOff() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "Settings → Configuration")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "Settings → Configuration")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -242,7 +254,7 @@ func analyticsOff() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -258,7 +270,7 @@ func analyticsOff() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -290,7 +302,7 @@ func analyticsInstall() templ.Component {
 			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div data-analytics-install hidden class=\"space-y-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div data-analytics-install hidden class=\"space-y-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -330,7 +342,7 @@ func analyticsInstall() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "Install")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "Install")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -340,7 +352,7 @@ func analyticsInstall() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -356,7 +368,7 @@ func analyticsInstall() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "One tag, no build step, nothing to install. Guard is listening and has heard nothing yet.")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "One tag, no build step, nothing to install. Guard is listening and has heard nothing yet.")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -372,7 +384,7 @@ func analyticsInstall() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -388,7 +400,7 @@ func analyticsInstall() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<!-- Filled in the browser from location.origin. Guard behind a\n\t\t\t\t     proxy has no idea what URL somebody reached it on, so the\n\t\t\t\t     only place this answer is right is the tab it is read in. --> <div class=\"flex items-center gap-2\"><code data-analytics-script class=\"min-w-0 flex-1 truncate rounded bg-muted/60 px-3 py-2 font-mono text-xs\"></code>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<!-- Filled in the browser from location.origin. Guard behind a\n\t\t\t\t     proxy has no idea what URL somebody reached it on, so the\n\t\t\t\t     only place this answer is right is the tab it is read in. --> <div class=\"flex items-center gap-2\"><code data-analytics-script class=\"min-w-0 flex-1 truncate rounded bg-muted/60 px-3 py-2 font-mono text-xs\"></code>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -404,7 +416,7 @@ func analyticsInstall() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "Copy")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "Copy")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -418,7 +430,7 @@ func analyticsInstall() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div><p class=\"text-sm text-muted-foreground\">It fires <code class=\"font-mono\">page_view</code> on load and on every <code class=\"font-mono\">pushState</code>, so a single-page app needs no second call. <code class=\"font-mono\">guard.track(name, props)</code> is the rest of the API, and one delegated click listener fires the action named by the nearest <code class=\"font-mono\">data-guard-track</code> ancestor — the selector stays in your markup, where the person who changes the markup can see it.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><p class=\"text-sm text-muted-foreground\">It fires <code class=\"font-mono\">page_view</code> on load and on every <code class=\"font-mono\">pushState</code>, so a single-page app needs no second call. <code class=\"font-mono\">guard.track(name, props)</code> is the rest of the API, and one delegated click listener fires the action named by the nearest <code class=\"font-mono\">data-guard-track</code> ancestor — the selector stays in your markup, where the person who changes the markup can see it.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -434,7 +446,7 @@ func analyticsInstall() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<p>Serve the tag from the application you already expose and forward the beacons to guard inside the VPC: the browser posts to your origin, nothing new is published, and guard needs no CORS at all, because a server-to-server post sends no <code>Origin</code> and the door allows that on purpose.</p><p>Point the tag at your relay with <code>data-endpoint=\"/api/telemetry/events\"</code>; without it the tracker derives the endpoint from its own <code>src</code>. <code>docs/browser-telemetry.md</code> has the handler, and the <code>X-Forwarded-For</code> line that keeps guard's rate limit counting visitors rather than your relay.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<p>Serve the tag from the application you already expose and forward the beacons to guard inside the VPC: the browser posts to your origin, nothing new is published, and guard needs no CORS at all, because a server-to-server post sends no <code>Origin</code> and the door allows that on purpose.</p><p>Point the tag at your relay with <code>data-endpoint=\"/api/telemetry/events\"</code>; without it the tracker derives the endpoint from its own <code>src</code>. <code>docs/browser-telemetry.md</code> has the handler, and the <code>X-Forwarded-For</code> line that keeps guard's rate limit counting visitors rather than your relay.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -456,7 +468,7 @@ func analyticsInstall() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -490,7 +502,7 @@ func analyticsLive() templ.Component {
 			templ_7745c5c3_Var16 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div data-analytics-live hidden class=\"space-y-6\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div data-analytics-live hidden class=\"space-y-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -518,7 +530,7 @@ func analyticsLive() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div class=\"flex flex-wrap items-end justify-between gap-3\"><!-- No \"all retained\" here, unlike every other window in the\n\t\t\t\t\t     dashboard: the strip's second half is the window of equal\n\t\t\t\t\t     length before this one, and all-time has no previous to\n\t\t\t\t\t     be compared against. -->")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"flex flex-wrap items-end justify-between gap-3\"><!-- No \"all retained\" here, unlike every other window in the\n\t\t\t\t\t     dashboard: the strip's second half is the window of equal\n\t\t\t\t\t     length before this one, and all-time has no previous to\n\t\t\t\t\t     be compared against. -->")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -534,7 +546,7 @@ func analyticsLive() templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span class=\"relative flex items-center\"><select id=\"analytics-range\" data-analytics-range class=\"cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground\"><option value=\"24h\">Last 24 hours</option> <option value=\"7d\" selected>Last 7 days</option> <option value=\"30d\">Last 30 days</option> <option value=\"90d\">Last 90 days</option></select>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<span class=\"relative flex items-center\"><select id=\"analytics-range\" data-analytics-range class=\"cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground\"><option value=\"24h\">Last 24 hours</option> <option value=\"7d\" selected>Last 7 days</option> <option value=\"30d\">Last 30 days</option> <option value=\"90d\">Last 90 days</option></select>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -542,7 +554,7 @@ func analyticsLive() templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -552,7 +564,7 @@ func analyticsLive() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<p class=\"text-xs text-muted-foreground\">Against the window of equal length before it. Days are UTC, because the rollup is.</p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<p class=\"text-xs text-muted-foreground\">Against the window of equal length before it. Days are UTC, because the rollup is.</p></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -568,7 +580,7 @@ func analyticsLive() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<div data-analytics-strip class=\"grid gap-4 sm:grid-cols-2 xl:grid-cols-4\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div data-analytics-strip class=\"grid gap-4 sm:grid-cols-2 xl:grid-cols-4\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -584,7 +596,19 @@ func analyticsLive() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div class=\"border-b border-border p-5\"><h2 class=\"font-medium\">Actions per URL</h2><p class=\"mt-1 text-xs text-muted-foreground\">One row per path, sorted by any column. A cell is the sessions that did the action over the sessions that saw the page; a dash means it was never seen there.</p></div><div data-analytics-grid class=\"p-5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<!-- The two controls sit on the grid they change rather than on a\n\t\t\t     settings page: the columns are the pinned actions and the rows are\n\t\t\t     what a path rule made of the URLs, and both are decisions somebody\n\t\t\t     makes while looking at what they did. --> <div class=\"flex flex-wrap items-start justify-between gap-3 border-b border-border p-5\"><div><h2 class=\"font-medium\">Actions per URL</h2><p class=\"mt-1 text-xs text-muted-foreground\">One row per path, sorted by any column. A cell is the sessions that did the action over the sessions that saw the page; a dash means it was never seen there.</p></div><div class=\"flex flex-wrap items-center gap-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = components.AnalyticsControlOpen("analytics-actions", "Actions").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = components.AnalyticsControlOpen("analytics-rules", "Path rules").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div></div><div data-analytics-grid class=\"p-5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -592,7 +616,7 @@ func analyticsLive() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -602,7 +626,7 @@ func analyticsLive() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

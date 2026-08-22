@@ -39,6 +39,12 @@ templ Page() {
 		@components.AnalyticsStat()
 		@components.AnalyticsGrid()
 		@components.AnalyticsFold()
+		<!-- The two editors and the typed confirmation, at the end of the
+		     document: they are overlays, so where they sit in the markup is not
+		     where they appear, and putting them here keeps the reading order the
+		     page's. -->
+		@components.AnalyticsControls()
+		@components.ConfirmDialog()
 	</section>
 }
 
@@ -163,12 +169,22 @@ templ analyticsLive() {
 		}
 		<div data-analytics-strip class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"></div>
 		@card.Card(card.Props{Class: "gap-0 py-0"}) {
-			<div class="border-b border-border p-5">
-				<h2 class="font-medium">Actions per URL</h2>
-				<p class="mt-1 text-xs text-muted-foreground">
-					One row per path, sorted by any column. A cell is the sessions that did the action
-					over the sessions that saw the page; a dash means it was never seen there.
-				</p>
+			<!-- The two controls sit on the grid they change rather than on a
+			     settings page: the columns are the pinned actions and the rows are
+			     what a path rule made of the URLs, and both are decisions somebody
+			     makes while looking at what they did. -->
+			<div class="flex flex-wrap items-start justify-between gap-3 border-b border-border p-5">
+				<div>
+					<h2 class="font-medium">Actions per URL</h2>
+					<p class="mt-1 text-xs text-muted-foreground">
+						One row per path, sorted by any column. A cell is the sessions that did the action
+						over the sessions that saw the page; a dash means it was never seen there.
+					</p>
+				</div>
+				<div class="flex flex-wrap items-center gap-2">
+					@components.AnalyticsControlOpen("analytics-actions", "Actions")
+					@components.AnalyticsControlOpen("analytics-rules", "Path rules")
+				</div>
 			</div>
 			<div data-analytics-grid class="p-5">
 				@ui.Empty("Loading paths…")
