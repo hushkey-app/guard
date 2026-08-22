@@ -112,6 +112,71 @@ CREATE UNIQUE INDEX IF NOT EXISTS analytics_path_rules_pattern ON analytics_path
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate analytics: %w", err)
 	}
+	// How long analytics is kept, on the settings row the other two retention
+	// numbers already live on rather than in a table of its own: it is the same
+	// kind of answer, typed on the same page, and a second place to say it
+	// would be a second answer. Columns rather than an environment variable,
+	// because the catalogue is twenty-two and stays twenty-two.
+	//
+	// Added by ALTER because the settings row predates analytics by every
+	// version of guard there has been — and the column's own DEFAULT is what
+	// gives an existing database the same windows a new one starts with.
+	columns, err := tableColumns(db, "settings")
+	if err != nil {
+		return err
+	}
+	present := map[string]bool{}
+	for _, name := range columns {
+		present[name] = true
+	}
+	for column, definition := range map[string]string{
+		"analytics_rollup_days": fmt.Sprintf("INTEGER NOT NULL DEFAULT %d", model.DefaultAnalyticsRollupDays),
+		"analytics_seen_days":   fmt.Sprintf("INTEGER NOT NULL DEFAULT %d", model.DefaultAnalyticsSeenDays),
+	} {
+		if present[column] {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE settings ADD COLUMN ` + column + ` ` + definition); err != nil {
+			return fmt.Errorf("migrate analytics settings: %w", err)
+		}
+	}
+	return nil
+}
+
+// purgeAnalytics is the analytics half of the sweep, and the three windows it
+// applies are three different answers on purpose.
+//
+// The raw feed goes with the rest of the telemetry, on `retention_hours`: it is
+// there to be read the afternoon somebody is instrumenting a page, and an
+// analytics table that outlived the logs beside it would be the thing that
+// filled the disk. The rollup is kept in days because the question analytics is
+// actually asked is "versus last month", which is the whole reason it exists.
+// And `analytics_seen` is purged behind the rollup, because it is only what
+// makes a day's session count exact while that day is still being written to —
+// afterwards the counts stand and cannot be recomputed, which is the honest
+// half of counting sessions exactly without a sketch.
+//
+// In the caller's transaction, so a sweep is one pass through the single writer
+// rather than two.
+func purgeAnalytics(tx *sql.Tx, settings Settings, now time.Time) error {
+	rawCutoff := now.Add(-time.Duration(settings.RetentionHours) * time.Hour).UnixNano()
+	if _, err := tx.Exec(`DELETE FROM analytics_events WHERE received_at_ns < ?`, rawCutoff); err != nil {
+		return fmt.Errorf("purge analytics events: %w", err)
+	}
+	today := epochDay(now)
+	if _, err := tx.Exec(`DELETE FROM analytics_seen WHERE day < ?`, today-int64(settings.AnalyticsSeenDays)); err != nil {
+		return fmt.Errorf("purge analytics sessions seen: %w", err)
+	}
+	rollupCutoff := today - int64(settings.AnalyticsRollupDays)
+	if _, err := tx.Exec(`DELETE FROM analytics_rollup WHERE day < ?`, rollupCutoff); err != nil {
+		return fmt.Errorf("purge analytics rollup: %w", err)
+	}
+	// The sources are a rollup too — one row per day, path and campaign — so
+	// they are kept for as long as the rollup they explain. A day whose numbers
+	// are gone has no traffic left to attribute.
+	if _, err := tx.Exec(`DELETE FROM analytics_sources WHERE day < ?`, rollupCutoff); err != nil {
+		return fmt.Errorf("purge analytics sources: %w", err)
+	}
 	return nil
 }
 

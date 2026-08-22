@@ -66,3 +66,16 @@ on its own. `ralph.sh` greps for it.
   A7's seen window bounds how far back the strip can count. See questions.md.
   `model.AnalyticsWindow`/`AnalyticsSummary` are new in `model/analytics.go`,
   outside A6's Files list, because a type the API returns must live there.
+
+## A7 — the two retention windows, and the sweep that applies them
+- commit: (this one)
+- gates: build ok / howl ok / make test ok
+- notes: the two columns are on `settings` (ALTER in `migrateAnalytics`, defaults
+  from `model.DefaultAnalytics*Days`), and `purgeAnalytics` runs inside the
+  existing `Store.Purge` transaction — so the settings page's "removed" number
+  still counts only the events table. **A save that omits the two leaves them
+  alone**: the current storage form posts `{retention_hours, max_events}` only,
+  and E5 is what types them, so UpdateSettings fills a zero from the stored row.
+  `analytics_sources` sweeps on the rollup window too — the plan named three
+  tables, and leaving the fourth growing would be a bug. See questions.md for
+  the spec/plan disagreement about which two numbers these are.

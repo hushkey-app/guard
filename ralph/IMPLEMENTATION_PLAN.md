@@ -99,7 +99,7 @@ it is testable with no browser and no HTTP.
     never-seen action is absent rather than zero.
   - Verify: `go test ./internal/telemetry/ -run Analytics`
 
-- [ ] **A7 — retention**
+- [x] **A7 — retention**
   - Depends: A6
   - Files: `internal/telemetry/analytics.go`, `internal/telemetry/model.go`,
     `internal/telemetry/model/model.go`, `internal/telemetry/analytics_test.go`

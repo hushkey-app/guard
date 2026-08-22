@@ -778,7 +778,8 @@ func (s *Store) Metrics(f Filter, groupBy string) ([]MetricSeries, error) {
 
 func (s *Store) Settings() (Settings, error) {
 	settings := Settings{DatabasePath: s.path}
-	err := s.rdb.QueryRow(`SELECT retention_hours,max_events FROM settings WHERE id=1`).Scan(&settings.RetentionHours, &settings.MaxEvents)
+	err := s.rdb.QueryRow(`SELECT retention_hours,max_events,analytics_rollup_days,analytics_seen_days FROM settings WHERE id=1`).
+		Scan(&settings.RetentionHours, &settings.MaxEvents, &settings.AnalyticsRollupDays, &settings.AnalyticsSeenDays)
 	return settings, err
 }
 
@@ -789,7 +790,31 @@ func (s *Store) UpdateSettings(settings Settings) error {
 	if settings.MaxEvents < 100 || settings.MaxEvents > 100_000_000 {
 		return errors.New("max_events must be between 100 and 100000000")
 	}
-	_, err := s.db.Exec(`UPDATE settings SET retention_hours=?,max_events=? WHERE id=1`, settings.RetentionHours, settings.MaxEvents)
+	// A save that says nothing about the analytics windows leaves them alone.
+	// JSON cannot tell "zero days" from "this form does not have the field",
+	// and the form that types the first two numbers predates both — so a
+	// missing one must never be read as "keep nothing".
+	stored, err := s.Settings()
+	if err != nil {
+		return err
+	}
+	if settings.AnalyticsRollupDays <= 0 {
+		settings.AnalyticsRollupDays = stored.AnalyticsRollupDays
+	}
+	if settings.AnalyticsSeenDays <= 0 {
+		settings.AnalyticsSeenDays = stored.AnalyticsSeenDays
+	}
+	if settings.AnalyticsRollupDays > model.MaxAnalyticsDays {
+		return fmt.Errorf("analytics_rollup_days must be between 1 and %d", model.MaxAnalyticsDays)
+	}
+	// Seen exists to make the rollup's session counts exact, so keeping it past
+	// the rollup is growing the table that grows with traffic for a day nothing
+	// can read.
+	if settings.AnalyticsSeenDays > settings.AnalyticsRollupDays {
+		return errors.New("analytics_seen_days must not be longer than analytics_rollup_days")
+	}
+	_, err = s.db.Exec(`UPDATE settings SET retention_hours=?,max_events=?,analytics_rollup_days=?,analytics_seen_days=? WHERE id=1`,
+		settings.RetentionHours, settings.MaxEvents, settings.AnalyticsRollupDays, settings.AnalyticsSeenDays)
 	if err == nil {
 		_, err = s.Purge()
 	}
@@ -801,12 +826,19 @@ func (s *Store) Purge() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	cutoff := time.Now().UTC().Add(-time.Duration(settings.RetentionHours) * time.Hour).UnixNano()
+	now := time.Now().UTC()
+	cutoff := now.Add(-time.Duration(settings.RetentionHours) * time.Hour).UnixNano()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
+	// Analytics sweeps here too, on its own windows, and its rows are not in
+	// the number this returns: that number is what the events table lost, which
+	// is what the page reporting it has always meant.
+	if err := purgeAnalytics(tx, settings, now); err != nil {
+		return 0, err
+	}
 	result, err := tx.Exec(`DELETE FROM events WHERE received_at_ns < ?`, cutoff)
 	if err != nil {
 		return 0, err

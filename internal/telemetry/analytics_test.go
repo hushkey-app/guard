@@ -946,3 +946,142 @@ func TestAnalyticsSummaryIsSilentOnAnEmptyWindow(t *testing.T) {
 		t.Fatalf("a window nothing arrived in has %d rows", len(grid))
 	}
 }
+
+func rawAnalyticsRows(t *testing.T, store *Store, session string) int64 {
+	t.Helper()
+	var count int64
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_events WHERE session = ?`, session).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func seenAnalyticsRows(t *testing.T, store *Store, day int64) int64 {
+	t.Helper()
+	var count int64
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_seen WHERE day = ?`, day).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+// The one promise the rollup exists to make: it outlives the rows it was
+// counted from. A sweep that took the numbers with the raw feed would leave
+// analytics answering "versus last month" with a day of data.
+func TestAnalyticsPurgeKeepsTheRollupWhenTheRawFeedGoes(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	now := time.Now().UTC()
+	// Past the twenty-four hours an in-memory store keeps its telemetry for,
+	// which is the same window the raw analytics rows are swept on.
+	old := now.Add(-48 * time.Hour)
+	if err := store.addAnalyticsAt(beacon("a1", "/pricing", "page_view", "signup_click"), old); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.addAnalyticsAt(beacon("b2", "/pricing", "page_view"), now); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Purge(); err != nil {
+		t.Fatal(err)
+	}
+
+	if rows := rawAnalyticsRows(t, store, "a1"); rows != 0 {
+		t.Fatalf("the raw feed kept %d rows from two days ago", rows)
+	}
+	if rows := rawAnalyticsRows(t, store, "b2"); rows != 1 {
+		t.Fatalf("the raw feed has %d of this minute's rows", rows)
+	}
+	events, sessions := rollupRow(t, store, epochDay(old), "/pricing", "signup_click")
+	if events != 1 || sessions != 1 {
+		t.Fatalf("the rollup for a swept day reads %d events over %d sessions", events, sessions)
+	}
+}
+
+// Seen is purged behind the rollup, and what that costs is the point of the
+// test: the counts stand afterwards, exactly as they were counted, and there is
+// no longer anything to recount them from.
+func TestAnalyticsPurgeDropsSeenBehindTheRollup(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	now := time.Now().UTC()
+	yesterday := now.Add(-24 * time.Hour)      // inside both windows
+	lastWeek := now.Add(-10 * 24 * time.Hour)  // past seen, inside the rollup
+	lastYear := now.Add(-200 * 24 * time.Hour) // past both
+	for _, at := range []time.Time{yesterday, lastWeek, lastYear} {
+		for range 2 {
+			if err := store.addAnalyticsAt(beacon("a1", "/pricing", "page_view", "signup_click"), at); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	if _, err := store.Purge(); err != nil {
+		t.Fatal(err)
+	}
+
+	if rows := seenAnalyticsRows(t, store, epochDay(yesterday)); rows != 2 {
+		t.Fatalf("yesterday kept %d seen rows", rows)
+	}
+	if rows := seenAnalyticsRows(t, store, epochDay(lastWeek)); rows != 0 {
+		t.Fatalf("a day behind the seen window kept %d seen rows", rows)
+	}
+	// The exactness is spent, and the number it bought is still there.
+	events, sessions := rollupRow(t, store, epochDay(lastWeek), "/pricing", "signup_click")
+	if events != 2 || sessions != 1 {
+		t.Fatalf("the counts moved to %d events over %d sessions once seen had gone", events, sessions)
+	}
+	var days int64
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_rollup WHERE day = ?`, epochDay(lastYear)).Scan(&days); err != nil {
+		t.Fatal(err)
+	}
+	if days != 0 {
+		t.Fatalf("a day behind the rollup window kept %d rows", days)
+	}
+}
+
+// The two windows are numbers somebody types, so they are validated where the
+// other two are — and a save that does not carry them at all leaves them alone,
+// because JSON cannot tell "zero days" from a form that predates the field.
+func TestAnalyticsRetentionSettings(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	settings, err := store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.AnalyticsRollupDays != model.DefaultAnalyticsRollupDays || settings.AnalyticsSeenDays != model.DefaultAnalyticsSeenDays {
+		t.Fatalf("a fresh store starts with %d rollup days and %d seen days", settings.AnalyticsRollupDays, settings.AnalyticsSeenDays)
+	}
+
+	if err := store.UpdateSettings(Settings{RetentionHours: 12, MaxEvents: 500}); err != nil {
+		t.Fatal(err)
+	}
+	if settings, err = store.Settings(); err != nil {
+		t.Fatal(err)
+	}
+	if settings.RetentionHours != 12 || settings.AnalyticsRollupDays != model.DefaultAnalyticsRollupDays || settings.AnalyticsSeenDays != model.DefaultAnalyticsSeenDays {
+		t.Fatalf("a save of the other two numbers left %+v", settings)
+	}
+
+	if err := store.UpdateSettings(Settings{RetentionHours: 12, MaxEvents: 500, AnalyticsRollupDays: 30, AnalyticsSeenDays: 3}); err != nil {
+		t.Fatal(err)
+	}
+	for _, refused := range []Settings{
+		{RetentionHours: 12, MaxEvents: 500, AnalyticsRollupDays: model.MaxAnalyticsDays + 1, AnalyticsSeenDays: 3},
+		{RetentionHours: 12, MaxEvents: 500, AnalyticsRollupDays: 30, AnalyticsSeenDays: 60},
+	} {
+		if err := store.UpdateSettings(refused); err == nil {
+			t.Fatalf("stored %d rollup days against %d seen days", refused.AnalyticsRollupDays, refused.AnalyticsSeenDays)
+		}
+	}
+	if settings, err = store.Settings(); err != nil {
+		t.Fatal(err)
+	}
+	if settings.AnalyticsRollupDays != 30 || settings.AnalyticsSeenDays != 3 {
+		t.Fatalf("a refused save moved the windows to %d and %d", settings.AnalyticsRollupDays, settings.AnalyticsSeenDays)
+	}
+}

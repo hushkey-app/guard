@@ -36,3 +36,7 @@ trap **there**, and put a cross-cutting one here.
 - `analytics_rollup` cannot answer a site-wide session count. It is keyed
   (day, path, action), so summing sessions across paths counts one visit once
   per page it read; only `analytics_seen` knows the difference.
+- Adding a column to an existing table: `tableColumns(db, name)` in `backup.go`
+  is the shared reader — no need to hand-roll the `pragma_table_xinfo` loop that
+  `cluster.go` and `views.go` predate it with. And `Store.Settings` selects its
+  columns by name, so a new one is a line there and a line in `UpdateSettings`.

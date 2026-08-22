@@ -29,3 +29,19 @@ Nobody is reading this while the loop runs. It is the handover.
   grows thirteen times), or write one site-wide row per day at ingest (a
   sentinel path like `(other)`, which the grid read and the backup then have to
   know about).
+
+- **A7** — the spec (§5) says the two settings are "analytics rollup days,
+  analytics raw hours" while the same section says the raw feed is swept by the
+  telemetry retention, and the plan says rollup days plus **seen** days. Built
+  the plan's: raw follows `retention_hours` (one answer to "how long is raw
+  telemetry kept"), rollup 90 days, seen 7. A raw-hours row would be a second
+  number for a table nobody reads twice.
+- **A7** — `UpdateSettings` takes the whole `model.Settings`, and the storage
+  form posts only the two numbers it knows about, so a zero would have been a
+  retention of none. Treated an omitted analytics window as "unchanged" and said
+  so in the code; if E5 is meant to make them required, that is the line to
+  delete.
+- **A7** — A6's question (the strip can only count as far back as
+  `analytics_seen`) is now a number somebody types rather than a constant: seen
+  may be raised as far as the rollup window and is refused past it. Neither of
+  A6's two ways out was built.
