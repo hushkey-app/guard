@@ -17,6 +17,7 @@ import { refreshSecrets } from "./secrets.js";
 import { refreshConfig } from "./config.js";
 import { refreshBackup } from "./backup.js";
 import { closeDeployStreams, refreshDeploys } from "./deploys.js";
+import { refreshAnalytics } from "./analytics.js";
 import { screenCleared } from "./store.js";
 
 // Which machines the signal pages are scoped to. Shared across logs, traces and
@@ -550,6 +551,10 @@ async function refreshPage({ facets = false } = {}) {
   // this page must not do. So: on a mount and after a change, never on the
   // tick.
   if (facets && qs("[data-secret-envs]")) work.push(refreshSecrets());
+  // Analytics is a rollup keyed by whole UTC days, read over a window of at
+  // least one of them: a three-second tick would redraw the same numbers a
+  // thousand times an hour. A mount and a press, like the pages behind an API.
+  if (facets && qs("[data-analytics-page]")) work.push(refreshAnalytics());
   if (facets) work.push(refreshFacets(), renderClusterFilter());
   await Promise.allSettled(work);
 }

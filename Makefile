@@ -109,6 +109,7 @@ css:
 		'@source "../public/config.js";' \
 		'@source "../public/backup.js";' \
 		'@source "../public/deploys.js";' \
+		'@source "../public/analytics.js";' \
 		"@source \"$$SHADCN_TEMPL_PATH/components/**/*.templ\";" \
 		> client/styles/app.sources.css
 	.howl/tailwind/node_modules/.bin/tailwindcss -i client/styles/app.css -o client/public/app.css --minify
