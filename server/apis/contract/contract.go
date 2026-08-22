@@ -232,3 +232,70 @@ type RestoreRequest struct {
 	Passphrase string       `json:"passphrase"`
 	Backup     model.Backup `json:"backup"`
 }
+
+// AnalyticsQuery is the window the strip and the grid are read over.
+//
+// Bounded at both ends, unlike ViewDataQuery: the rollup is keyed by whole UTC
+// days and the strip's second half is the window of equal length before this
+// one, so "all retained" — a real answer everywhere else in the dashboard —
+// has no previous to compare against and is refused here rather than answered
+// with a comparison against nothing.
+type AnalyticsQuery struct {
+	Range string    `query:"range"`
+	From  time.Time `query:"from"`
+	To    time.Time `query:"to"`
+}
+
+// The window a request that names none is read over. Seven days because the
+// rollup's grain is a day and one of them is a sample rather than a trend;
+// there is no knob, for the reason there is no knob anywhere else in guard.
+const defaultAnalyticsWindow = 7 * 24 * time.Hour
+
+func (q AnalyticsQuery) Validate() error {
+	if q.Range == "all" {
+		return api.Invalid("range", "analytics is read over a bounded window, so it has no all")
+	}
+	if q.Range != "" {
+		d, err := model.ParseDuration(q.Range)
+		if err != nil {
+			return api.Invalid("range", err.Error())
+		}
+		if d <= 0 {
+			return api.Invalid("range", "is not a window")
+		}
+	}
+	if !q.From.IsZero() && !q.To.IsZero() && q.To.Before(q.From) {
+		return api.Invalid("to", "is before from")
+	}
+	return nil
+}
+
+// Window resolves the request into the two instants the rollup is asked for. A
+// custom From wins over a range, and an absent To means now — which is what
+// makes "from the first of the month" a window somebody can type.
+func (q AnalyticsQuery) Window(now time.Time) (from, to time.Time) {
+	from, to = q.From, q.To
+	if to.IsZero() {
+		to = now
+	}
+	if !from.IsZero() {
+		return from, to
+	}
+	d, err := model.ParseDuration(q.Range)
+	if err != nil || d <= 0 {
+		d = defaultAnalyticsWindow
+	}
+	return to.Add(-d), to
+}
+
+// Analytics is the top of the page in one answer: the strip, and the grid under
+// it.
+//
+// One request rather than two for the reason Catalogue is one — the strip's
+// totals and the grid's rows are the same window, and two calls a second apart
+// are two windows, so the numbers somebody is reading side by side would not
+// add up.
+type Analytics struct {
+	Summary model.AnalyticsSummary `json:"summary"`
+	Paths   []model.PathRow        `json:"paths"`
+}

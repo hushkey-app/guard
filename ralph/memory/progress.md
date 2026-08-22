@@ -107,3 +107,19 @@ on its own. `ralph.sh` greps for it.
   door wants anyway. B3 gets the counters; the tracker already refuses a bad
   action name client-side, because the door refuses the whole beacon over one
   and the page views batched beside it would go with it.
+
+## C1 — the grid endpoint, one window answered once
+- commit: (this one)
+- gates: build ok / wasm ok / howl ok / make test ok
+- notes: `GET /api/analytics` returns `contract.Analytics{summary, paths}` — the
+  strip and the grid in **one** answer, because two calls a second apart are two
+  windows and the totals a reader compares would not add up. `contract` gained
+  the result type as well as the query type the plan named: the precedent is
+  `Catalogue`, a response combining domain types, and `model` is for the domain
+  types themselves. `AnalyticsQuery` **refuses `range=all`** — the filter bar
+  offers it, but the strip is a comparison against the span of equal length
+  before it and an unbounded window has no previous (and `analyticsDays` on a
+  zero time reads the epoch). Empty range is the 7-day default, a constant beside
+  the type. Tests are `server/apis/analytics_test.go` (package `apis_test`,
+  reusing `server`/`get` from `apis_test.go`), outside C1's Files list because
+  every task ships its test and that is where endpoint tests live.

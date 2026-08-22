@@ -47,3 +47,6 @@ trap **there**, and put a cross-cutting one here.
 - An XHR sending a string sets `Content-Type: text/plain;charset=UTF-8` by
   itself — the CORS-safelisted type the browser door wants. Setting it by hand
   is 60 bytes of tracker for nothing.
+- `GOOS=js GOARCH=wasm go build ./wasm` (the plan's C1 verify line) cannot work:
+  the default output name collides with the `wasm` directory. Use
+  `-o /tmp/x.wasm`, or `make wasm`, which writes `client/public/views.wasm`.

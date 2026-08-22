@@ -57,6 +57,11 @@ func (c *Client) AddMember(ctx context.Context, body members.Invite) (model.Memb
 	return api.Call[model.Member](ctx, c.Transport, "POST", "/api/members", nil, body)
 }
 
+// Analytics calls GET /api/analytics.
+func (c *Client) Analytics(ctx context.Context, query contract.AnalyticsQuery) (contract.Analytics, error) {
+	return api.Call[contract.Analytics](ctx, c.Transport, "GET", "/api/analytics", query, nil)
+}
+
 // AnswerStoppedDeploy calls POST /api/deploy/resolve.
 func (c *Client) AnswerStoppedDeploy(ctx context.Context, body deploy.Answer) (model.DeployRun, error) {
 	return api.Call[model.DeployRun](ctx, c.Transport, "POST", "/api/deploy/resolve", nil, body)

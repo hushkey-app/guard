@@ -149,7 +149,7 @@ it is testable with no browser and no HTTP.
     doubles it fails loudly.
   - Verify: `node --check internal/ingest/track.js && go test ./internal/ingest/`
 
-- [ ] **B3 — health**
+- [x] **B3 — health**
   - Depends: B2
   - Files: `internal/telemetry/analytics.go`, `internal/ingest/analytics.go`,
     `internal/telemetry/analytics_test.go`
@@ -165,7 +165,7 @@ Read an existing endpoint first (`server/apis/metrics/series.api.go` is the
 smallest) — the file layout, the naming and the generated route table are a
 convention, not a choice.
 
-- [ ] **C1 — the grid endpoint**
+- [x] **C1 — the grid endpoint**
   - Depends: B3
   - Files: `server/apis/analytics/index.api.go`, `server/apis/contract/` (one query type)
   - Do: `GET /api/analytics` returning the strip and the grid for a window.
