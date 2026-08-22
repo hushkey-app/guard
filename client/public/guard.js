@@ -25,6 +25,48 @@ import { screenCleared } from "./store.js";
 // hold while moving between pages, not a per-page setting you re-enter.
 const clusterFilter = new Set(JSON.parse(localStorage.getItem("guard.cluster") || "[]"));
 
+// The one filter nobody types: an analytics path arrives in the URL and the
+// table narrows to the spans of the browser sessions that saw it. It is what
+// makes a rate on /analytics walkable — the ids stay in the database, the link
+// carries the path, and the store does the join.
+//
+// Read from the URL on every mount rather than held as a stance the way the
+// machine chips are, because it belongs to the link somebody followed: a
+// reload, a new tab, the Back button and a pasted address all land on the same
+// table, and walking anywhere else drops it without anybody having to say so.
+let linkedPath = "";
+
+function readLinkedFilter() {
+  const params = new URLSearchParams(location.search);
+  linkedPath = params.get("rum_path") || "";
+  // The window comes with the link. A drill out of "last 30 days" that landed
+  // on this page's default hour would be an empty table saying nothing
+  // happened, which is the one answer it must not give.
+  const wanted = params.get("range");
+  if (!wanted) return;
+  for (const select of qsa('[data-filter="range"]')) {
+    if ([...select.options].some((option) => option.value === wanted)) select.value = wanted;
+  }
+}
+
+function renderLinkedFilter() {
+  for (const host of qsa("[data-linked-filter]")) {
+    host.classList.toggle("hidden", !linkedPath);
+    host.classList.toggle("flex", Boolean(linkedPath));
+    if (!linkedPath) {
+      host.replaceChildren();
+      continue;
+    }
+    const label = el("span", `text-xs font-medium ${muted}`, "From analytics");
+    const chip = el("button", "cn-badge inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap border-primary/40 bg-primary/15 text-primary");
+    chip.type = "button";
+    chip.dataset.linkedClear = "true";
+    chip.title = `Only the spans of browser sessions that saw ${linkedPath}. Press to drop the filter.`;
+    chip.append(text(`sessions that saw ${linkedPath}`), el("span", "opacity-60", "✕"));
+    host.replaceChildren(label, chip);
+  }
+}
+
 async function renderClusterFilter() {
   const hosts = qsa("[data-cluster-filter]");
   if (!hosts.length) return;
@@ -222,6 +264,7 @@ function filterParams(signal, paginate = false) {
   for (const name of ["service", "severity", "name"]) if (value(name)) params.set(name, value(name));
   if (value("query")) params.set("q", value("query"));
   if (clusterFilter.size) params.set("nodes", [...clusterFilter].join(","));
+  if (linkedPath) params.set("rum_path", linkedPath);
   const range = value("range");
   const durations = { "15m": 15 * 60e3, "1h": 3600e3, "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 86400e3 };
   if (durations[range]) params.set("from", new Date(Date.now() - durations[range]).toISOString());
@@ -555,7 +598,10 @@ async function refreshPage({ facets = false } = {}) {
   // least one of them: a three-second tick would redraw the same numbers a
   // thousand times an hour. A mount and a press, like the pages behind an API.
   if (facets && qs("[data-analytics-page]")) work.push(refreshAnalytics());
-  if (facets) work.push(refreshFacets(), renderClusterFilter());
+  if (facets) {
+    renderLinkedFilter();
+    work.push(refreshFacets(), renderClusterFilter());
+  }
   await Promise.allSettled(work);
 }
 
@@ -811,6 +857,9 @@ globalThis.guardPageMount = (page) => {
   // AOT navigations start a fresh page-specific load here.
   refreshUpdate();
   renderGeneration++;
+  // Before anything asks for rows: the URL is what says which sessions this
+  // page is about, and the first request must already know.
+  readLinkedFilter();
   if (page === initializedPage && initialRefresh) {
     const pending = initialRefresh;
     initialRefresh = null;
@@ -863,6 +912,20 @@ document.addEventListener("click", (event) => {
     refreshPage();
     return;
   }
+  if (event.target.closest("[data-linked-clear]")) {
+    linkedPath = "";
+    // The URL is what put it there, so the URL is what has to stop saying it:
+    // dropping the chip and leaving the address alone would bring the filter
+    // back on the next reload, and the Back button would still owe somebody
+    // the filtered view they walked in on — which replaceState leaves intact.
+    const here = new URL(location.href);
+    here.searchParams.delete("rum_path");
+    history.replaceState(history.state, "", here.pathname + here.search);
+    for (const signal of signalPages.keys()) signalPages.set(signal, 0);
+    renderLinkedFilter();
+    refreshPage();
+    return;
+  }
   if (event.target.closest("[data-detail-back]")) { renderDrill(); return; }
   if (event.target.closest("[data-detail-close]")) { closeDetail(); return; }
   if (event.target.closest("[data-trace-close]")) { qs("[data-trace-card]").hidden = true; return; }
@@ -907,5 +970,9 @@ document.addEventListener("submit", (event) => {
 
 updateLiveControl();
 initializedPage = location.pathname === "/" ? "home" : location.pathname.split("/").filter(Boolean)[0];
+// A cold load of a drill link — a new tab, a reload, an address somebody was
+// sent — starts here rather than at the mount, so the eager pass below asks for
+// the sessions the URL names instead of the whole table and then narrowing.
+readLinkedFilter();
 initialRefresh = refreshPage({ facets: true });
 liveTimer = setTimeout(liveTick, 3000);

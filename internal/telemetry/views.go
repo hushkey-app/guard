@@ -62,8 +62,13 @@ var indexedAttributes = []struct {
 	{Column: "attr_http_status", Label: "HTTP status", Canonical: "http.response.status_code", Keys: []string{"http.response.status_code", "http.status_code"}},
 	{Column: "attr_client_address", Label: "Client address", Canonical: "client.address", Keys: []string{"client.address", "net.peer.ip", "http.client_ip"}},
 	{Column: "attr_db_system", Label: "Database system", Canonical: "db.system.name", Keys: []string{"db.system.name", "db.system"}},
-	{Column: "attr_rum_session", Label: "Browser session", Canonical: "rum.session_id", Keys: []string{"rum.session_id", "session.id"}},
+	{Column: "attr_rum_session", Label: "Browser session", Canonical: rumSessionAttribute, Keys: []string{rumSessionAttribute, "session.id"}},
 }
+
+// rumSessionAttribute is spelled once because two things read it: the compiler,
+// through the list above, and the events filter that walks a path on
+// /analytics into the spans of the sessions that saw it.
+const rumSessionAttribute = "rum.session_id"
 
 // attributeColumn maps an attribute key to its generated column, if it has one.
 func attributeColumn(key string) (string, bool) {

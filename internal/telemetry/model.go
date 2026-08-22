@@ -616,6 +616,24 @@ func columnFilterSQL(f Filter) (string, []any) {
 	if !f.To.IsZero() {
 		add("timestamp_ns <= ?", f.To.UTC().UnixNano())
 	}
+	// The join the session id was indexed for. The ids stay here: the caller
+	// names a path and the subquery turns it into the sessions that saw it, so
+	// the link off a row on /analytics is a path and a window rather than a
+	// URL full of hex.
+	//
+	// analytics_seen is what can name a session, so the walk reaches exactly
+	// as far back as that table is kept — which is days, against the hours the
+	// spans themselves get, so in practice it is the spans that run out first.
+	if path := strings.TrimSpace(f.RUMPath); path != "" {
+		column, indexed := attributeColumn(rumSessionAttribute)
+		if !indexed {
+			// Cannot happen while rum.session_id is in indexedAttributes. If
+			// it ever leaves, nothing is the honest answer — a filter that
+			// silently matched every span would be worse than an empty table.
+			return "WHERE 1 = 0", nil
+		}
+		add(column+" IN (SELECT session FROM analytics_seen WHERE path = ?)", path)
+	}
 	if q := strings.TrimSpace(f.Query); q != "" {
 		like := "%" + strings.ToLower(q) + "%"
 		clauses = append(clauses, `(LOWER(message) LIKE ? OR LOWER(name) LIKE ? OR LOWER(service) LIKE ? OR LOWER(instance) LIKE ? OR LOWER(trace_id) LIKE ? OR LOWER(attributes_json) LIKE ?)`)

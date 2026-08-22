@@ -134,6 +134,13 @@ templ FilterBar(signal string) {
 				     people get wrong. Filled by guard.js from the cluster;
 				     absent entirely when no machines are watched. -->
 				<div data-cluster-filter class="mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4"></div>
+				<!-- A filter that arrived on a link rather than being typed:
+				     /traces?rum_path=/pricing is the walk from a row on
+				     /analytics into the spans of the sessions that saw that
+				     page. It gets a chip because a filter nothing on screen
+				     mentions is a table quietly answering a different question
+				     from the one the controls describe. -->
+				<div data-linked-filter class="mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4"></div>
 				<div data-custom-range class="hidden">
 					<div class="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
 						@Field("", signal+"-from", "From") {

@@ -56,11 +56,19 @@ type Filter struct {
 	// A list of ids rather than a list of services, so that the filter follows
 	// the cluster as its membership changes. Pin a new service to a machine and
 	// a saved "node 3" filter includes it without being edited.
-	Nodes  string    `query:"nodes"`
-	From   time.Time `query:"from"`
-	To     time.Time `query:"to"`
-	Limit  int       `query:"limit"`
-	Offset int       `query:"offset"`
+	Nodes string `query:"nodes"`
+	// RUMPath narrows to the browser sessions that saw one analytics path —
+	// the walk from a row on /analytics into the spans those visits produced,
+	// which is the whole reason the session id is a join key.
+	//
+	// A path rather than the session ids themselves: the ids belong to the
+	// database, a link carrying two hundred of them is one nobody can share or
+	// read, and the set they name changes as the window moves.
+	RUMPath string    `query:"rum_path"`
+	From    time.Time `query:"from"`
+	To      time.Time `query:"to"`
+	Limit   int       `query:"limit"`
+	Offset  int       `query:"offset"`
 }
 
 type Instance struct {

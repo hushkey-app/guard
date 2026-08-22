@@ -103,7 +103,7 @@ templ AnalyticsGrid() {
 //
 // The slots:
 //
-//	data-analytics-fold-template    the panel: data-fold-chart, data-fold-legend, data-fold-actions, data-fold-sources
+//	data-analytics-fold-template    the panel: data-fold-chart, data-fold-legend, data-fold-actions, data-fold-sources, data-fold-traces
 //	data-analytics-action-template  one action: data-action-name, data-action-count, data-action-rate, data-action-pin
 //	data-analytics-source-template  one campaign or referring host: data-source-name, data-source-detail, data-source-count, data-source-share
 templ AnalyticsFold() {
@@ -128,6 +128,16 @@ templ AnalyticsFold() {
 					<p class="text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">Actions on this path</p>
 					<div data-fold-actions class="mt-2 space-y-0.5"></div>
 				</div>
+			</div>
+			<!-- The walk out of the numbers and into what produced them. It is
+			     a plain link with the path and the window in it, because the
+			     sessions it means are worked out at the far end: a URL naming
+			     two hundred ids is one nobody can read, share or shorten, and
+			     the set it named would be stale by the time it was opened. -->
+			<div class="mt-4 flex justify-end border-t border-border/60 pt-3">
+				<a data-fold-traces href="/traces" class="text-xs font-medium text-primary underline-offset-4 hover:underline">
+					Open these sessions in traces →
+				</a>
 			</div>
 		</div>
 	</template>

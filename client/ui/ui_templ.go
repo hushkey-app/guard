@@ -653,7 +653,7 @@ func FilterBar(signal string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></div><!-- Which machines to look at. Chips rather than a select,\n\t\t\t\t     because more than one is the useful case — \"everything on\n\t\t\t\t     the two web boxes\" is a question, and a multi-select that\n\t\t\t\t     needs a modifier key held down to express it is a control\n\t\t\t\t     people get wrong. Filled by guard.js from the cluster;\n\t\t\t\t     absent entirely when no machines are watched. --> <div data-cluster-filter class=\"mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4\"></div><div data-custom-range class=\"hidden\"><div class=\"mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></div><!-- Which machines to look at. Chips rather than a select,\n\t\t\t\t     because more than one is the useful case — \"everything on\n\t\t\t\t     the two web boxes\" is a question, and a multi-select that\n\t\t\t\t     needs a modifier key held down to express it is a control\n\t\t\t\t     people get wrong. Filled by guard.js from the cluster;\n\t\t\t\t     absent entirely when no machines are watched. --> <div data-cluster-filter class=\"mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4\"></div><!-- A filter that arrived on a link rather than being typed:\n\t\t\t\t     /traces?rum_path=/pricing is the walk from a row on\n\t\t\t\t     /analytics into the spans of the sessions that saw that\n\t\t\t\t     page. It gets a chip because a filter nothing on screen\n\t\t\t\t     mentions is a table quietly answering a different question\n\t\t\t\t     from the one the controls describe. --> <div data-linked-filter class=\"mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4\"></div><div data-custom-range class=\"hidden\"><div class=\"mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -782,7 +782,7 @@ func Select(name, label, class string) templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 165, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 172, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -795,7 +795,7 @@ func Select(name, label, class string) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 168, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 175, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 		if templ_7745c5c3_Err != nil {
@@ -872,7 +872,7 @@ func Field(class, id, label string) templ.Component {
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 181, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 188, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 		if templ_7745c5c3_Err != nil {
@@ -885,7 +885,7 @@ func Field(class, id, label string) templ.Component {
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 181, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 188, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -935,7 +935,7 @@ func Pagination(signal string) templ.Component {
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(signal)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 187, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 194, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 		if templ_7745c5c3_Err != nil {
@@ -1080,7 +1080,7 @@ func TableHead(columns []string) templ.Component {
 						var templ_7745c5c3_Var53 string
 						templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(column)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 224, Col: 13}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/ui.templ`, Line: 231, Col: 13}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 						if templ_7745c5c3_Err != nil {

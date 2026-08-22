@@ -328,6 +328,7 @@ function showFold(block, open) {
 function foldPanel(row) {
   const panel = qs("[data-analytics-fold-template]").content.firstElementChild.cloneNode(true);
   foldActions(panel.querySelector("[data-fold-actions]"), row);
+  foldTraces(panel.querySelector("[data-fold-traces]"), row.path);
   // Started here rather than awaited, so the panel opens now and the chart and
   // the sources land into boxes that already have their place: a fold that
   // waited on a read before appearing would be a press with nothing behind it.
@@ -369,6 +370,28 @@ function actionLine(row, name) {
     ? `Stop drawing ${name} as a column. It is still counted.`
     : `Draw ${name} as a column, on every path`;
   return line;
+}
+
+// /analytics answers what happened on a page; /traces answers what the browsers
+// were doing while it did. The session id is what joins them, and this link is
+// the half of that join a person can press: a rate worth investigating is one
+// press from the spans of the visits behind it.
+//
+// The link names the path, never the sessions. Which sessions saw a page is a
+// question the database answers at the far end (`rum_path` in model.Filter), so
+// this stays a URL somebody can read in a status bar, paste into a message and
+// still open next week.
+//
+// The window travels too. Spans are kept in hours where the rollup is kept in
+// days, so /traces has no 30-day option and anything longer than a week arrives
+// as "all retained" — the widest true answer rather than a silently narrower
+// one that would read as "nothing happened".
+const traceWindows = { "24h": "24h", "7d": "7d" };
+
+function foldTraces(link, path) {
+  if (!link) return;
+  link.href = `/traces?rum_path=${encodeURIComponent(path)}&range=${traceWindows[range] || "all"}`;
+  link.title = `Every span from the browser sessions that saw ${path}`;
 }
 
 // The columns, sent as the whole ordered list rather than as a verb, because

@@ -1632,3 +1632,59 @@ func TestPinningAnalyticsActionsIsOneOrderedDecision(t *testing.T) {
 		t.Fatalf("a refused pin was half applied: %#v", after)
 	}
 }
+
+// The drill: a row on /analytics is a path, and this is what turns it into the
+// spans of the sessions that saw it. The ids never leave the database — the
+// filter carries the path, the subquery carries the join — so the link off a
+// path row is short enough to share and still means "these visits".
+func TestAnalyticsFilterWalksAPathIntoItsSessions(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Now().UTC()
+	for _, b := range []model.Beacon{
+		beacon("aaaa1111", "/pricing", actionPageView, "signup_click"),
+		beacon("bbbb2222", "/docs", actionPageView),
+	} {
+		if err := store.addAnalyticsAt(b, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Add(
+		Event{Signal: "traces", Service: "browser", Name: "documentLoad", Timestamp: at,
+			Attributes: map[string]any{"rum.session_id": "aaaa1111"}},
+		// The second spelling, because the two are one session everywhere else.
+		Event{Signal: "traces", Service: "browser", Name: "POST /signup", Timestamp: at,
+			Attributes: map[string]any{"session.id": "aaaa1111"}},
+		Event{Signal: "traces", Service: "browser", Name: "documentLoad", Timestamp: at,
+			Attributes: map[string]any{"rum.session_id": "bbbb2222"}},
+		// A span from something that is not a browser at all.
+		Event{Signal: "traces", Service: "api", Name: "GET /pricing", Timestamp: at},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	spans, err := store.Query(Filter{Signal: "traces", RUMPath: "/pricing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spans) != 2 {
+		t.Fatalf("the sessions that saw /pricing produced %d spans, want 2: %#v", len(spans), spans)
+	}
+	for _, span := range spans {
+		if span.Service != "browser" {
+			t.Errorf("%s came back for a path only browser sessions can have seen", span.Name)
+		}
+	}
+
+	// A path nobody has been on is nothing, never everything: a filter that
+	// fell through to "no clause" would answer with the whole table and read
+	// as a page with a lot of traffic on it.
+	spans, err = store.Query(Filter{Signal: "traces", RUMPath: "/nowhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spans) != 0 {
+		t.Fatalf("a path with no sessions matched %d spans", len(spans))
+	}
+}
