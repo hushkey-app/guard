@@ -27,3 +27,18 @@ on its own. `ralph.sh` greps for it.
   duplicate with words. A2's Files list omitted a test file — `analytics_test.go`
   exists now and A3 extends it. A1 left its own plan tick uncommitted; it is in
   this commit.
+
+## A4 — the two cardinality ceilings, answered differently on purpose
+- commit: b1bd30e
+- gates: build ok / howl ok / make test ok
+- notes: the ceilings are `maxAnalyticsPaths` (1000) and `maxAnalyticsActions`
+  (200) in analytics.go. A path past the ceiling counts under the literal row
+  `(other)` — but the **raw** row keeps the URL it arrived on, because that is
+  what somebody reads to write A5's path rule; A6 reads the rollup, so it never
+  sees the difference. A name past the ceiling is refused per event (the beacon
+  around it still counts) — unlike Validate, which refuses the whole beacon.
+  Counters are in-memory atomics on Store (`analytics analyticsCaps`, one field
+  added to model.go), read by `Store.AnalyticsCaps()` for B3's health. A5 must
+  apply its rules **before** `analyticsCountedPath`, which is the point of them.
+  A3 left its own plan tick uncommitted; it is in this commit.
+

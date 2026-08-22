@@ -26,7 +26,9 @@ package telemetry
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/hushkey-app/guard/internal/telemetry/model"
@@ -113,6 +115,45 @@ CREATE UNIQUE INDEX IF NOT EXISTS analytics_path_rules_pattern ON analytics_path
 // own, so it is not a discovery anybody has to decide about.
 const actionPageView = "page_view"
 
+// The two cardinality ceilings. They are constants beside the code that
+// enforces them rather than numbers on a settings page, because both have one
+// right answer: a table that grows until SQLite is slow is not a table anybody
+// chose. Every analytics product ever pointed at a site with unbounded URLs has
+// learned the first one.
+//
+// The two are answered differently on purpose — a path over the ceiling is
+// counted somewhere honest, a name over it is refused — and the reason is under
+// each of the functions below.
+const (
+	maxAnalyticsPaths   = 1000
+	maxAnalyticsActions = 200
+)
+
+// pathOther is where a day's paths go once it has as many as guard will keep.
+// A row whose count is real and whose name says what happened beats a table
+// nobody capped. It can never collide with a page: NormalisePath gives every
+// path a leading slash and this has none.
+const pathOther = "(other)"
+
+// analyticsCaps counts what the ceilings threw away.
+//
+// In memory, so the numbers are "since this process started" — a refused action
+// name is the one thing guard deliberately never writes down, so there is
+// nowhere else it could be counted from. They are numbers on a page rather than
+// a log line because a tracker firing an action that silently does not exist is
+// the failure mode people take weeks to notice.
+type analyticsCaps struct {
+	pathsCapped    atomic.Int64
+	actionsRefused atomic.Int64
+}
+
+// AnalyticsCaps reports what the ceilings refused since guard started: beacons
+// whose path rolled into (other), and events whose name arrived after discovery
+// was full.
+func (s *Store) AnalyticsCaps() (pathsCapped, actionsRefused int64) {
+	return s.analytics.pathsCapped.Load(), s.analytics.actionsRefused.Load()
+}
+
 // AddAnalytics folds one beacon into the tables that count: the raw row
 // somebody instrumenting a page is watching, the seen row that makes the
 // session count exact, and the rollup that outlives both.
@@ -153,6 +194,20 @@ func (s *Store) addAnalyticsAt(b model.Beacon, at time.Time) error {
 	}
 	defer tx.Rollback()
 
+	// Which row this beacon counts against, which is its own path until the day
+	// has as many as guard keeps.
+	counted, capped, err := analyticsCountedPath(tx, day, path)
+	if err != nil {
+		return err
+	}
+	// The discovery ceiling is read once per beacon rather than once per event:
+	// this transaction holds the single writer, so no name can appear under it,
+	// and a batch of fifty events must not be fifty counts of the same table.
+	var names int64
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM analytics_actions`).Scan(&names); err != nil {
+		return fmt.Errorf("count analytics actions: %w", err)
+	}
+
 	raw, err := tx.Prepare(`INSERT INTO analytics_events(received_at_ns, timestamp_ns, session, path, action, props_json) VALUES(?,?,?,?,?,?)`)
 	if err != nil {
 		return err
@@ -175,8 +230,37 @@ ON CONFLICT(name) DO UPDATE SET last_seen_ns = excluded.last_seen_ns`)
 		return err
 	}
 	defer discovered.Close()
+	found, err := tx.Prepare(`SELECT 1 FROM analytics_actions WHERE name = ?`)
+	if err != nil {
+		return err
+	}
+	defer found.Close()
 
+	var refused int64
 	for _, event := range b.Events {
+		// A name arriving after discovery is full is **refused** — never
+		// truncated and never folded into a neighbour, because two teams'
+		// events in one column is a wrong number nobody can see is wrong,
+		// where a missing one is a number on the health page. Refused whole,
+		// the raw row included: an event in the feed that the grid can never
+		// show is an event somebody spends an afternoon looking for.
+		//
+		// page_view is exempt because it is not a discovery — it is the Views
+		// column, and a cap that could silence it would cap the page itself.
+		if event.Name != actionPageView {
+			var one int
+			switch err := found.QueryRow(event.Name).Scan(&one); {
+			case err == nil:
+			case errors.Is(err, sql.ErrNoRows):
+				if names >= maxAnalyticsActions {
+					refused++
+					continue
+				}
+				names++
+			default:
+				return fmt.Errorf("read analytics actions: %w", err)
+			}
+		}
 		props := "{}"
 		if len(event.Props) > 0 {
 			// A nil or empty map marshals to `null` and to `{}` respectively,
@@ -192,10 +276,15 @@ ON CONFLICT(name) DO UPDATE SET last_seen_ns = excluded.last_seen_ns`)
 		if event.At > 0 {
 			timestampNS = event.At * int64(time.Millisecond)
 		}
+		// The raw row keeps the path as it arrived even when the rollup counts
+		// it under (other). The feed is bounded by rows rather than by distinct
+		// paths, so the URLs that overflowed cost nothing to keep — and they
+		// are exactly what somebody needs to write the path rule that stops it
+		// happening again.
 		if _, err := raw.Exec(receivedNS, timestampNS, b.Session, path, event.Name, props); err != nil {
 			return fmt.Errorf("store analytics event: %w", err)
 		}
-		result, err := seen.Exec(day, path, event.Name, b.Session)
+		result, err := seen.Exec(day, counted, event.Name, b.Session)
 		if err != nil {
 			return fmt.Errorf("record analytics session: %w", err)
 		}
@@ -206,7 +295,7 @@ ON CONFLICT(name) DO UPDATE SET last_seen_ns = excluded.last_seen_ns`)
 		if err != nil {
 			return err
 		}
-		if _, err := rollup.Exec(day, path, event.Name, firstToday, firstToday); err != nil {
+		if _, err := rollup.Exec(day, counted, event.Name, firstToday, firstToday); err != nil {
 			return fmt.Errorf("roll up analytics event: %w", err)
 		}
 		if event.Name == actionPageView {
@@ -216,5 +305,43 @@ ON CONFLICT(name) DO UPDATE SET last_seen_ns = excluded.last_seen_ns`)
 			return fmt.Errorf("record analytics action: %w", err)
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Counted after the commit, because a beacon that rolled back refused
+	// nothing: a health number that moves on a write that did not happen is a
+	// number somebody chases for an afternoon.
+	if capped {
+		s.analytics.pathsCapped.Add(1)
+	}
+	s.analytics.actionsRefused.Add(refused)
+	return nil
+}
+
+// analyticsCountedPath answers which rollup row a beacon counts against: its
+// own path, or (other) once the day has as many distinct paths as guard keeps.
+//
+// A path already counted today is always itself. The ceiling closes the door on
+// new paths rather than moving ones already through it, so a page does not stop
+// having numbers halfway through the afternoon the flood started.
+//
+// The count is only asked for a path guard has not seen today, and it reads a
+// table this very ceiling bounds — which is the tidy half of a cap: enforcing
+// it can never cost more than the cap allows.
+func analyticsCountedPath(tx *sql.Tx, day int64, path string) (string, bool, error) {
+	var one int
+	switch err := tx.QueryRow(`SELECT 1 FROM analytics_rollup WHERE day = ? AND path = ? LIMIT 1`, day, path).Scan(&one); {
+	case err == nil:
+		return path, false, nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return "", false, fmt.Errorf("read analytics paths: %w", err)
+	}
+	var distinct int64
+	if err := tx.QueryRow(`SELECT COUNT(DISTINCT path) FROM analytics_rollup WHERE day = ?`, day).Scan(&distinct); err != nil {
+		return "", false, fmt.Errorf("count analytics paths: %w", err)
+	}
+	if distinct >= maxAnalyticsPaths {
+		return pathOther, true, nil
+	}
+	return path, false, nil
 }

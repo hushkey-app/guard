@@ -48,7 +48,7 @@ it is testable with no browser and no HTTP.
     existing one twice is a no-op.
   - Verify: `go test ./internal/telemetry/ -run Analytics`
 
-- [ ] **A3 — the rollup writer**
+- [x] **A3 — the rollup writer**
   - Depends: A2
   - Files: `internal/telemetry/analytics.go`, `internal/telemetry/analytics_test.go`
   - Do: `Store.AddAnalytics(b model.Beacon) error`. One transaction per
@@ -61,7 +61,7 @@ it is testable with no browser and no HTTP.
     by two; the same session on the next day increments it again.
   - Verify: `go test ./internal/telemetry/ -run Analytics`
 
-- [ ] **A4 — the caps**
+- [x] **A4 — the caps**
   - Depends: A3
   - Files: `internal/telemetry/analytics.go`, `internal/telemetry/analytics_test.go`
   - Do: the two cardinality ceilings from spec §4. Distinct paths per day over

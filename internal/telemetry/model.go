@@ -61,7 +61,10 @@ type Store struct {
 	lifecycle  sync.RWMutex
 	closing    bool
 	lastPurge  atomic.Int64
-	topology   topologyCache
+	// analytics counts what the two cardinality ceilings refused. In memory,
+	// because a refused action name is never written down anywhere else.
+	analytics analyticsCaps
+	topology  topologyCache
 	// secrets seals the SSH passwords. One keeper for the store, because the
 	// key belongs to the database file rather than to any row in it.
 	secrets *secrets.Keeper

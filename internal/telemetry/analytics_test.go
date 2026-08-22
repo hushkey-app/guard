@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -338,5 +339,133 @@ func TestAddAnalyticsRefusesTheWholeBeacon(t *testing.T) {
 	}
 	if raw != 0 || rolled != 0 {
 		t.Fatalf("the refused beacon left %d raw rows and %d rollup rows", raw, rolled)
+	}
+}
+
+// The path ceiling is what stops a site with unbounded URLs — a search page, a
+// signed link, somebody's crawler — from growing the rollup until SQLite is
+// slow. Past it the count is still real; it is filed under the one name that
+// says it was not kept by itself.
+func TestAddAnalyticsRollsPathsPastTheCeilingIntoOther(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for i := range maxAnalyticsPaths {
+		if err := store.addAnalyticsAt(beacon("a1", fmt.Sprintf("/p/%d", i), "page_view"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if capped, _ := store.AnalyticsCaps(); capped != 0 {
+		t.Fatalf("the paths up to the ceiling capped %d beacons", capped)
+	}
+
+	if err := store.addAnalyticsAt(beacon("b2", "/search/one", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.addAnalyticsAt(beacon("c3", "/search/two", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	if events, sessions := rollupRow(t, store, epochDay(at), pathOther, actionPageView); events != 2 || sessions != 2 {
+		t.Fatalf("the two paths past the ceiling counted %d events over %d sessions", events, sessions)
+	}
+	var rows int
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_rollup WHERE path LIKE '/search/%'`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("a path past the ceiling kept %d rows of its own", rows)
+	}
+	var paths int
+	if err := store.rdb.QueryRow(`SELECT COUNT(DISTINCT path) FROM analytics_rollup`).Scan(&paths); err != nil {
+		t.Fatal(err)
+	}
+	if paths != maxAnalyticsPaths+1 {
+		t.Fatalf("the day holds %d distinct paths", paths)
+	}
+	if capped, _ := store.AnalyticsCaps(); capped != 2 {
+		t.Fatalf("two beacons past the ceiling were counted as %d", capped)
+	}
+
+	// The URL that overflowed is still on its raw row, because that is what
+	// somebody reads to write the path rule that stops it happening again.
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_events WHERE path = ?`, "/search/one").Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("the raw feed kept %d rows for the path that overflowed", rows)
+	}
+
+	// The ceiling closes the door on new paths; it does not move a page that
+	// is already through it, which would be a page losing its numbers halfway
+	// through the afternoon the flood started.
+	if err := store.addAnalyticsAt(beacon("d4", "/p/0", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	if events, sessions := rollupRow(t, store, epochDay(at), "/p/0", actionPageView); events != 2 || sessions != 2 {
+		t.Fatalf("a page already counted moved to %d events over %d sessions", events, sessions)
+	}
+}
+
+// The other ceiling is answered the other way round: a name past it is refused
+// rather than folded into a neighbour, because two teams' events in one column
+// is a wrong number nobody can see is wrong.
+func TestAddAnalyticsRefusesActionNamesPastTheCeiling(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	// Filled through the door discovery is actually filled through — names
+	// arrive in batches, they are never declared.
+	for i := 0; i < maxAnalyticsActions; i += model.MaxBeaconEvents {
+		b := model.Beacon{Session: "a1", Path: "/pricing"}
+		for j := range model.MaxBeaconEvents {
+			b.Events = append(b.Events, model.TrackEvent{Name: fmt.Sprintf("act_%d", i+j)})
+		}
+		if err := store.addAnalyticsAt(b, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var names int
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_actions`).Scan(&names); err != nil {
+		t.Fatal(err)
+	}
+	if names != maxAnalyticsActions {
+		t.Fatalf("discovery filled to %d names", names)
+	}
+	if _, refused := store.AnalyticsCaps(); refused != 0 {
+		t.Fatalf("filling discovery to the ceiling refused %d names", refused)
+	}
+
+	// The beacon carries all three: a name past the ceiling, a name already
+	// discovered, and the reserved one. Only the first is refused, and the
+	// batch around it still counts — a refusal is not the whole-beacon refusal
+	// the edge limits are.
+	b := beacon("b2", "/pricing", "one_too_many", "act_0", actionPageView)
+	if err := store.addAnalyticsAt(b, at); err != nil {
+		t.Fatal(err)
+	}
+	if events, sessions := rollupRow(t, store, epochDay(at), "/pricing", actionPageView); events != 1 || sessions != 1 {
+		t.Fatalf("page_view beside a refused name counted %d events over %d sessions", events, sessions)
+	}
+	if events, sessions := rollupRow(t, store, epochDay(at), "/pricing", "act_0"); events != 2 || sessions != 2 {
+		t.Fatalf("a discovered name beside a refused one counted %d events over %d sessions", events, sessions)
+	}
+	for _, query := range []string{
+		`SELECT COUNT(*) FROM analytics_actions WHERE name = ?`,
+		`SELECT COUNT(*) FROM analytics_rollup WHERE action = ?`,
+		`SELECT COUNT(*) FROM analytics_seen WHERE action = ?`,
+		`SELECT COUNT(*) FROM analytics_events WHERE action = ?`,
+	} {
+		var rows int
+		if err := store.rdb.QueryRow(query, "one_too_many").Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 0 {
+			t.Fatalf("a refused name left %d rows behind: %s", rows, query)
+		}
+	}
+	if _, refused := store.AnalyticsCaps(); refused != 1 {
+		t.Fatalf("one name past the ceiling was counted as %d", refused)
 	}
 }

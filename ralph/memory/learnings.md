@@ -26,3 +26,8 @@ trap **there**, and put a cross-cutting one here.
   looks like a knob is a row in `settings` or a constant beside its reader.
 - Guard's prose rule, and it applies to code comments too: say **why a rule
   exists**, not what a line does.
+- A per-store counter needs a field on `Store` in `internal/telemetry/model.go`,
+  which is outside most tasks' `Files` list. One line there is unavoidable —
+  say so in progress.md rather than inventing a package-level variable that two
+  stores in one test would share.
+
