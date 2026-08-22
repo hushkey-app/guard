@@ -21,6 +21,7 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/card"
 	"github.com/hushkey-app/guard/client/lifecycle"
 	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
 )
 
 templ Head() {
@@ -35,6 +36,7 @@ templ Page() {
 		@analyticsOff()
 		@analyticsInstall()
 		@analyticsLive()
+		@components.AnalyticsStat()
 	</section>
 }
 

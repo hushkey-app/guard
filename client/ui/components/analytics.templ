@@ -1,0 +1,34 @@
+package components
+
+import "github.com/axadrn/shadcn-templ/v2/components/card"
+
+// AnalyticsStat is the strip's tile, cloned once per figure by
+// client/public/analytics.js.
+//
+// The slots it fills:
+//
+//	data-stat-label   what is being counted
+//	data-stat-value   the figure, or a dash where the window cannot answer
+//	data-stat-delta   the change against the previous window of equal length
+//	data-stat-note    the figure that change is measured from
+//
+// ui.Stat is this shape already and is deliberately not reused: it renders at
+// the server from strings, and every number here arrives from a fetch after the
+// page is on screen — and then again, in place, on every window change.
+templ AnalyticsStat() {
+	<template data-analytics-stat-template>
+		@card.Card(card.Props{Size: card.SizeSm}) {
+			@card.Content() {
+				<p data-stat-label class="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground"></p>
+				<p data-stat-value class="mt-2 text-3xl font-semibold tabular-nums tracking-tight">—</p>
+				<!-- One line under the number, and it is empty until there is a
+				     previous window to compare against: a strip that reserved
+				     room for a delta it never has is four tiles of blank space. -->
+				<p class="mt-2 flex flex-wrap items-baseline gap-2 text-xs">
+					<span data-stat-delta class="font-medium tabular-nums"></span>
+					<span data-stat-note class="text-muted-foreground"></span>
+				</p>
+			}
+		}
+	</template>
+}

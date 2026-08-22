@@ -67,6 +67,89 @@ function say(message) {
   if (grid) grid.replaceChildren(el("p", `text-sm ${muted}`, message));
 }
 
+// The strip, in the order it is read: what happened, how much of it, and the
+// two ratios that say whether it was all the same visit.
+//
+// `read` answers null for a window that cannot measure the figure rather than
+// zero, and the tile draws a dash from it — no sessions is no ratio, which is
+// the same answer the store already refuses to invent (analyticsWindow).
+const FIGURES = [
+  {
+    label: "Sessions",
+    read: (span) => span.sessions ?? 0,
+    format: (value) => number.format(value),
+  },
+  {
+    label: "Page views",
+    read: (span) => span.views ?? 0,
+    format: (value) => number.format(value),
+  },
+  {
+    label: "Views per session",
+    read: (span) => (span.sessions ? span.views_per_session : null),
+    format: (value) => value.toFixed(2),
+  },
+  {
+    label: "Actions per session",
+    read: (span) => (span.sessions ? span.actions_per_session : null),
+    format: (value) => value.toFixed(2),
+  },
+];
+
+// The change against the window of equal length before it.
+//
+// Three answers, and only one of them is a percentage. Unmeasurable on either
+// side is silence, because a percentage against a dash is a number invented to
+// fill the space; a rise from nothing is "new", because +100% from zero is the
+// same invention with a decimal point. Up is the primary colour for all four
+// figures — every one of them is a number somebody is trying to increase, so
+// there is no metric here where a fall is the good news.
+function fillDelta(tile, value, previous, format) {
+  const delta = tile.querySelector("[data-stat-delta]");
+  const note = tile.querySelector("[data-stat-note]");
+  delta.textContent = "";
+  note.textContent = "";
+  delta.className = "font-medium tabular-nums";
+  if (value === null || previous === null) return;
+  if (previous === 0) {
+    delta.textContent = value ? "new" : "no change";
+    delta.classList.add(muted);
+    return;
+  }
+  const change = ((value - previous) / Math.abs(previous)) * 100;
+  delta.textContent = `${change >= 0 ? "▲" : "▼"} ${Math.abs(change).toFixed(1)}%`;
+  delta.classList.add(change >= 0 ? "text-primary" : muted);
+  note.textContent = `from ${format(previous)}`;
+}
+
+// Cloned from the <template> in client/ui/components rather than built here,
+// so the card is the same shadcn markup every other panel is and every class
+// stays where Tailwind looks for it.
+function renderStrip(summary) {
+  const strip = qs("[data-analytics-strip]");
+  const template = qs("[data-analytics-stat-template]");
+  if (!strip || !template) return;
+  // No summary at all is the read having failed, which is not a window of
+  // zeroes: nothing measured means nothing drawn.
+  if (!summary) {
+    strip.replaceChildren();
+    return;
+  }
+  // Never `window` as a name here: the tiles are drawn beside a global of that
+  // name, and shadowing it is how a later edit reaches for location.origin and
+  // gets a rollup instead.
+  const current = summary.window || {};
+  const previous = summary.previous || {};
+  strip.replaceChildren(...FIGURES.map((figure) => {
+    const tile = template.content.firstElementChild.cloneNode(true);
+    const value = figure.read(current);
+    tile.querySelector("[data-stat-label]").textContent = figure.label;
+    tile.querySelector("[data-stat-value]").textContent = value === null ? "—" : figure.format(value);
+    fillDelta(tile, value, figure.read(previous), figure.format);
+    return tile;
+  }));
+}
+
 // The rows are the next task. What this draws is the one thing the wiring can
 // already prove: the window was read, and this is what came back for it.
 function renderPaths(answer, stale) {
@@ -85,10 +168,17 @@ async function refreshWindow() {
   const asked = range;
   try {
     await ensure(`analytics.${asked}`, () => request(`/api/analytics?range=${asked}`), (answer, stale) => {
-      if (asked === range) renderPaths(answer, stale);
+      if (asked !== range) return;
+      renderStrip(answer.summary);
+      renderPaths(answer, stale);
     });
   } catch (failure) {
-    if (asked === range) say(failure.message);
+    if (asked !== range) return;
+    // The strip goes with the message. Four confident numbers above "the
+    // window could not be read" are four numbers from some other window, and
+    // the reader has no way to tell which.
+    renderStrip(null);
+    say(failure.message);
   }
 }
 
