@@ -319,3 +319,25 @@ type Analytics struct {
 	Summary model.AnalyticsSummary `json:"summary"`
 	Paths   []model.PathRow        `json:"paths"`
 }
+
+// PathRuleSet is the whole ordered list of path rules — the body of the save
+// and the body of the preview, which are one shape because the preview's only
+// job is to prove exactly what the save would store.
+//
+// The whole list every time, for the reason ActionPins is: order is the rule,
+// since the first match wins, and a request that edited one row would leave the
+// order to be somebody else's problem.
+type PathRuleSet struct {
+	Rules []model.PathRule `json:"rules"`
+}
+
+// A PathPreview is one path as it arrived and the row it would be counted
+// under.
+//
+// Both halves, rather than the result alone: a rule that collapses nothing
+// looks identical to a rule that works unless the page can show what it was
+// given, and "prove it before you store it" is the whole point of the dialog.
+type PathPreview struct {
+	Path   string `json:"path"`
+	Result string `json:"result"`
+}

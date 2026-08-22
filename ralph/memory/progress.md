@@ -140,3 +140,16 @@ on its own. `ralph.sh` greps for it.
   across paths counts one session once per page, and the exact figure lives in
   the seven-day `analytics_seen` beside a ninety-day event count.
 
+
+## C3 — the path rules, and the preview that proves one before it is stored
+- commit: (this one)
+- gates: build ok / howl ok / make test ok
+- notes: three routes — `GET|POST /api/analytics/rules`, `POST /api/analytics/preview`
+  — with `contract.PathRuleSet` (the whole ordered list) as the body of both
+  posts and `contract.PathPreview` (path, result) as the preview's row. The
+  preview needed a source of paths the plan's Files list had nowhere for:
+  `Store.AnalyticsRecentPaths(limit)` in `internal/telemetry/analytics.go`,
+  reading distinct **raw** paths (the rollup is already collapsed, so previewing
+  against it could only show a rule doing nothing). `previewPaths = 100` is a
+  const beside its reader. Save is admin; the preview declares no role, like the
+  view builder's — C4 is the last endpoint.

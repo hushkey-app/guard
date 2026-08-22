@@ -67,6 +67,11 @@ func (c *Client) AnalyticsActions(ctx context.Context) ([]model.Action, error) {
 	return api.Call[[]model.Action](ctx, c.Transport, "GET", "/api/analytics/actions", nil, nil)
 }
 
+// AnalyticsPathRules calls GET /api/analytics/rules.
+func (c *Client) AnalyticsPathRules(ctx context.Context) ([]model.PathRule, error) {
+	return api.Call[[]model.PathRule](ctx, c.Transport, "GET", "/api/analytics/rules", nil, nil)
+}
+
 // AnswerStoppedDeploy calls POST /api/deploy/resolve.
 func (c *Client) AnswerStoppedDeploy(ctx context.Context, body deploy.Answer) (model.DeployRun, error) {
 	return api.Call[model.DeployRun](ctx, c.Transport, "POST", "/api/deploy/resolve", nil, body)
@@ -427,6 +432,11 @@ func (c *Client) PrepareMachineForDeploys(ctx context.Context, body deploy.Machi
 	return api.Call[deploy2.Preparation](ctx, c.Transport, "POST", "/api/deploy/prepare", nil, body)
 }
 
+// PreviewAnalyticsPathRules calls POST /api/analytics/preview.
+func (c *Client) PreviewAnalyticsPathRules(ctx context.Context, body contract.PathRuleSet) ([]contract.PathPreview, error) {
+	return api.Call[[]contract.PathPreview](ctx, c.Transport, "POST", "/api/analytics/preview", nil, body)
+}
+
 // PreviewView calls POST /api/views/preview.
 func (c *Client) PreviewView(ctx context.Context, body contract.PreviewRequest) (model.Frame, error) {
 	return api.Call[model.Frame](ctx, c.Transport, "POST", "/api/views/preview", nil, body)
@@ -540,6 +550,11 @@ func (c *Client) RunClusterAction(ctx context.Context, body contract.RunRequest)
 // SampleMachine calls POST /api/cluster/stats.
 func (c *Client) SampleMachine(ctx context.Context, body contract.NodeRequest) (model.HostStats, error) {
 	return api.Call[model.HostStats](ctx, c.Transport, "POST", "/api/cluster/stats", nil, body)
+}
+
+// SaveAnalyticsPathRules calls POST /api/analytics/rules.
+func (c *Client) SaveAnalyticsPathRules(ctx context.Context, body contract.PathRuleSet) ([]model.PathRule, error) {
+	return api.Call[[]model.PathRule](ctx, c.Transport, "POST", "/api/analytics/rules", nil, body)
 }
 
 // SaveClusterActions calls PUT /api/cluster/actions.

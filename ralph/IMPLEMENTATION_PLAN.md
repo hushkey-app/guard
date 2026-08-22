@@ -184,7 +184,7 @@ convention, not a choice.
     write endpoint.
   - Verify: `make apis && go build ./... && go test ./server/...`
 
-- [ ] **C3 — the rules endpoints**
+- [x] **C3 — the rules endpoints**
   - Depends: C2
   - Files: `server/apis/analytics/rules.api.go`, `server/apis/analytics/rules.post.api.go`,
     `server/apis/analytics/preview.post.api.go`

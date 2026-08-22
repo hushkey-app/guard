@@ -724,6 +724,37 @@ func (s *Store) PreviewPathRules(rules []model.PathRule, paths []string) ([]stri
 	return out, nil
 }
 
+// AnalyticsRecentPaths is what a rule is proved against: the distinct URLs the
+// tracker has actually sent, most recently seen first.
+//
+// From the raw feed rather than from the rollup, because the rollup has already
+// had the rules applied to it — previewing against it could only ever show a
+// rule doing nothing to paths something already collapsed, and the path
+// somebody is writing a rule about is the one that arrived. The feed is bounded
+// by the telemetry retention and this is read on a press rather than on a tick,
+// which is what makes a scan of it the honest answer rather than an index on
+// the table that takes every write.
+func (s *Store) AnalyticsRecentPaths(limit int) ([]string, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.rdb.Query(`SELECT path FROM analytics_events
+GROUP BY path ORDER BY MAX(received_at_ns) DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read analytics paths: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		out = append(out, path)
+	}
+	return out, rows.Err()
+}
+
 // preparePathRules is the half of a save that can refuse, run before anything
 // is written and again for the preview.
 //

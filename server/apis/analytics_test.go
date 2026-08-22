@@ -225,3 +225,120 @@ func TestAnalyticsActionWritesNeedTheToken(t *testing.T) {
 		t.Fatalf("pinning with the token = %d", code)
 	}
 }
+
+func rule(pattern, replacement string) model.PathRule {
+	return model.PathRule{Pattern: pattern, Replacement: replacement}
+}
+
+// A rule is applied at ingest, so it shapes what is counted rather than what is
+// drawn — and the raw feed keeps the URL that arrived, because that is the path
+// somebody reads to write the next rule.
+func TestAnalyticsPathRulesShapeWhatIsCounted(t *testing.T) {
+	store, srv := server(t, "")
+
+	var stored []model.PathRule
+	if code := call(t, http.MethodPost, srv.URL+"/api/analytics/rules",
+		contract.PathRuleSet{Rules: []model.PathRule{rule("/users/*", "/users/:id")}}, &stored); code != http.StatusOK {
+		t.Fatalf("saving = %d", code)
+	}
+	if len(stored) != 1 || stored[0].Replacement != "/users/:id" || stored[0].ID == 0 {
+		t.Fatalf("stored = %#v", stored)
+	}
+
+	visit(t, store, "a1", "/users/7", "page_view")
+	visit(t, store, "b2", "/users/9", "page_view")
+	visit(t, store, "c3", "/pricing", "page_view")
+
+	var body contract.Analytics
+	if code := get(t, srv.URL+"/api/analytics?range=24h", &body); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if collapsed := row(t, body.Paths, "/users/:id"); collapsed.Views != 2 || collapsed.Sessions != 2 {
+		t.Fatalf("/users/:id = %#v", collapsed)
+	}
+	if len(body.Paths) != 2 {
+		t.Fatalf("a rule that collapses two pages left %#v", body.Paths)
+	}
+
+	// The list is read back in the order it is applied, and the preview beside
+	// it still sees the URLs as they arrived rather than the row they landed in.
+	var read []model.PathRule
+	if code := get(t, srv.URL+"/api/analytics/rules", &read); code != http.StatusOK || len(read) != 1 {
+		t.Fatalf("reading the rules = %d, %#v", code, read)
+	}
+	var preview []contract.PathPreview
+	if code := call(t, http.MethodPost, srv.URL+"/api/analytics/preview",
+		contract.PathRuleSet{Rules: read}, &preview); code != http.StatusOK {
+		t.Fatalf("preview = %d", code)
+	}
+	if len(preview) != 3 {
+		t.Fatalf("the raw feed was collapsed too: %#v", preview)
+	}
+
+	// The first match wins, so a second rule for the same pattern could never
+	// fire — it is refused while somebody is typing it rather than stored and
+	// left looking like configuration.
+	if code := call(t, http.MethodPost, srv.URL+"/api/analytics/rules",
+		contract.PathRuleSet{Rules: []model.PathRule{rule("/users/*", "/users/:id"), rule("/users/*", "/u")}}, nil); code != http.StatusBadRequest {
+		t.Fatalf("a duplicate pattern = %d, want 400", code)
+	}
+	if code := get(t, srv.URL+"/api/analytics/rules", &read); code != http.StatusOK || len(read) != 1 {
+		t.Fatalf("a refused save was applied anyway: %#v", read)
+	}
+}
+
+// The preview is the same call the save runs, against the paths that actually
+// arrived — so a rule is proved before it is stored, which is the only chance
+// there is: applying one cannot rewrite the days already rolled up.
+func TestAnalyticsPathRulePreviewProvesARuleBeforeItIsStored(t *testing.T) {
+	store, srv := server(t, "")
+	visit(t, store, "a1", "/users/7", "page_view")
+	visit(t, store, "b2", "/pricing", "page_view")
+	visit(t, store, "c3", "/pricing", "page_view")
+
+	var preview []contract.PathPreview
+	if code := call(t, http.MethodPost, srv.URL+"/api/analytics/preview",
+		contract.PathRuleSet{Rules: []model.PathRule{rule("/users/*", "/users/:id")}}, &preview); code != http.StatusOK {
+		t.Fatalf("preview = %d", code)
+	}
+	// Distinct paths, most recently seen first: /pricing twice is one line of a
+	// dialog somebody has to read.
+	if len(preview) != 2 || preview[0].Path != "/pricing" {
+		t.Fatalf("preview = %#v", preview)
+	}
+	if preview[0].Result != "/pricing" {
+		t.Fatalf("a path no rule matches is its own page: %#v", preview[0])
+	}
+	if preview[1].Path != "/users/7" || preview[1].Result != "/users/:id" {
+		t.Fatalf("the rule was not applied: %#v", preview[1])
+	}
+
+	// Proving one stores nothing. A preview that saved would be the press.
+	var rules []model.PathRule
+	if code := get(t, srv.URL+"/api/analytics/rules", &rules); code != http.StatusOK || len(rules) != 0 {
+		t.Fatalf("the preview stored the rule: %d, %#v", code, rules)
+	}
+
+	// A pattern that will not compile can never fire, and the refusal lands in
+	// the dialog rather than on the save.
+	if code := call(t, http.MethodPost, srv.URL+"/api/analytics/preview",
+		contract.PathRuleSet{Rules: []model.PathRule{rule("/users/[", "/users/:id")}}, nil); code != http.StatusBadRequest {
+		t.Fatalf("a pattern that will not compile = %d, want 400", code)
+	}
+}
+
+// Reading the rules and proving one are reads; storing them is not.
+func TestAnalyticsPathRuleWritesNeedTheToken(t *testing.T) {
+	_, srv := server(t, "secret")
+	body := []byte(`{"rules":[{"pattern":"/users/*","replacement":"/users/:id"}]}`)
+
+	if code := post(t, srv.URL+"/api/analytics/rules", body, ""); code != http.StatusUnauthorized {
+		t.Fatalf("saving without a token = %d, want 401", code)
+	}
+	if code := post(t, srv.URL+"/api/analytics/rules", body, "secret"); code != http.StatusOK {
+		t.Fatalf("saving with the token = %d", code)
+	}
+	if code := getWith(t, srv.URL+"/api/analytics/rules", "secret", nil); code != http.StatusOK {
+		t.Fatalf("reading with the token = %d", code)
+	}
+}
