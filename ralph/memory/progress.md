@@ -79,3 +79,16 @@ on its own. `ralph.sh` greps for it.
   `analytics_sources` sweeps on the rollup window too — the plan named three
   tables, and leaving the fourth growing would be a bug. See questions.md for
   the spec/plan disagreement about which two numbers these are.
+
+## B1 — the intake, a third path on the door that was already there
+- commit: (this one)
+- gates: build ok / howl ok / make test ok
+- notes: `POST /v1/rum/events` answers **204**, not 200 — a sendBeacon flush is
+  usually a tab that is already gone, so there is no body worth writing. B2's
+  "no-op after two consecutive 4xx" must read 204 as success. No Content-Type
+  check at the door on purpose: sendBeacon posts `text/plain`, which is what
+  keeps the closing-tab flush free of a preflight it would not live to finish.
+  The existing `OPTIONS /v1/rum/{signal}` already covers the new path, so the
+  mount is one line. Validate is called at the door *and* in the store: the
+  door's answer to a bad beacon is 400, the store's is a 500, and B3's rejection
+  counter belongs on the door's side of that line.

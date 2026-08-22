@@ -115,7 +115,7 @@ it is testable with no browser and no HTTP.
 
 ## Phase B — the door and the script
 
-- [ ] **B1 — the intake**
+- [x] **B1 — the intake**
   - Depends: A7
   - Files: `internal/ingest/analytics.go`, `internal/ingest/rum.go` (mount only),
     `internal/ingest/analytics_test.go`

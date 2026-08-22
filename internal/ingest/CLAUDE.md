@@ -22,3 +22,8 @@ No `Origin` header at all is allowed on purpose: that is a server-to-server
 relay, which is the recommended deployment (`docs/browser-telemetry.md`).
 
 Analytics work: `ralph/specs/analytics.md` §6, plan tasks B1–B3.
+
+`navigator.sendBeacon` posts `text/plain` — a CORS-safelisted type, which is
+what keeps the flush on a closing tab free of a preflight it would never live
+long enough to complete. So the analytics door checks no Content-Type, and a
+new browser path must not grow one.
