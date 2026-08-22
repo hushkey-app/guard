@@ -328,10 +328,10 @@ function showFold(block, open) {
 function foldPanel(row) {
   const panel = qs("[data-analytics-fold-template]").content.firstElementChild.cloneNode(true);
   foldActions(panel.querySelector("[data-fold-actions]"), row);
-  // Started here rather than awaited, so the panel opens now and the chart
-  // lands into a box that already has its place: a fold that waited on a read
-  // before appearing would be a press with nothing behind it.
-  fillSeries(panel.querySelector("[data-fold-chart]"), panel.querySelector("[data-fold-legend]"), row.path);
+  // Started here rather than awaited, so the panel opens now and the chart and
+  // the sources land into boxes that already have their place: a fold that
+  // waited on a read before appearing would be a press with nothing behind it.
+  fillFold(panel, row.path);
   return panel;
 }
 
@@ -416,34 +416,46 @@ function movePin(name, step) {
   return savePins(next, `${name} could not be moved`);
 }
 
-// A day-grain series cannot move within the minute — the rollup is keyed by
+// A day-grain answer cannot move within the minute — the rollup is keyed by
 // whole UTC days. Without this the grid rebuilding, which it does whenever a
 // count moves, would be one request per open fold every time.
 const SERIES_MAX_AGE_MS = 60_000;
 
+// The chart and the sources, from one read: they are two halves of one panel
+// over one window, and asking twice would be two windows in one box.
+//
 // Through the store like everything else, but drawn by hand: `ensure`'s render
 // callback remembers what it put on screen, and this panel is built on open and
 // thrown away on close, so that bookkeeping would be about a node that is gone.
 // Called with no renderer it is still what is wanted here — one request shared
 // between concurrent callers, and the answer published.
-async function fillSeries(host, legend, path) {
+async function fillFold(panel, path) {
+  const chart = panel.querySelector("[data-fold-chart]");
+  const legend = panel.querySelector("[data-fold-legend]");
+  const sources = panel.querySelector("[data-fold-sources]");
   const key = `analytics.path.${range}.${path}`;
   const asked = range;
   const known = get(key);
-  if (known) drawSeries(host, legend, known);
+  if (known) drawFold(chart, legend, sources, path, known);
   if (known && Date.now() - freshness(key) < SERIES_MAX_AGE_MS) return;
   try {
-    const points = await ensure(key, () => request(`/api/analytics/path?path=${encodeURIComponent(path)}&range=${asked}`));
+    const answer = await ensure(key, () => request(`/api/analytics/path?path=${encodeURIComponent(path)}&range=${asked}`));
     // The fold may have been shut and the window may have moved on while this
     // was in flight, and either makes this answer somebody else's.
-    if (host.isConnected && asked === range) drawSeries(host, legend, points);
+    if (chart.isConnected && asked === range) drawFold(chart, legend, sources, path, answer);
   } catch (failure) {
-    // Only where there is nothing on screen. A chart drawn from the last read
+    // Only where there is nothing on screen. A panel drawn from the last read
     // is worth more than the reason a refresh of it failed.
-    if (host.isConnected && asked === range && !known) {
-      host.replaceChildren(el("p", `text-xs ${muted}`, failure.message));
+    if (chart.isConnected && asked === range && !known) {
+      chart.replaceChildren(el("p", `text-xs ${muted}`, failure.message));
+      sources.replaceChildren();
     }
   }
+}
+
+function drawFold(chart, legend, sources, path, answer) {
+  drawSeries(chart, legend, answer?.series);
+  drawSources(sources, path, answer?.sources);
 }
 
 // Drawn through the panel renderer every other chart in guard goes through,
@@ -473,6 +485,55 @@ function drawSeries(host, legend, points) {
     node.append(dot, text(entry.label));
     return node;
   }));
+}
+
+// Where the sessions on this path came from, biggest first — the other
+// direction from the grid, which says what happened once they were here.
+//
+// The share is against the path's own sessions, which is the number the row
+// above is drawn with and the number these lines add up to: every session that
+// saw the page is in exactly one of them, because attribution is filed against
+// the page view that brought it.
+function drawSources(host, path, sources) {
+  if (!sources?.length) {
+    host.replaceChildren(el("p", `px-2 text-xs ${muted}`, "Nothing arrived on this path in this window."));
+    return;
+  }
+  const row = pathOf(path);
+  host.replaceChildren(...sources.map((source) => sourceLine(source, row)));
+}
+
+// Direct is a line rather than the remainder somebody works out: a session with
+// no campaign and no referrer is one that typed the address, opened a bookmark
+// or came out of an app that sends neither, and that is an answer worth reading
+// beside the campaigns somebody paid for.
+const sourceName = (source) => source.source || source.referrer || "Direct";
+
+// What is left once the name has taken the line: the medium and the campaign
+// that were put in the link, and the host the browser actually came from where
+// the source has already said something else.
+function sourceDetail(source) {
+  const rest = [source.medium, source.campaign];
+  if (source.source && source.referrer) rest.push(source.referrer);
+  return rest.filter(Boolean).join(" · ");
+}
+
+function sourceLine(source, row) {
+  const line = qs("[data-analytics-source-template]").content.firstElementChild.cloneNode(true);
+  const name = sourceName(source);
+  const detail = sourceDetail(source);
+  line.querySelector("[data-source-name]").textContent = name;
+  line.querySelector("[data-source-detail]").textContent = detail;
+  // Both are truncated to keep the figures in their columns, so the whole of
+  // either is on the row itself.
+  line.title = [name, detail].filter(Boolean).join(" · ");
+  line.querySelector("[data-source-count]").textContent = number.format(source.sessions);
+  // The same silence the action cells keep: a share of no sessions is not a
+  // small share. It can only happen against a grid read a moment earlier than
+  // this list, and inventing a percentage for that is worse than a dash.
+  line.querySelector("[data-source-share]").textContent =
+    row?.sessions ? `${((source.sessions / row.sessions) * 100).toFixed(1)}%` : "—";
+  return line;
 }
 
 function renderGrid() {

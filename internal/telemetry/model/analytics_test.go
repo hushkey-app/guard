@@ -37,6 +37,43 @@ func TestNormalisePathTruncatesOnARune(t *testing.T) {
 	}
 }
 
+func TestNormaliseSourceValueFoldsOneCampaignIntoOneRow(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"hn", "hn"},
+		{"Newsletter", "newsletter"},   // what a link builder was typed into
+		{"  twitter ", "twitter"},      // whitespace somebody pasted
+		{"", ""},                       // direct traffic, which is an answer
+		{"Summer Sale", "summer sale"}, // a campaign with a space in it is one campaign
+	} {
+		if got := NormaliseSourceValue(c.in); got != c.want {
+			t.Errorf("NormaliseSourceValue(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	long := strings.Repeat("é", MaxPropValue+40)
+	if n := len([]rune(NormaliseSourceValue(long))); n != MaxPropValue {
+		t.Fatalf("truncated to %d runes, want %d", n, MaxPropValue)
+	}
+}
+
+// The door is public, so the referrer is whatever somebody posted rather than
+// what the tracker sends. Everything but the host goes: the rest of a referrer
+// is a page on somebody else's site, and guard has no business keeping it.
+func TestNormaliseReferrerHostKeepsOnlyTheHost(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"news.ycombinator.com", "news.ycombinator.com"},
+		{"https://News.YCombinator.com/item?id=42", "news.ycombinator.com"},
+		{"http://example.com/private/report#top", "example.com"},
+		{"//example.com/x", "example.com"},
+		{"https://user:token@example.com/x", "example.com"}, // credentials, never kept
+		{"localhost:8000", "localhost:8000"},                // a port is a different service
+		{"", ""},                                            // no referrer at all
+	} {
+		if got := NormaliseReferrerHost(c.in); got != c.want {
+			t.Errorf("NormaliseReferrerHost(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestValidActionName(t *testing.T) {
 	for _, name := range []string{"page_view", "checkout.start", "docs-search", "a", "v2"} {
 		if !ValidActionName(name) {

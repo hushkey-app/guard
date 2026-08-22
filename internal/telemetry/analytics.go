@@ -185,18 +185,19 @@ func purgeAnalytics(tx *sql.Tx, settings Settings, now time.Time) error {
 // own, so it is not a discovery anybody has to decide about.
 const actionPageView = "page_view"
 
-// The two cardinality ceilings. They are constants beside the code that
-// enforces them rather than numbers on a settings page, because both have one
+// The three cardinality ceilings. They are constants beside the code that
+// enforces them rather than numbers on a settings page, because each has one
 // right answer: a table that grows until SQLite is slow is not a table anybody
 // chose. Every analytics product ever pointed at a site with unbounded URLs has
 // learned the first one.
 //
-// The two are answered differently on purpose — a path over the ceiling is
-// counted somewhere honest, a name over it is refused — and the reason is under
-// each of the functions below.
+// They are answered differently on purpose — a path or a campaign over the
+// ceiling is counted somewhere honest, a name over it is refused — and the
+// reason is under each of the functions below.
 const (
-	maxAnalyticsPaths   = 1000
-	maxAnalyticsActions = 200
+	maxAnalyticsPaths   = 1000 // distinct paths per day
+	maxAnalyticsActions = 200  // distinct action names, ever
+	maxAnalyticsSources = 100  // distinct campaigns per path per day
 )
 
 // pathOther is where a day's paths go once it has as many as guard will keep.
@@ -204,6 +205,13 @@ const (
 // nobody capped. It can never collide with a page: NormalisePath gives every
 // path a leading slash and this has none.
 const pathOther = "(other)"
+
+// sourceOther is the same answer for a day's campaigns, and it is deliberately
+// the same word: both mean "counted, and no longer kept apart". Unlike a path
+// it could in principle collide with a real `utm_source`, and that costs
+// nothing — a session arriving from a campaign literally called `(other)` lands
+// in the one row whose whole meaning is already "these were lumped together".
+const sourceOther = "(other)"
 
 // analyticsCounters is what guard threw away, and whether the door is open at
 // all.
@@ -217,6 +225,7 @@ type analyticsCounters struct {
 	open           atomic.Bool
 	rejected       atomic.Int64
 	pathsCapped    atomic.Int64
+	sourcesCapped  atomic.Int64
 	actionsRefused atomic.Int64
 }
 
@@ -249,6 +258,7 @@ func (s *Store) AnalyticsHealth() (model.AnalyticsHealth, error) {
 		Rejected:       s.analytics.rejected.Load(),
 		ActionsRefused: s.analytics.actionsRefused.Load(),
 		PathsCapped:    s.analytics.pathsCapped.Load(),
+		SourcesCapped:  s.analytics.sourcesCapped.Load(),
 	}
 	if err := s.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_actions`).Scan(&health.Actions); err != nil {
 		return model.AnalyticsHealth{}, fmt.Errorf("count analytics actions: %w", err)
@@ -375,7 +385,7 @@ ON CONFLICT(name) DO UPDATE SET last_seen_ns = excluded.last_seen_ns`)
 	}
 	defer found.Close()
 
-	var refused int64
+	var refused, sourcesCapped int64
 	for _, event := range b.Events {
 		// A name arriving after discovery is full is **refused** — never
 		// truncated and never folded into a neighbour, because two teams'
@@ -438,6 +448,22 @@ ON CONFLICT(name) DO UPDATE SET last_seen_ns = excluded.last_seen_ns`)
 			return fmt.Errorf("roll up analytics event: %w", err)
 		}
 		if event.Name == actionPageView {
+			// Where the session came from is filed against the page view that
+			// first brought it to this path today, and only that one. It is the
+			// same row the Views column is drawn from, which is what makes the
+			// sources add up to the sessions beside them instead of to a
+			// second number on the same screen that nobody can reconcile — and
+			// it costs no table of its own, because `analytics_seen` has
+			// already answered "was this session here today".
+			if firstToday == 1 {
+				capped, err := rollUpSource(tx, day, counted, b)
+				if err != nil {
+					return err
+				}
+				if capped {
+					sourcesCapped++
+				}
+			}
 			continue
 		}
 		if _, err := discovered.Exec(event.Name, receivedNS, receivedNS); err != nil {
@@ -453,8 +479,66 @@ ON CONFLICT(name) DO UPDATE SET last_seen_ns = excluded.last_seen_ns`)
 	if capped {
 		s.analytics.pathsCapped.Add(1)
 	}
+	s.analytics.sourcesCapped.Add(sourcesCapped)
 	s.analytics.actionsRefused.Add(refused)
 	return nil
+}
+
+// rollUpSource counts one session under where it came from: the three UTM keys
+// somebody put in a link they published, and the host the browser said it came
+// from. It answers whether the day's campaigns were over the ceiling.
+//
+// All four empty is direct traffic and is stored as a row like any other —
+// somebody who typed the address is an answer, and a list that dropped them
+// would be a set of shares against a total nobody can see.
+//
+// The ceiling is the paths' ceiling in a different table and for the same
+// reason. These four strings come off a query string on somebody else's site,
+// so `?utm_campaign=<random>` from a bot is one row per session kept for as
+// long as the rollup, which is the shape of every analytics table that has ever
+// had to be truncated by hand. Past it a session is still counted, under the
+// name that says it was not kept by itself.
+//
+// Per path rather than per day, because the two dimensions are not the same
+// risk: a real product has a handful of campaigns and hundreds of pages, so a
+// day-wide ceiling would be spent by the pages rather than by the campaigns and
+// would start lumping a site that had done nothing unusual. And the count that
+// decides is over rows this very ceiling bounds, which is the tidy half of a
+// cap: enforcing it can never cost more than the cap allows.
+func rollUpSource(tx *sql.Tx, day int64, path string, b model.Beacon) (bool, error) {
+	// Normalised here rather than at the door for the reason the path is: the
+	// door is public, so what arrives is whatever somebody posted, and a full
+	// referrer URL stored in this column would be a stranger's private path in
+	// guard's database.
+	source := model.NormaliseSourceValue(b.Source.Source)
+	medium := model.NormaliseSourceValue(b.Source.Medium)
+	campaign := model.NormaliseSourceValue(b.Source.Campaign)
+	referrer := model.NormaliseReferrerHost(b.Referrer)
+
+	capped := false
+	var one int
+	err := tx.QueryRow(`SELECT 1 FROM analytics_sources
+WHERE day = ? AND path = ? AND source = ? AND medium = ? AND campaign = ? AND referrer_host = ?`,
+		day, path, source, medium, campaign, referrer).Scan(&one)
+	switch {
+	case err == nil:
+	case !errors.Is(err, sql.ErrNoRows):
+		return false, fmt.Errorf("read analytics sources: %w", err)
+	default:
+		var distinct int64
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM analytics_sources WHERE day = ? AND path = ?`, day, path).Scan(&distinct); err != nil {
+			return false, fmt.Errorf("count analytics sources: %w", err)
+		}
+		if distinct >= maxAnalyticsSources {
+			source, medium, campaign, referrer, capped = sourceOther, "", "", "", true
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO analytics_sources(day, path, source, medium, campaign, referrer_host, sessions) VALUES(?,?,?,?,?,?,1)
+ON CONFLICT(day, path, source, medium, campaign, referrer_host) DO UPDATE SET sessions = sessions + 1`,
+		day, path, source, medium, campaign, referrer); err != nil {
+		return false, fmt.Errorf("roll up analytics source: %w", err)
+	}
+	return capped, nil
 }
 
 // analyticsCountedPath answers which rollup row a beacon counts against: its
@@ -953,6 +1037,47 @@ WHERE path = ? AND action = ? AND day BETWEEN ? AND ? ORDER BY day`, path, actio
 		points = append(points, point)
 	}
 	return points, rows.Err()
+}
+
+// How many lines of sources one opened path is drawn with. The list is read
+// from the top and the tail of it is one session each — a page whose traffic
+// came from forty campaigns has an answer that is "forty campaigns", not a
+// column of ones somebody scrolls.
+const maxPathSources = 8
+
+// AnalyticsPathSources is where an opened path's sessions came from: the
+// campaigns and the referring hosts, biggest first.
+//
+// Read per path rather than carried on every PathRow, the same trade the day
+// series makes — the grid is a thousand paths at the cardinality ceiling, and
+// this is wanted for the handful somebody actually opens.
+//
+// The path is bound as a parameter and matched whole. It arrives from a query
+// string, so it is a value rather than a pattern: a LIKE here would let one
+// opened row read every page in the product.
+func (s *Store) AnalyticsPathSources(path string, from, to time.Time) ([]model.SourceRow, error) {
+	first, last := analyticsDays(from, to)
+	rows, err := s.rdb.Query(`SELECT source, medium, campaign, referrer_host, SUM(sessions) AS sessions
+FROM analytics_sources WHERE path = ? AND day BETWEEN ? AND ?
+GROUP BY source, medium, campaign, referrer_host
+ORDER BY sessions DESC, source, campaign, referrer_host LIMIT ?`, path, first, last, maxPathSources)
+	if err != nil {
+		return nil, fmt.Errorf("read analytics sources: %w", err)
+	}
+	defer rows.Close()
+
+	// Empty rather than nil, like the series: the endpoint answers JSON, and
+	// `null` where the caller expects a list is a renderer that has to guard
+	// what an empty array already says.
+	sources := []model.SourceRow{}
+	for rows.Next() {
+		var row model.SourceRow
+		if err := rows.Scan(&row.Source, &row.Medium, &row.Campaign, &row.Referrer, &row.Sessions); err != nil {
+			return nil, err
+		}
+		sources = append(sources, row)
+	}
+	return sources, rows.Err()
 }
 
 // AnalyticsSummary is the strip: the window, and the one of equal length

@@ -994,6 +994,256 @@ func TestAnalyticsPathSeriesIsEmptyForAnUnknownPath(t *testing.T) {
 	}
 }
 
+// campaign is a beacon that arrived through a link somebody published: the
+// three UTM keys and the host the browser came from.
+func campaign(session, path string, source model.BeaconSource, referrer string, names ...string) model.Beacon {
+	b := beacon(session, path, names...)
+	b.Source, b.Referrer = source, referrer
+	return b
+}
+
+func sourceSessions(t *testing.T, store *Store, day int64, path string, source model.BeaconSource, referrer string) int64 {
+	t.Helper()
+	var sessions int64
+	err := store.rdb.QueryRow(`SELECT sessions FROM analytics_sources
+WHERE day = ? AND path = ? AND source = ? AND medium = ? AND campaign = ? AND referrer_host = ?`,
+		day, path, source.Source, source.Medium, source.Campaign, referrer).Scan(&sessions)
+	if err != nil {
+		t.Fatalf("no source row for %s on day %d (%+v, %q): %v", path, day, source, referrer, err)
+	}
+	return sessions
+}
+
+// A source is where a *session* came from, so the number beside it has to move
+// once per session however many times that session posts — the same promise the
+// rollup makes, and the one a conversion figure is only worth reading against.
+func TestAnalyticsSourcesCountASessionOnce(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	monday := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	launch := model.BeaconSource{Source: "hn", Medium: "referral", Campaign: "launch"}
+	for range 2 {
+		if err := store.addAnalyticsAt(campaign("a1", "/pricing", launch, "news.ycombinator.com", "page_view", "signup_click"), monday); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sessions := sourceSessions(t, store, epochDay(monday), "/pricing", launch, "news.ycombinator.com"); sessions != 1 {
+		t.Fatalf("one session posting twice counted %d sessions", sessions)
+	}
+
+	if err := store.addAnalyticsAt(campaign("b2", "/pricing", launch, "news.ycombinator.com", "page_view"), monday); err != nil {
+		t.Fatal(err)
+	}
+	if sessions := sourceSessions(t, store, epochDay(monday), "/pricing", launch, "news.ycombinator.com"); sessions != 2 {
+		t.Fatalf("a second session counted %d sessions", sessions)
+	}
+
+	// Tomorrow is a new row, because the rollup is keyed by day and a campaign
+	// that ran for a week is a week of rows rather than one that never closes.
+	tuesday := monday.Add(24 * time.Hour)
+	if err := store.addAnalyticsAt(campaign("a1", "/pricing", launch, "news.ycombinator.com", "page_view"), tuesday); err != nil {
+		t.Fatal(err)
+	}
+	if sessions := sourceSessions(t, store, epochDay(tuesday), "/pricing", launch, "news.ycombinator.com"); sessions != 1 {
+		t.Fatalf("the next day counted %d sessions", sessions)
+	}
+	if sessions := sourceSessions(t, store, epochDay(monday), "/pricing", launch, "news.ycombinator.com"); sessions != 2 {
+		t.Fatalf("yesterday moved to %d sessions", sessions)
+	}
+}
+
+// Attribution rides the page view that brought the session to the page, so a
+// beacon that is only an action attributes nothing: it is the same session
+// pressing a button on a page it was already counted on.
+func TestAnalyticsSourcesRideThePageView(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	twitter := model.BeaconSource{Source: "twitter"}
+	if err := store.addAnalyticsAt(campaign("a1", "/pricing", twitter, "t.co", "signup_click"), at); err != nil {
+		t.Fatal(err)
+	}
+	var rows int64
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_sources`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("an action with no page view behind it wrote %d source rows", rows)
+	}
+}
+
+// What arrives is whatever somebody posted, because the door is public: a full
+// referrer URL is a stranger's private path, and two spellings of one campaign
+// are two halves of a number nobody can add up.
+func TestAnalyticsSourcesNormaliseWhatArrived(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	shouted := model.BeaconSource{Source: "  HackerNews ", Campaign: "Launch"}
+	if err := store.addAnalyticsAt(campaign("a1", "/pricing", shouted, "https://News.YCombinator.com/item?id=42", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	folded := model.BeaconSource{Source: "hackernews", Campaign: "launch"}
+	if err := store.addAnalyticsAt(campaign("b2", "/pricing", folded, "news.ycombinator.com", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	if sessions := sourceSessions(t, store, epochDay(at), "/pricing", folded, "news.ycombinator.com"); sessions != 2 {
+		t.Fatalf("two spellings of one campaign counted %d sessions", sessions)
+	}
+	var rows int64
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_sources`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("one campaign landed as %d rows", rows)
+	}
+}
+
+// The list under an opened row, and the property that makes it readable beside
+// the figures above it: every session that saw the page is in exactly one line
+// of it, including the ones that arrived through nothing at all.
+func TestAnalyticsPathSourcesAccountForEverySession(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	hn := model.BeaconSource{Source: "hn", Medium: "referral"}
+	for _, b := range []model.Beacon{
+		beacon("a1", "/pricing", "page_view"),
+		beacon("b2", "/pricing", "page_view"),
+		campaign("c3", "/pricing", hn, "news.ycombinator.com", "page_view"),
+		campaign("d4", "/pricing", model.BeaconSource{}, "duckduckgo.com", "page_view"),
+		// Another page, to prove the list belongs to the path it was opened on.
+		campaign("e5", "/docs", hn, "news.ycombinator.com", "page_view"),
+	} {
+		if err := store.addAnalyticsAt(b, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sources, err := store.AnalyticsPathSources("/pricing", at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 3 {
+		t.Fatalf("three ways onto one page came back as %d rows: %+v", len(sources), sources)
+	}
+	// Biggest first: the list is read from the top, and direct traffic is a
+	// line of it rather than the remainder somebody has to work out.
+	if sources[0].Sessions != 2 || sources[0].Source != "" || sources[0].Referrer != "" {
+		t.Fatalf("the largest row is %+v", sources[0])
+	}
+	var counted int64
+	for _, row := range sources {
+		counted += row.Sessions
+	}
+	grid, err := store.AnalyticsPaths(at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The sources have to add up to the sessions the row above them says, or
+	// the shares in the fold are against a total that is on screen and does not
+	// match.
+	if row := pathRow(t, grid, "/pricing"); counted != row.Sessions {
+		t.Fatalf("%d sessions were attributed against %d on the path", counted, row.Sessions)
+	}
+}
+
+// The window bounds the list the same way it bounds the chart beside it.
+func TestAnalyticsPathSourcesStopAtTheWindow(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	monday := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	tuesday := monday.Add(24 * time.Hour)
+	hn := model.BeaconSource{Source: "hn"}
+	if err := store.addAnalyticsAt(campaign("a1", "/pricing", hn, "news.ycombinator.com", "page_view"), monday); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.addAnalyticsAt(campaign("b2", "/pricing", hn, "news.ycombinator.com", "page_view"), tuesday); err != nil {
+		t.Fatal(err)
+	}
+
+	sources, err := store.AnalyticsPathSources("/pricing", monday, monday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 1 || sources[0].Sessions != 1 {
+		t.Fatalf("a one-day window came back as %+v", sources)
+	}
+	// Two days is the same campaign summed, not two rows: the rollup is keyed
+	// by day and the list is what happened over the window.
+	if sources, err = store.AnalyticsPathSources("/pricing", monday, tuesday); err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 1 || sources[0].Sessions != 2 {
+		t.Fatalf("a two-day window came back as %+v", sources)
+	}
+}
+
+// The third ceiling, and the one a public door makes necessary: the four
+// strings come off a query string on somebody else's site, so a bot appending
+// a random campaign is a row per session kept for as long as the rollup.
+func TestAnalyticsSourcesPastTheCeilingAreCountedUnderOther(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for i := range maxAnalyticsSources {
+		one := model.BeaconSource{Campaign: fmt.Sprintf("c%d", i)}
+		if err := store.addAnalyticsAt(campaign(fmt.Sprintf("s%d", i), "/pricing", one, "", "page_view"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if capped := analyticsHealth(t, store).SourcesCapped; capped != 0 {
+		t.Fatalf("the campaigns up to the ceiling capped %d sessions", capped)
+	}
+
+	for _, session := range []string{"x1", "x2"} {
+		flood := model.BeaconSource{Campaign: "flood-" + session}
+		if err := store.addAnalyticsAt(campaign(session, "/pricing", flood, "", "page_view"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sessions := sourceSessions(t, store, epochDay(at), "/pricing", model.BeaconSource{Source: sourceOther}, ""); sessions != 2 {
+		t.Fatalf("the two campaigns past the ceiling counted %d sessions", sessions)
+	}
+	var rows int64
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_sources WHERE campaign LIKE 'flood-%'`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("a campaign past the ceiling kept %d rows of its own", rows)
+	}
+	if capped := analyticsHealth(t, store).SourcesCapped; capped != 2 {
+		t.Fatalf("two sessions past the ceiling were counted as %d", capped)
+	}
+
+	// A campaign already counted today is still itself: the ceiling closes the
+	// door on new ones rather than moving what is already through it.
+	first := model.BeaconSource{Campaign: "c0"}
+	if err := store.addAnalyticsAt(campaign("x3", "/pricing", first, "", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	if sessions := sourceSessions(t, store, epochDay(at), "/pricing", first, ""); sessions != 2 {
+		t.Fatalf("a campaign already counted moved to %d sessions", sessions)
+	}
+
+	// The fold draws the top of the list, never the whole tail — a page whose
+	// traffic came from a hundred campaigns has an answer that is "a hundred
+	// campaigns", not a column of ones somebody scrolls.
+	sources, err := store.AnalyticsPathSources("/pricing", at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != maxPathSources {
+		t.Fatalf("a path with %d campaigns drew %d rows", maxAnalyticsSources+1, len(sources))
+	}
+}
+
 // The strip is two windows of equal length, because a number on its own is not
 // a measurement. Sessions are counted site-wide rather than summed per path —
 // one visit reading three pages is one session, and the ratio is the whole

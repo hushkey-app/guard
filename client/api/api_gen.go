@@ -73,8 +73,8 @@ func (c *Client) AnalyticsHealth(ctx context.Context) (model.AnalyticsHealth, er
 }
 
 // AnalyticsPath calls GET /api/analytics/path.
-func (c *Client) AnalyticsPath(ctx context.Context, query contract.AnalyticsPathQuery) ([]model.PathPoint, error) {
-	return api.Call[[]model.PathPoint](ctx, c.Transport, "GET", "/api/analytics/path", query, nil)
+func (c *Client) AnalyticsPath(ctx context.Context, query contract.AnalyticsPathQuery) (contract.AnalyticsPath, error) {
+	return api.Call[contract.AnalyticsPath](ctx, c.Transport, "GET", "/api/analytics/path", query, nil)
 }
 
 // AnalyticsPathRules calls GET /api/analytics/rules.

@@ -319,6 +319,17 @@ func (q AnalyticsPathQuery) window() AnalyticsQuery {
 	return AnalyticsQuery{Range: q.Range, From: q.From, To: q.To}
 }
 
+// AnalyticsPath is what one opened row is drawn from: the path's days, and
+// where the sessions on it came from.
+//
+// Both in one answer for the reason Analytics is one — they are two halves of
+// one panel over one window, and a fold that asked twice would be two windows
+// in one box and two round trips to open it.
+type AnalyticsPath struct {
+	Series  []model.PathPoint `json:"series"`
+	Sources []model.SourceRow `json:"sources"`
+}
+
 // ActionPins is the grid's columns: the pinned action names, in the order they
 // are drawn.
 //

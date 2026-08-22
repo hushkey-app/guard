@@ -143,20 +143,23 @@ func AnalyticsGrid() templ.Component {
 	})
 }
 
-// AnalyticsFold is what a path row opens onto: the days behind its figures, and
-// every action that happened on it — pinned or not.
+// AnalyticsFold is what a path row opens onto: the days behind its figures,
+// every action that happened on it — pinned or not — and where its sessions
+// came from.
 //
-// The two halves answer the two questions a row cannot. The chart says whether
-// the numbers on the line are a trend or one afternoon; the list is the
+// The three halves answer the questions a row cannot. The chart says whether
+// the numbers on the line are a trend or one afternoon; the action list is the
 // discovery half, because an action nobody has pinned is still counted and this
 // is the only place it can be seen. Pinning one from here is how a column is
 // created, which is why the button is beside the figure rather than on a
-// settings page.
+// settings page. The sources are the other direction — the grid says what
+// happened on the page, and this says what brought people to it.
 //
 // The slots:
 //
-//	data-analytics-fold-template    the panel: data-fold-chart, data-fold-legend, data-fold-actions
+//	data-analytics-fold-template    the panel: data-fold-chart, data-fold-legend, data-fold-actions, data-fold-sources
 //	data-analytics-action-template  one action: data-action-name, data-action-count, data-action-rate, data-action-pin
+//	data-analytics-source-template  one campaign or referring host: data-source-name, data-source-detail, data-source-count, data-source-share
 func AnalyticsFold() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -178,7 +181,7 @@ func AnalyticsFold() templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<template data-analytics-fold-template><div data-analytics-fold class=\"border-t border-border/60 bg-muted/20 px-4 py-4\"><div class=\"grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]\"><div class=\"min-w-0\"><p class=\"text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground\">Page views and sessions</p><!-- A fixed height, because the chart is drawn into an empty\n\t\t\t\t\t     box after the row is already open: a host that sized\n\t\t\t\t\t     itself to its contents would open at nothing and jump\n\t\t\t\t\t     the rest of the page down when the read landed. --><div data-fold-chart class=\"mt-2 h-44\"></div><div data-fold-legend class=\"mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground empty:hidden\"></div></div><div class=\"min-w-0\"><p class=\"text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground\">Actions on this path</p><div data-fold-actions class=\"mt-2 space-y-0.5\"></div></div></div></div></template><template data-analytics-action-template><div class=\"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/40\"><span data-action-name class=\"min-w-0 flex-1 truncate font-mono text-xs\"></span> <span data-action-count class=\"tabular-nums\"></span> <span data-action-rate class=\"w-14 text-right text-xs tabular-nums text-muted-foreground\"></span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<template data-analytics-fold-template><div data-analytics-fold class=\"border-t border-border/60 bg-muted/20 px-4 py-4\"><div class=\"grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]\"><div class=\"min-w-0\"><p class=\"text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground\">Page views and sessions</p><!-- A fixed height, because the chart is drawn into an empty\n\t\t\t\t\t     box after the row is already open: a host that sized\n\t\t\t\t\t     itself to its contents would open at nothing and jump\n\t\t\t\t\t     the rest of the page down when the read landed. --><div data-fold-chart class=\"mt-2 h-44\"></div><div data-fold-legend class=\"mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground empty:hidden\"></div><!-- Under the chart rather than beside the actions, because\n\t\t\t\t\t     it lands from the same read the chart does and the two\n\t\t\t\t\t     of them arrive together. --><p class=\"mt-5 text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground\">Where they came from</p><div data-fold-sources class=\"mt-2 space-y-0.5\"></div></div><div class=\"min-w-0\"><p class=\"text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground\">Actions on this path</p><div data-fold-actions class=\"mt-2 space-y-0.5\"></div></div></div></div></template><template data-analytics-source-template><div class=\"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/40\"><span class=\"flex min-w-0 flex-1 items-baseline gap-2\"><span data-source-name class=\"truncate\"></span> <span data-source-detail class=\"truncate text-xs text-muted-foreground empty:hidden\"></span></span> <span data-source-count class=\"tabular-nums\"></span> <span data-source-share class=\"w-14 text-right text-xs tabular-nums text-muted-foreground\"></span></div></template><template data-analytics-action-template><div class=\"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/40\"><span data-action-name class=\"min-w-0 flex-1 truncate font-mono text-xs\"></span> <span data-action-count class=\"tabular-nums\"></span> <span data-action-rate class=\"w-14 text-right text-xs tabular-nums text-muted-foreground\"></span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -651,7 +654,7 @@ func AnalyticsControlOpen(target, label string) templ.Component {
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(target)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 322, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 340, Col: 14}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 		if templ_7745c5c3_Err != nil {
@@ -664,7 +667,7 @@ func AnalyticsControlOpen(target, label string) templ.Component {
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 325, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 343, Col: 9}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -710,7 +713,7 @@ func analyticsDialog(id, title, lede string) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 340, Col: 16}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 358, Col: 16}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
@@ -723,7 +726,7 @@ func analyticsDialog(id, title, lede string) templ.Component {
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 342, Col: 18}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 360, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 		if templ_7745c5c3_Err != nil {
@@ -736,7 +739,7 @@ func analyticsDialog(id, title, lede string) templ.Component {
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(id + "-title")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 346, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 364, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 		if templ_7745c5c3_Err != nil {
@@ -749,7 +752,7 @@ func analyticsDialog(id, title, lede string) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(id + "-title")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 351, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 369, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 		if templ_7745c5c3_Err != nil {
@@ -762,7 +765,7 @@ func analyticsDialog(id, title, lede string) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 351, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 369, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -775,7 +778,7 @@ func analyticsDialog(id, title, lede string) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(lede)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 352, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 370, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -788,7 +791,7 @@ func analyticsDialog(id, title, lede string) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 355, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/analytics.templ`, Line: 373, Col: 14}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 		if templ_7745c5c3_Err != nil {

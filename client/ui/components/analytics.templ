@@ -89,20 +89,23 @@ templ AnalyticsGrid() {
 	</template>
 }
 
-// AnalyticsFold is what a path row opens onto: the days behind its figures, and
-// every action that happened on it — pinned or not.
+// AnalyticsFold is what a path row opens onto: the days behind its figures,
+// every action that happened on it — pinned or not — and where its sessions
+// came from.
 //
-// The two halves answer the two questions a row cannot. The chart says whether
-// the numbers on the line are a trend or one afternoon; the list is the
+// The three halves answer the questions a row cannot. The chart says whether
+// the numbers on the line are a trend or one afternoon; the action list is the
 // discovery half, because an action nobody has pinned is still counted and this
 // is the only place it can be seen. Pinning one from here is how a column is
 // created, which is why the button is beside the figure rather than on a
-// settings page.
+// settings page. The sources are the other direction — the grid says what
+// happened on the page, and this says what brought people to it.
 //
 // The slots:
 //
-//	data-analytics-fold-template    the panel: data-fold-chart, data-fold-legend, data-fold-actions
+//	data-analytics-fold-template    the panel: data-fold-chart, data-fold-legend, data-fold-actions, data-fold-sources
 //	data-analytics-action-template  one action: data-action-name, data-action-count, data-action-rate, data-action-pin
+//	data-analytics-source-template  one campaign or referring host: data-source-name, data-source-detail, data-source-count, data-source-share
 templ AnalyticsFold() {
 	<template data-analytics-fold-template>
 		<div data-analytics-fold class="border-t border-border/60 bg-muted/20 px-4 py-4">
@@ -115,12 +118,27 @@ templ AnalyticsFold() {
 					     the rest of the page down when the read landed. -->
 					<div data-fold-chart class="mt-2 h-44"></div>
 					<div data-fold-legend class="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground empty:hidden"></div>
+					<!-- Under the chart rather than beside the actions, because
+					     it lands from the same read the chart does and the two
+					     of them arrive together. -->
+					<p class="mt-5 text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">Where they came from</p>
+					<div data-fold-sources class="mt-2 space-y-0.5"></div>
 				</div>
 				<div class="min-w-0">
 					<p class="text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">Actions on this path</p>
 					<div data-fold-actions class="mt-2 space-y-0.5"></div>
 				</div>
 			</div>
+		</div>
+	</template>
+	<template data-analytics-source-template>
+		<div class="flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/40">
+			<span class="flex min-w-0 flex-1 items-baseline gap-2">
+				<span data-source-name class="truncate"></span>
+				<span data-source-detail class="truncate text-xs text-muted-foreground empty:hidden"></span>
+			</span>
+			<span data-source-count class="tabular-nums"></span>
+			<span data-source-share class="w-14 text-right text-xs tabular-nums text-muted-foreground"></span>
 		</div>
 	</template>
 	<template data-analytics-action-template>

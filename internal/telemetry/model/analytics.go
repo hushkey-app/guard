@@ -231,6 +231,65 @@ type PathPoint struct {
 	Sessions int64     `json:"sessions"`
 }
 
+// A SourceRow is one line of the sources list: a campaign or a referring host,
+// and the sessions that arrived on the path through it.
+//
+// Four strings and a count, which is the whole of attribution here. The three
+// UTM keys are what somebody put in a link they published; the host is where
+// the browser said it came from, never the full referrer, which is somebody
+// else's private path. A row with all four empty is direct traffic — a real
+// answer rather than a missing one, and the renderer says the word.
+type SourceRow struct {
+	Source   string `json:"source,omitempty"`
+	Medium   string `json:"medium,omitempty"`
+	Campaign string `json:"campaign,omitempty"`
+	Referrer string `json:"referrer,omitempty"` // the host, never the path
+	Sessions int64  `json:"sessions"`
+}
+
+// NormaliseSourceValue is what makes two spellings of one campaign one row.
+//
+// Trimmed, lowercased and bounded, for the reason NormalisePath does the same:
+// `?utm_campaign=Newsletter` and `?utm_campaign=newsletter` are one thing
+// somebody typed into a link builder twice, and two rows for it is two halves
+// of a number nobody can add up. Folding case here is safe in a way it is not
+// for an action name — a source is a rollup dimension read as a list, not a
+// column header two teams could quietly land in.
+func NormaliseSourceValue(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if runes := []rune(value); len(runes) > MaxPropValue {
+		return string(runes[:MaxPropValue])
+	}
+	return value
+}
+
+// NormaliseReferrerHost reduces whatever arrived to a host.
+//
+// The tracker already sends the host alone, but the door it posts to is public
+// — so what arrives is whatever somebody posted, and a full URL stored here
+// would be a stranger's private path in guard's database and a list with one
+// row per page of a site that links here. Scheme, credentials, path, query and
+// fragment all go; the port stays, because a service on one is a different
+// referrer from the site on 443.
+func NormaliseReferrerHost(referrer string) string {
+	host := strings.TrimSpace(referrer)
+	if at := strings.Index(host, "://"); at >= 0 {
+		host = host[at+3:]
+	}
+	// A scheme-relative URL is the same URL with the scheme left to the page it
+	// was on, and without this the two slashes read as the start of the path.
+	host = strings.TrimPrefix(host, "//")
+	if at := strings.IndexAny(host, "/?#"); at >= 0 {
+		host = host[:at]
+	}
+	// Anything before an @ is credentials somebody's browser should never have
+	// sent and guard must certainly not keep.
+	if at := strings.LastIndex(host, "@"); at >= 0 {
+		host = host[at+1:]
+	}
+	return NormaliseSourceValue(host)
+}
+
 // An AnalyticsWindow is the strip's four numbers over one span of days.
 //
 // The ratios are carried rather than left to the renderer because the
@@ -328,6 +387,7 @@ type AnalyticsHealth struct {
 	Rejected       int64     `json:"rejected"`
 	ActionsRefused int64     `json:"actions_refused"` // names past the discovery cap
 	PathsCapped    int64     `json:"paths_capped"`    // paths rolled into (other)
+	SourcesCapped  int64     `json:"sources_capped"`  // campaigns rolled into (other)
 	Actions        int       `json:"actions"`         // distinct names known
 	SeenRows       int64     `json:"seen_rows"`       // the table that grows with traffic
 	LastEvent      time.Time `json:"last_event,omitzero"`
