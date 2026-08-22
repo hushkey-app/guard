@@ -15,3 +15,15 @@ on its own. `ralph.sh` greps for it.
 - notes: baseline is green on branch fix/valkey-telemetry-collector. The working
   tree has substantial unrelated in-progress changes — `git add` explicit paths
   only, never `-A`. Work happens on `feat/analytics`, which ralph.sh creates.
+
+## A2 — the analytics schema, and its call from Store.migrate
+- commit: feat(analytics): the tables, and which of them is the truth
+- gates: build ok / howl ok / make test ok
+- notes: `day` is an INTEGER of whole UTC days via the existing `epochDay`
+  (uptime.go), not the TEXT the spec's example SQL implies — A3/A6/A7 must use
+  it too. `analytics_seen` is WITHOUT ROWID (the row is its key). Raw rows carry
+  both `received_at_ns` and `timestamp_ns`; A7 sweeps on guard's clock, never
+  the browser's. Path rule patterns are UNIQUE, so A5's CRUD must answer a
+  duplicate with words. A2's Files list omitted a test file — `analytics_test.go`
+  exists now and A3 extends it. A1 left its own plan tick uncommitted; it is in
+  this commit.

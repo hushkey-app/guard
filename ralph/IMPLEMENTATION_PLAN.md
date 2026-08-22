@@ -20,7 +20,7 @@ iteration.
 The spine. Nothing in phases B–D can be built or tested without it, and all of
 it is testable with no browser and no HTTP.
 
-- [ ] **A1 — the types**
+- [x] **A1 — the types**
   - Depends: —
   - Files: `internal/telemetry/model/analytics.go`, `internal/telemetry/model/analytics_test.go`
   - Do: the JSON contract and the pure functions over it. `Beacon` (`s`, `p`,
@@ -36,7 +36,7 @@ it is testable with no browser and no HTTP.
     `Validate` can return.
   - Verify: `go test ./internal/telemetry/model/ && GOOS=js GOARCH=wasm go build ./internal/telemetry/model/`
 
-- [ ] **A2 — the schema**
+- [x] **A2 — the schema**
   - Depends: A1
   - Files: `internal/telemetry/analytics.go`, `internal/telemetry/model.go` (one call)
   - Do: `migrateAnalytics(db *sql.DB) error` creating `analytics_events`,
