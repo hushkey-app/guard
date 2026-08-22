@@ -42,3 +42,13 @@ on its own. `ralph.sh` greps for it.
   apply its rules **before** `analyticsCountedPath`, which is the point of them.
   A3 left its own plan tick uncommitted; it is in this commit.
 
+## A5 — the path rules, applied at ingest and proved before they are stored
+- commit: (this one)
+- gates: build ok / howl ok / make test ok
+- notes: `PreviewPathRules` takes the **candidate rules** as well as the paths —
+  the plan's `([]string) []string` could only preview the stored ones, and C3
+  asks it to prove a rule *before* it is stored (see questions.md). Save is
+  replace-the-whole-list (`SavePathRules`), which is the shape C3's single
+  `rules.post` endpoint wants; a rule has no history to keep, unlike a command.
+  Matching is `path.Match`, so `*` stops at `/`. Both halves are lowercased,
+  because a pattern with a capital could never match a normalised path.

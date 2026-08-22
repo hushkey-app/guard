@@ -30,4 +30,6 @@ trap **there**, and put a cross-cutting one here.
   which is outside most tasks' `Files` list. One line there is unavoidable —
   say so in progress.md rather than inventing a package-level variable that two
   stores in one test would share.
-
+- A glob pattern is validated by probing it — `path.Match(pattern, "/")` returns
+  `ErrBadPattern` for a malformed one — which is how a rule that could never
+  fire is refused while somebody is still typing it.

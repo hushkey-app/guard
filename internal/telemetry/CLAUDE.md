@@ -1,7 +1,9 @@
 # internal/telemetry — the store
 
 **Scoped gate:** `go test ./internal/telemetry/ ./internal/telemetry/model/`
-Narrow it while iterating: `go test ./internal/telemetry/ -run Analytics`.
+Narrow it while iterating: `go test ./internal/telemetry/ -run Analytics`. That
+`-run` is a name match, so a new analytics test whose name does not carry the
+word is a test the gate silently never runs.
 
 Full `make test` before the commit, always — this package is imported by the
 API tree and a change here can only break compilation over there.

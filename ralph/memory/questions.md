@@ -8,4 +8,11 @@ Nobody is reading this while the loop runs. It is the handover.
 
 ## Open
 
-- (none yet)
+- **A5** — the plan gives `Store.PreviewPathRules([]string) []string`, which can
+  only apply the rules already stored; C3 asks the preview to prove a rule
+  "before it is stored", and CLAUDE.md's `.env` import sets the rule that the
+  dry run and the write are the same call. Built it as
+  `PreviewPathRules(rules []model.PathRule, paths []string) ([]string, error)`
+  — the same `preparePathRules` the save runs, so the dialog cannot describe
+  something the press will not do. The error is how a pattern that will not
+  compile is reported.

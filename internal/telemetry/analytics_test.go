@@ -469,3 +469,233 @@ func TestAddAnalyticsRefusesActionNamesPastTheCeiling(t *testing.T) {
 		t.Fatalf("one name past the ceiling was counted as %d", refused)
 	}
 }
+
+// rule is a path rule with the id and position the save is going to decide.
+func rule(pattern, replacement string) model.PathRule {
+	return model.PathRule{Pattern: pattern, Replacement: replacement}
+}
+
+func savedRules(t *testing.T, store *Store, rules ...model.PathRule) {
+	t.Helper()
+	if _, err := store.SavePathRules(rules); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The point of a rule is that `/users/7` and `/users/8` are one page. The
+// rollup is where that has to be true, because the rollup is what outlives the
+// raw rows — and the raw row keeps the URL it arrived on, because that is what
+// somebody was reading when they wrote the rule.
+func TestAnalyticsPathRulesCollapseAPathIntoTheRollup(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	savedRules(t, store, rule("/users/*", "/users/:id"))
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for i, session := range []string{"a1", "b2"} {
+		if err := store.addAnalyticsAt(beacon(session, fmt.Sprintf("/users/%d", i), "page_view"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if events, sessions := rollupRow(t, store, epochDay(at), "/users/:id", actionPageView); events != 2 || sessions != 2 {
+		t.Fatalf("two visits to one collapsed page counted %d events over %d sessions", events, sessions)
+	}
+	var rows int
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_rollup WHERE path LIKE '/users/_'`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("a collapsed path kept %d rollup rows of its own", rows)
+	}
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_events WHERE path = ?`, "/users/0").Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("the raw feed kept %d rows for the URL that was collapsed", rows)
+	}
+}
+
+// Order is the whole configuration: the same two rules in the other order are a
+// different answer for `/users/new`, and a page that lets somebody drag them
+// has to mean it.
+func TestAnalyticsPathRulesTakeTheFirstMatch(t *testing.T) {
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name    string
+		rules   []model.PathRule
+		counted string
+	}{
+		{"the page before the id", []model.PathRule{rule("/users/new", "/users/new"), rule("/users/*", "/users/:id")}, "/users/new"},
+		{"the id before the page", []model.PathRule{rule("/users/*", "/users/:id"), rule("/users/new", "/users/new")}, "/users/:id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewStore(100)
+			t.Cleanup(func() { store.Close() })
+
+			savedRules(t, store, tc.rules...)
+			if err := store.addAnalyticsAt(beacon("a1", "/users/new", "page_view"), at); err != nil {
+				t.Fatal(err)
+			}
+			if events, _ := rollupRow(t, store, epochDay(at), tc.counted, actionPageView); events != 1 {
+				t.Fatalf("the visit counted %d events under %s", events, tc.counted)
+			}
+		})
+	}
+}
+
+// A path no rule matches is its own page. Said as a test because the loop that
+// returns early on a match is one edit away from returning the last rule's
+// replacement for everything.
+func TestAnalyticsPathRulesLeaveAnUnmatchedPathAlone(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	savedRules(t, store, rule("/users/*", "/users/:id"))
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	if err := store.addAnalyticsAt(beacon("a1", "/pricing", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	if events, _ := rollupRow(t, store, epochDay(at), "/pricing", actionPageView); events != 1 {
+		t.Fatalf("an unmatched path counted %d events under itself", events)
+	}
+}
+
+// The honest half of applying rules at ingest, and the sentence the page has to
+// carry: a rule shapes what is counted from the moment it is stored, and the
+// days already rolled up stay as they were counted.
+func TestAnalyticsPathRulesDoNotRewriteHistory(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	if err := store.addAnalyticsAt(beacon("a1", "/users/7", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	savedRules(t, store, rule("/users/*", "/users/:id"))
+	if err := store.addAnalyticsAt(beacon("b2", "/users/8", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+
+	if events, sessions := rollupRow(t, store, epochDay(at), "/users/7", actionPageView); events != 1 || sessions != 1 {
+		t.Fatalf("the day counted before the rule reads %d events over %d sessions", events, sessions)
+	}
+	if events, sessions := rollupRow(t, store, epochDay(at), "/users/:id", actionPageView); events != 1 || sessions != 1 {
+		t.Fatalf("the visit after the rule counted %d events over %d sessions", events, sessions)
+	}
+}
+
+// A rule is applied before the ceiling, which is what makes it a fix for the
+// flood rather than a tidier way to read one: a thousand user pages behind one
+// rule are one path, and nothing is capped.
+func TestAnalyticsPathRulesApplyBeforeTheCeiling(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	savedRules(t, store, rule("/users/*", "/users/:id"))
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for i := range maxAnalyticsPaths + 5 {
+		if err := store.addAnalyticsAt(beacon("a1", fmt.Sprintf("/users/%d", i), "page_view"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var paths int
+	if err := store.rdb.QueryRow(`SELECT COUNT(DISTINCT path) FROM analytics_rollup`).Scan(&paths); err != nil {
+		t.Fatal(err)
+	}
+	if paths != 1 {
+		t.Fatalf("a thousand URLs behind one rule became %d paths", paths)
+	}
+	if capped, _ := store.AnalyticsCaps(); capped != 0 {
+		t.Fatalf("the rule that stops the flood still capped %d beacons", capped)
+	}
+}
+
+// The three ways a rule can be refused, all of them before anything is written.
+// A rule stored and silently unable to fire is the failure this feature would
+// be blamed for, since the number it produces looks exactly like a page nobody
+// visited.
+func TestAnalyticsPathRulesRefuseWhatCouldNeverFire(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		rules []model.PathRule
+	}{
+		{"a pattern that will not compile", []model.PathRule{rule("/users/[", "/users/:id")}},
+		{"two rules for one pattern", []model.PathRule{rule("/users/*", "/users/:id"), rule("/users/*", "/users/:other")}},
+		{"two rules for one pattern, typed in different cases", []model.PathRule{rule("/Users/*", "/users/:id"), rule("/users/*", "/users/:other")}},
+		{"a pattern that is not a path", []model.PathRule{rule("users/*", "/users/:id")}},
+		{"a rule with nothing to collapse to", []model.PathRule{rule("/users/*", "")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewStore(100)
+			t.Cleanup(func() { store.Close() })
+
+			if _, err := store.SavePathRules(tc.rules); err == nil {
+				t.Fatal("the rule was stored")
+			}
+			stored, err := store.PathRules()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(stored) != 0 {
+				t.Fatalf("a refused save left %d rules behind", len(stored))
+			}
+		})
+	}
+}
+
+// Saving replaces the list, in the order it was sent, and the halves are stored
+// as they will be applied — so what the page shows after a save is what the
+// next beacon is going to be counted under.
+func TestAnalyticsPathRulesAreReplacedInOrder(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	savedRules(t, store, rule("/users/*", "/users/:id"), rule("/orders/*", "/orders/:id"))
+	stored, err := store.SavePathRules([]model.PathRule{rule("/Blog/*", "/Blog/:Slug/")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("the replaced list holds %d rules", len(stored))
+	}
+	if stored[0].Pattern != "/blog/*" || stored[0].Replacement != "/blog/:slug" {
+		t.Fatalf("the rule was stored as %q → %q", stored[0].Pattern, stored[0].Replacement)
+	}
+	if stored[0].Position != 0 || stored[0].ID == 0 {
+		t.Fatalf("the stored rule is id %d at position %d", stored[0].ID, stored[0].Position)
+	}
+}
+
+// The preview is the save's own preparation run against sample paths, which is
+// the only way the dialog can promise what the press will do. It takes the
+// rules rather than reading the stored ones, because it exists to prove one
+// that has not been stored yet.
+func TestAnalyticsPathRulePreviewProvesARuleBeforeItIsStored(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	candidate := []model.PathRule{rule("/users/new", "/users/new"), rule("/users/*", "/users/:id")}
+	preview, err := store.PreviewPathRules(candidate, []string{"/users/7", "/users/new", "/pricing/", "/Users/8?ref=x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/users/:id", "/users/new", "/pricing", "/users/:id"}
+	for i, path := range want {
+		if preview[i] != path {
+			t.Fatalf("the preview made %q of sample %d, not %q", preview[i], i, path)
+		}
+	}
+
+	stored, err := store.PathRules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 0 {
+		t.Fatalf("the preview stored %d rules", len(stored))
+	}
+	if _, err := store.PreviewPathRules([]model.PathRule{rule("/users/[", "/users/:id")}, []string{"/users/7"}); err == nil {
+		t.Fatal("the preview accepted a pattern the save would refuse")
+	}
+}

@@ -28,6 +28,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	// Imported as glob because Match is the only thing wanted from it and
+	// `path` is what half the variables in this file are called.
+	glob "path"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -194,9 +198,24 @@ func (s *Store) addAnalyticsAt(b model.Beacon, at time.Time) error {
 	}
 	defer tx.Rollback()
 
-	// Which row this beacon counts against, which is its own path until the day
-	// has as many as guard keeps.
-	counted, capped, err := analyticsCountedPath(tx, day, path)
+	// The rules are read once per beacon, inside the transaction that is about
+	// to use them, rather than held in memory: they are somebody's
+	// configuration on a table this ceiling already bounds, and a cached copy
+	// would be a second answer to "what are the rules" that a save could leave
+	// stale on one process while the page showed the other.
+	rules, err := pathRules(tx)
+	if err != nil {
+		return err
+	}
+	// Rules shape the rollup, which is the truth, and are applied before the
+	// ceiling, which is the whole point of them: collapsing `/users/*` is what
+	// stops a day's thousand paths ever being reached. The raw row keeps the
+	// URL as it arrived, because that is where somebody reads the path that
+	// made them write the rule.
+	//
+	// Which row this beacon counts against, then, is the collapsed path until
+	// the day has as many as guard keeps.
+	counted, capped, err := analyticsCountedPath(tx, day, applyPathRules(rules, path))
 	if err != nil {
 		return err
 	}
@@ -344,4 +363,161 @@ func analyticsCountedPath(tx *sql.Tx, day int64, path string) (string, bool, err
 		return pathOther, true, nil
 	}
 	return path, false, nil
+}
+
+// The path rules: how a URL with an id in it becomes the page it is.
+//
+// `/users/*` → `/users/:id`, ordered, and the first match wins. They are
+// applied at ingest rather than at read, which is the trade this feature makes
+// out loud: a rule shapes what is counted from the moment it is stored and
+// cannot rewrite the days already rolled up. The alternative — rules applied
+// when the grid is drawn — would mean every read re-deciding what a path is,
+// and a rollup keyed on something that changes underneath it is a rollup whose
+// rows nobody can add up.
+//
+// A pattern is a glob rather than a regular expression, because the thing being
+// written is a URL shape and `/users/*` is what somebody types when they mean
+// one. `*` stops at a separator, which is what makes that rule mean "a user"
+// rather than "everything under /users" — a second level is a second `*`.
+
+// pathRuleColumns is one list, read through the pool by the page and through
+// the transaction by ingest, so a column added for one cannot go missing in the
+// other.
+const pathRuleColumns = `id,pattern,replacement,position`
+
+// analyticsQuerier is the half of *sql.DB and *sql.Tx a rule read needs. Both,
+// because the page reads the rules through the pool and ingest reads them
+// inside the transaction that is about to count against them.
+type analyticsQuerier interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+// PathRules reads the rules in the order they are applied.
+func (s *Store) PathRules() ([]model.PathRule, error) { return pathRules(s.rdb) }
+
+func pathRules(q analyticsQuerier) ([]model.PathRule, error) {
+	rows, err := q.Query(`SELECT ` + pathRuleColumns + ` FROM analytics_path_rules ORDER BY position, id`)
+	if err != nil {
+		return nil, fmt.Errorf("read path rules: %w", err)
+	}
+	defer rows.Close()
+	var out []model.PathRule
+	for rows.Next() {
+		var rule model.PathRule
+		if err := rows.Scan(&rule.ID, &rule.Pattern, &rule.Replacement, &rule.Position); err != nil {
+			return nil, err
+		}
+		out = append(out, rule)
+	}
+	return out, rows.Err()
+}
+
+// SavePathRules replaces the list with the one that was sent, in the order it
+// was sent in.
+//
+// Replaced wholesale rather than matched by id the way a machine's commands
+// are: a rule has no history to keep — nothing records when one last fired, and
+// nothing counted under it points back at it — so the id is a handle for the
+// page and not a thing worth preserving across an edit.
+func (s *Store) SavePathRules(rules []model.PathRule) ([]model.PathRule, error) {
+	prepared, err := preparePathRules(rules)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(`DELETE FROM analytics_path_rules`); err != nil {
+		return nil, err
+	}
+	for position, rule := range prepared {
+		if _, err := tx.Exec(`INSERT INTO analytics_path_rules(pattern, replacement, position) VALUES(?,?,?)`,
+			rule.Pattern, rule.Replacement, position); err != nil {
+			return nil, fmt.Errorf("store path rule: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.PathRules()
+}
+
+// PreviewPathRules answers what a set of rules would make of a set of paths,
+// and stores nothing.
+//
+// It takes the rules rather than reading the stored ones on purpose: the dialog
+// exists to prove a rule *before* it is saved, and a preview of what is already
+// there could not do that. It is the same preparation and the same application
+// the save runs, for the reason the `.env` import runs one call twice — a
+// dialog that describes something other than what happens is worse than no
+// dialog.
+func (s *Store) PreviewPathRules(rules []model.PathRule, paths []string) ([]string, error) {
+	prepared, err := preparePathRules(rules)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(paths))
+	for i, path := range paths {
+		out[i] = applyPathRules(prepared, model.NormalisePath(path))
+	}
+	return out, nil
+}
+
+// preparePathRules is the half of a save that can refuse, run before anything
+// is written and again for the preview.
+//
+// Both halves are lowercased because every path is lowercased before it is
+// compared: a pattern with a capital in it could never match anything, and a
+// replacement with one would name a row no page could ever produce. Refusing
+// them instead would be refusing something guard knows exactly what to do with.
+func preparePathRules(rules []model.PathRule) ([]model.PathRule, error) {
+	out := make([]model.PathRule, 0, len(rules))
+	seen := make(map[string]bool, len(rules))
+	for position, rule := range rules {
+		// Not NormalisePath on the pattern: `?` is a glob wildcard and
+		// normalisation would read it as the start of a query string and cut
+		// the pattern in half.
+		rule.Pattern = strings.ToLower(strings.TrimSpace(rule.Pattern))
+		rule.Replacement = strings.TrimSpace(rule.Replacement)
+		if err := rule.Validate(); err != nil {
+			return nil, err
+		}
+		rule.Replacement = model.NormalisePath(rule.Replacement)
+		if _, err := glob.Match(rule.Pattern, "/"); err != nil {
+			return nil, fmt.Errorf("%q is not a pattern: %w", rule.Pattern, err)
+		}
+		// The second rule with a pattern can never fire, because the first one
+		// always wins. A row that sits on the page looking like configuration
+		// and does nothing is worse than being told while it is being typed.
+		if seen[rule.Pattern] {
+			return nil, fmt.Errorf("there is already a rule for %q, and the first match wins", rule.Pattern)
+		}
+		seen[rule.Pattern] = true
+		rule.Position = position
+		out = append(out, rule)
+	}
+	return out, nil
+}
+
+// applyPathRules collapses a path onto the page it is, by the first rule that
+// matches it. A path no rule matches is its own page and passes through.
+//
+// The replacement is a literal rather than a template with the wildcard put
+// back in it: the whole point is that `/users/7` and `/users/8` become one row,
+// and a replacement that could carry the id would be a way to write a rule that
+// collapses nothing.
+func applyPathRules(rules []model.PathRule, path string) string {
+	for _, rule := range rules {
+		// A pattern that will not compile is refused at the save, so a match
+		// error here is a row from a guard that had not learned that yet: it
+		// cannot fire, and treating it as no match is the only reading that
+		// leaves the path alone.
+		if ok, err := glob.Match(rule.Pattern, path); ok && err == nil {
+			return rule.Replacement
+		}
+	}
+	return path
 }

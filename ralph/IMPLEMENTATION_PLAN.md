@@ -73,7 +73,7 @@ it is testable with no browser and no HTTP.
     appears in `analytics_actions`.
   - Verify: `go test ./internal/telemetry/ -run Analytics`
 
-- [ ] **A5 — path rules**
+- [x] **A5 — path rules**
   - Depends: A4
   - Files: `internal/telemetry/analytics.go`, `internal/telemetry/analytics_test.go`
   - Do: `analytics_path_rules` CRUD, ordered, first match wins, applied at
