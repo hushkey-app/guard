@@ -36,9 +36,15 @@ type TraceSpan = model.TraceSpan
 // Attributes worth an index.
 //
 // Grouping by an attribute means json_extract over every candidate row, which
-// is a full scan. These five are the ones a dashboard actually groups by, so
-// they get a generated column and an index, and the compiler silently uses the
+// is a full scan. These are the ones a dashboard actually groups by, so they
+// get a generated column and an index, and the compiler silently uses the
 // column instead of the extract.
+//
+// The last one is not a shape of request but a person's visit: the session id
+// guard's tracker mints is written on the analytics rows and, by the web SDK
+// beside it, on the browser's spans. That makes it the join key — a path with
+// a bad rate on /analytics is one filter away from the traces of the sessions
+// that produced it — and a join key that costs a scan is one nobody follows.
 //
 // Each column COALESCEs the two OpenTelemetry spellings — semconv renamed
 // several of these, and exporters in the wild emit both. Merging them is
@@ -56,6 +62,7 @@ var indexedAttributes = []struct {
 	{Column: "attr_http_status", Label: "HTTP status", Canonical: "http.response.status_code", Keys: []string{"http.response.status_code", "http.status_code"}},
 	{Column: "attr_client_address", Label: "Client address", Canonical: "client.address", Keys: []string{"client.address", "net.peer.ip", "http.client_ip"}},
 	{Column: "attr_db_system", Label: "Database system", Canonical: "db.system.name", Keys: []string{"db.system.name", "db.system"}},
+	{Column: "attr_rum_session", Label: "Browser session", Canonical: "rum.session_id", Keys: []string{"rum.session_id", "session.id"}},
 }
 
 // attributeColumn maps an attribute key to its generated column, if it has one.

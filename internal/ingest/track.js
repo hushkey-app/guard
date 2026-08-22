@@ -13,7 +13,10 @@
   if (n.doNotTrack === "1") {
     // Nothing at all, but still an answer: a page calling guard.track() and
     // getting a TypeError is the tracker breaking the site it measures.
-    w.guard = { track: function () {} };
+    // session() answers with nothing rather than an id, so a span tagged from
+    // it carries no session instead of one that will never join to anything.
+    var quiet = function () {};
+    w.guard = { track: quiet, session: quiet };
     return;
   }
 
@@ -158,6 +161,10 @@
     if (d.visibilityState === "hidden") flush(true);
   });
 
-  w.guard = { track: track };
+  // track() is what the page calls; session() is what the OpenTelemetry web
+  // SDK beside it tags its spans with. Guard indexes `rum.session_id`, so the
+  // two halves of one visit — the pages somebody saw and the spans their
+  // browser produced — are a single filter apart on /traces.
+  w.guard = { track: track, session: session };
   view();
 })(window, document);

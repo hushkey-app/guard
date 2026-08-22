@@ -115,10 +115,12 @@ panel that reads an existing shape is a renderer in `charts.js` and an entry in
   caller text into SQL** — a field is looked up in `model.Columns` or bound as a JSON path,
   and values are always parameters. Keep it that way; it is the only reason a dashboard
   user may compose queries at all.
-- Grouping by an attribute is a `json_extract` over every candidate row. Five attributes
-  (`http.route`, method, status, `client.address`, `db.system`) have generated columns and
-  indexes, and both OpenTelemetry spellings of each resolve to the same column on purpose.
-  Adding a sixth means an entry in `indexedAttributes` and nothing else.
+- Grouping by an attribute is a `json_extract` over every candidate row. Six attributes
+  (`http.route`, method, status, `client.address`, `db.system`, and `rum.session_id` — the
+  browser session the tracker mints, which is what makes a path on `/analytics` walkable
+  into `/traces`) have generated columns and indexes, and both OpenTelemetry spellings of
+  each resolve to the same column on purpose. Adding a seventh means an entry in
+  `indexedAttributes` and nothing else.
 - Percentiles are exact nearest-rank, computed with window functions, because SQLite has
   no percentile function and a silently interpolated p95 is a number people act on.
 - **A duration is drawn as a duration.** `model.AlertUnit` marks a query measuring

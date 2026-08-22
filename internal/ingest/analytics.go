@@ -13,6 +13,14 @@ package ingest
 // relay and is allowed. It adds no configuration — GUARD_RUM_ORIGINS is what
 // turns analytics on, because a second switch would be a second answer to "is
 // the browser door open".
+//
+// The session id a beacon carries is also a join key. Guard indexes
+// `rum.session_id` (internal/telemetry/views.go), and the tracker publishes
+// the id as window.guard.session() for the OpenTelemetry web SDK beside it to
+// tag spans with — so a path with a bad rate on the grid is one filter away
+// from the traces of the sessions that produced it. Nothing here reads it: the
+// join is a column on the events table and a link on the page, which is the
+// whole of what "a join key" costs.
 
 import (
 	_ "embed"

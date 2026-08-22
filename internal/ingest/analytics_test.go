@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -341,5 +342,26 @@ func TestATrackerFlushIsAcceptedWhole(t *testing.T) {
 	cell, seen := rows[0].Actions["signup_click"]
 	if !seen || cell.Events != 1 || cell.Rate != 1 {
 		t.Fatalf("signup_click = %+v, seen = %v", cell, seen)
+	}
+}
+
+// The join key is only a join key if the page can read it.
+//
+// Guard indexes `rum.session_id`, but nothing on guard's side puts that on a
+// browser span: the OpenTelemetry web SDK beside the tracker does, from
+// window.guard.session(). So a tracker that stopped publishing the id would
+// break the walk from a path to its traces with everything here still passing
+// — the beacons would keep landing and the grid would keep filling.
+func TestTrackerPublishesTheSessionId(t *testing.T) {
+	published := regexp.MustCompile(`w\.guard = \{[^}]*\}`).FindAllString(string(tracker), -1)
+	if len(published) != 2 {
+		t.Fatalf("the tracker declares %d public APIs, want two — the live one and the do-not-track one", len(published))
+	}
+	// Including the do-not-track one: a page that tags spans from guard.session()
+	// must get an answer there too, and the answer is nothing rather than an id.
+	for _, api := range published {
+		if !strings.Contains(api, "session") {
+			t.Errorf("%s answers no session id", api)
+		}
 	}
 }
