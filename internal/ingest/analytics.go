@@ -44,6 +44,12 @@ func trackJS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) beacon(config Browser, limiter *rateLimiter) http.HandlerFunc {
+	// Mounting the door is what "analytics is on" means, and this is the only
+	// moment anything knows it — RegisterBrowser reaches here exactly when an
+	// origin was named. The health page is told now rather than reading
+	// GUARD_RUM_ORIGINS for itself, because a second reader of a decision this
+	// process has already made is a second answer to it.
+	h.Store.AnalyticsOpened()
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !cors(w, r, config.Origins) {
 			http.Error(w, "origin not allowed", http.StatusForbidden)
@@ -61,15 +67,23 @@ func (h Handler) beacon(config Browser, limiter *rateLimiter) http.HandlerFunc {
 		// preflight it would never live long enough to complete.
 		var beacon model.Beacon
 		if err := json.NewDecoder(r.Body).Decode(&beacon); err != nil {
+			h.Store.AnalyticsRejected()
 			http.Error(w, "could not read the beacon", http.StatusBadRequest)
 			return
 		}
 		// The edge limits are answered here, before anything is written, so a
-		// tracker with a bug is told it has one. The store validates again —
-		// it must, since a second caller must not be able to write a name that
+		// tracker with a bug is told it has one. The store validates again — it
+		// must, since a second caller must not be able to write a name that
 		// cannot be a column — but a store error is guard's fault and reads as
 		// a 500, and these are the sender's.
+		//
+		// Which is why a malformed beacon is the one refusal counted for the
+		// health page: nothing about the page it came from will look wrong, and
+		// the grid will quietly be missing what it sent. An unknown origin is
+		// somebody else's site, a rate limit is a flood rather than a bug, and
+		// a 500 is guard's own.
 		if err := beacon.Validate(); err != nil {
+			h.Store.AnalyticsRejected()
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

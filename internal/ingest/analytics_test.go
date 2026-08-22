@@ -186,6 +186,56 @@ func TestBeaconEdgeLimits(t *testing.T) {
 	}
 }
 
+// What guard would not take has to be a number on a page. A tracker posting a
+// beacon guard refuses breaks nothing visible — the site keeps working, the
+// grid is just quietly missing it — which is why the refusals at this door are
+// the health page's first line.
+func TestBeaconRejectionsAreCounted(t *testing.T) {
+	store, server := browserServer(t, Browser{Origins: []string{"https://app.example.com"}, PerMinute: 1000})
+
+	if health, err := store.AnalyticsHealth(); err != nil {
+		t.Fatal(err)
+	} else if !health.Enabled {
+		t.Error("an origin was named and the health says analytics is off")
+	}
+
+	badName := aBeacon()
+	badName.Events[1].Name = "Signup Click"
+	for _, body := range []string{"not json at all", beaconJSON(t, badName)} {
+		if got := post(t, server.URL+"/v1/rum/events", "https://app.example.com", body).StatusCode; got != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", got)
+		}
+	}
+	// The three refusals that are not the sender's bug: somebody else's site,
+	// a flood, and a beacon guard actually took.
+	post(t, server.URL+"/v1/rum/events", "https://evil.example.com", beaconJSON(t, aBeacon()))
+	post(t, server.URL+"/v1/rum/events", "https://app.example.com", beaconJSON(t, aBeacon()))
+
+	health, err := store.AnalyticsHealth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Rejected != 2 {
+		t.Errorf("two malformed beacons were counted as %d", health.Rejected)
+	}
+	if health.LastEvent.IsZero() {
+		t.Error("the beacon that was accepted left no last event behind")
+	}
+}
+
+// Nothing mounted is nothing to be told about: analytics is off, and the page
+// says so rather than reporting a tracker that was never asked for.
+func TestBeaconHealthIsOffWithNoOrigins(t *testing.T) {
+	store, _ := browserServer(t, Browser{})
+	health, err := store.AnalyticsHealth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Enabled {
+		t.Error("no origin was named and the health says analytics is on")
+	}
+}
+
 // The tracker is served from the door it posts to, so the script tag on
 // somebody's site and the endpoint it flushes to are the same origin and the
 // same switch.

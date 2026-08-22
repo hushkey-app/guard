@@ -342,6 +342,18 @@ func TestAddAnalyticsRefusesTheWholeBeacon(t *testing.T) {
 	}
 }
 
+// analyticsHealth is where the ceilings' counters are read from, because it is
+// where the page reads them: a counter nothing on a screen can reach is a
+// counter that can rot without a test noticing.
+func analyticsHealth(t *testing.T, store *Store) model.AnalyticsHealth {
+	t.Helper()
+	health, err := store.AnalyticsHealth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return health
+}
+
 // The path ceiling is what stops a site with unbounded URLs — a search page, a
 // signed link, somebody's crawler — from growing the rollup until SQLite is
 // slow. Past it the count is still real; it is filed under the one name that
@@ -356,7 +368,7 @@ func TestAddAnalyticsRollsPathsPastTheCeilingIntoOther(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if capped, _ := store.AnalyticsCaps(); capped != 0 {
+	if capped := analyticsHealth(t, store).PathsCapped; capped != 0 {
 		t.Fatalf("the paths up to the ceiling capped %d beacons", capped)
 	}
 
@@ -383,7 +395,7 @@ func TestAddAnalyticsRollsPathsPastTheCeilingIntoOther(t *testing.T) {
 	if paths != maxAnalyticsPaths+1 {
 		t.Fatalf("the day holds %d distinct paths", paths)
 	}
-	if capped, _ := store.AnalyticsCaps(); capped != 2 {
+	if capped := analyticsHealth(t, store).PathsCapped; capped != 2 {
 		t.Fatalf("two beacons past the ceiling were counted as %d", capped)
 	}
 
@@ -433,7 +445,7 @@ func TestAddAnalyticsRefusesActionNamesPastTheCeiling(t *testing.T) {
 	if names != maxAnalyticsActions {
 		t.Fatalf("discovery filled to %d names", names)
 	}
-	if _, refused := store.AnalyticsCaps(); refused != 0 {
+	if refused := analyticsHealth(t, store).ActionsRefused; refused != 0 {
 		t.Fatalf("filling discovery to the ceiling refused %d names", refused)
 	}
 
@@ -465,7 +477,7 @@ func TestAddAnalyticsRefusesActionNamesPastTheCeiling(t *testing.T) {
 			t.Fatalf("a refused name left %d rows behind: %s", rows, query)
 		}
 	}
-	if _, refused := store.AnalyticsCaps(); refused != 1 {
+	if refused := analyticsHealth(t, store).ActionsRefused; refused != 1 {
 		t.Fatalf("one name past the ceiling was counted as %d", refused)
 	}
 }
@@ -607,7 +619,7 @@ func TestAnalyticsPathRulesApplyBeforeTheCeiling(t *testing.T) {
 	if paths != 1 {
 		t.Fatalf("a thousand URLs behind one rule became %d paths", paths)
 	}
-	if capped, _ := store.AnalyticsCaps(); capped != 0 {
+	if capped := analyticsHealth(t, store).PathsCapped; capped != 0 {
 		t.Fatalf("the rule that stops the flood still capped %d beacons", capped)
 	}
 }
@@ -1083,5 +1095,108 @@ func TestAnalyticsRetentionSettings(t *testing.T) {
 	}
 	if settings.AnalyticsRollupDays != 30 || settings.AnalyticsSeenDays != 3 {
 		t.Fatalf("a refused save moved the windows to %d and %d", settings.AnalyticsRollupDays, settings.AnalyticsSeenDays)
+	}
+}
+
+// A fresh store is silent rather than zero-ish: nothing has been thrown away,
+// nothing has arrived, and the door has not been mounted — which is the state
+// the page draws "analytics is off" from, and the one it must not draw
+// "the tracker is broken" from.
+func TestAnalyticsHealthIsSilentBeforeAnythingArrives(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	health := analyticsHealth(t, store)
+	if health.Enabled {
+		t.Error("a store nothing mounted a door on says analytics is on")
+	}
+	if !health.LastEvent.IsZero() {
+		t.Errorf("a store that has received nothing last received something at %s", health.LastEvent)
+	}
+	if health.Rejected != 0 || health.ActionsRefused != 0 || health.PathsCapped != 0 {
+		t.Errorf("a fresh store has already thrown something away: %+v", health)
+	}
+	if health.Actions != 0 || health.SeenRows != 0 {
+		t.Errorf("a fresh store knows %d actions over %d seen rows", health.Actions, health.SeenRows)
+	}
+}
+
+// The four numbers the health page is for, each moved by the thing it counts.
+// A tracker being silently dropped is the failure mode people take weeks to
+// notice, so every way guard drops one has to reach a number somebody can look
+// at.
+func TestAnalyticsHealthCountsWhatWasThrownAway(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+	store.AnalyticsOpened()
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	if err := store.addAnalyticsAt(beacon("a1", "/pricing", actionPageView, "signup_click"), at); err != nil {
+		t.Fatal(err)
+	}
+	store.AnalyticsRejected()
+	store.AnalyticsRejected()
+
+	health := analyticsHealth(t, store)
+	if !health.Enabled {
+		t.Error("the door was mounted and the health says analytics is off")
+	}
+	if health.Rejected != 2 {
+		t.Errorf("two refused beacons were counted as %d", health.Rejected)
+	}
+	// page_view is the Views column rather than a discovery, so one action is
+	// the honest answer to how many names the grid could grow a column for.
+	if health.Actions != 1 {
+		t.Errorf("one discovered name beside page_view was counted as %d", health.Actions)
+	}
+	if health.SeenRows != 2 {
+		t.Errorf("one session doing two things on one path left %d seen rows", health.SeenRows)
+	}
+	if !health.LastEvent.Equal(at) {
+		t.Errorf("the last event landed at %s, want %s", health.LastEvent, at)
+	}
+}
+
+// The ceilings are the other half of the same question, and they are counted
+// where they are enforced rather than beside the door — a name past discovery
+// is refused inside a beacon guard otherwise accepted, so the two numbers can
+// never be one.
+func TestAnalyticsHealthCarriesTheCeilings(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for i := range maxAnalyticsPaths {
+		if err := store.addAnalyticsAt(beacon("a1", fmt.Sprintf("/p/%d", i), actionPageView), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < maxAnalyticsActions; i += model.MaxBeaconEvents {
+		b := model.Beacon{Session: "a1", Path: "/p/0"}
+		for j := range model.MaxBeaconEvents {
+			b.Events = append(b.Events, model.TrackEvent{Name: fmt.Sprintf("act_%d", i+j)})
+		}
+		if err := store.addAnalyticsAt(b, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One beacon past both: a path the day has no room for, carrying a name
+	// discovery has no room for.
+	if err := store.addAnalyticsAt(beacon("b2", "/search/one", actionPageView, "one_too_many"), at); err != nil {
+		t.Fatal(err)
+	}
+
+	health := analyticsHealth(t, store)
+	if health.PathsCapped != 1 {
+		t.Errorf("one beacon past the path ceiling was counted as %d", health.PathsCapped)
+	}
+	if health.ActionsRefused != 1 {
+		t.Errorf("one name past the discovery ceiling was counted as %d", health.ActionsRefused)
+	}
+	if health.Actions != maxAnalyticsActions {
+		t.Errorf("discovery holds %d names, want the ceiling", health.Actions)
+	}
+	if health.Rejected != 0 {
+		t.Errorf("a beacon the door accepted was counted as %d rejections", health.Rejected)
 	}
 }

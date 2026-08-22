@@ -205,23 +205,77 @@ const (
 // path a leading slash and this has none.
 const pathOther = "(other)"
 
-// analyticsCaps counts what the ceilings threw away.
+// analyticsCounters is what guard threw away, and whether the door is open at
+// all.
 //
 // In memory, so the numbers are "since this process started" — a refused action
-// name is the one thing guard deliberately never writes down, so there is
-// nowhere else it could be counted from. They are numbers on a page rather than
-// a log line because a tracker firing an action that silently does not exist is
-// the failure mode people take weeks to notice.
-type analyticsCaps struct {
+// name and a refused beacon are the two things guard deliberately never writes
+// down, so there is nowhere else they could be counted from. They are numbers
+// on a page rather than a log line because a tracker firing an action that
+// silently does not exist is the failure mode people take weeks to notice.
+type analyticsCounters struct {
+	open           atomic.Bool
+	rejected       atomic.Int64
 	pathsCapped    atomic.Int64
 	actionsRefused atomic.Int64
 }
 
-// AnalyticsCaps reports what the ceilings refused since guard started: beacons
-// whose path rolled into (other), and events whose name arrived after discovery
-// was full.
-func (s *Store) AnalyticsCaps() (pathsCapped, actionsRefused int64) {
-	return s.analytics.pathsCapped.Load(), s.analytics.actionsRefused.Load()
+// AnalyticsOpened records that the browser door was mounted, which is what
+// "analytics is on" means.
+//
+// It is told rather than asked because the intake is the only thing that knows:
+// it is mounted exactly when GUARD_RUM_ORIGINS named an origin, and a health
+// endpoint reading that variable for itself would be a second answer to a
+// question this process has already decided once.
+func (s *Store) AnalyticsOpened() { s.analytics.open.Store(true) }
+
+// AnalyticsRejected records a beacon the door refused as malformed.
+//
+// Counted here rather than at the door because the count outlives the request
+// and belongs beside the two the ceilings keep — all three are the same
+// question, which is what a tracker is sending that guard is not storing.
+func (s *Store) AnalyticsRejected() { s.analytics.rejected.Add(1) }
+
+// AnalyticsHealth is the answer to "is the tracker working", and most of it is
+// what guard threw away: a beacon the door refused, a name that arrived after
+// discovery was full, a path that rolled into (other).
+//
+// Nothing here is a rate or a status. A tracker being silently dropped is the
+// failure mode people take weeks to notice, so the counts are shown as counts
+// and somebody reading the page decides what a hundred rejections means.
+func (s *Store) AnalyticsHealth() (model.AnalyticsHealth, error) {
+	health := model.AnalyticsHealth{
+		Enabled:        s.analytics.open.Load(),
+		Rejected:       s.analytics.rejected.Load(),
+		ActionsRefused: s.analytics.actionsRefused.Load(),
+		PathsCapped:    s.analytics.pathsCapped.Load(),
+	}
+	if err := s.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_actions`).Scan(&health.Actions); err != nil {
+		return model.AnalyticsHealth{}, fmt.Errorf("count analytics actions: %w", err)
+	}
+	// The one table that grows with traffic rather than with content, counted
+	// in full rather than estimated — the risk it carries is that nobody looks
+	// until it is already large, and a number costs one scan of a page nobody
+	// polls.
+	if err := s.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_seen`).Scan(&health.SeenRows); err != nil {
+		return model.AnalyticsHealth{}, fmt.Errorf("count analytics sessions seen: %w", err)
+	}
+	// Guard's clock, not the browser's: this number answers "when did anything
+	// last arrive", and a visitor whose machine is a day fast would otherwise
+	// make it say tomorrow.
+	//
+	// Read from the raw feed, which the telemetry retention sweeps — so a
+	// tracker that stopped longer ago than that says nothing at all rather than
+	// a date. Nothing is the honest answer: what guard has is no event in the
+	// window it keeps.
+	var last int64
+	if err := s.rdb.QueryRow(`SELECT COALESCE(MAX(received_at_ns), 0) FROM analytics_events`).Scan(&last); err != nil {
+		return model.AnalyticsHealth{}, fmt.Errorf("read the last analytics event: %w", err)
+	}
+	if last > 0 {
+		health.LastEvent = time.Unix(0, last).UTC()
+	}
+	return health, nil
 }
 
 // AddAnalytics folds one beacon into the tables that count: the raw row
