@@ -203,7 +203,7 @@ convention, not a choice.
 and `docs/shadcn-templ.md` in full. They exist because this is the part that
 fails silently.
 
-- [ ] **D1 — the glyph**
+- [x] **D1 — the glyph**
   - Depends: C4
   - Files: `client/ui/icons.go`
   - Do: one row in the `Icons` registry named `analytics`. Inner paths only;

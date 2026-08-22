@@ -34,8 +34,12 @@ var Icons = map[string]IconDef{
 	"logs":     {Body: `<path d="M5 4h14v16H5z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/>`},
 	"traces":   {Body: `<circle cx="6" cy="6" r="2"/><circle cx="18" cy="12" r="2"/><circle cx="8" cy="18" r="2"/><path d="M8 6h6a2 2 0 0 1 2 2v2"/><path d="M16 14v0a2 2 0 0 1-2 2h-4"/>`},
 	"metrics":  {Body: `<path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16v-5"/><path d="M13 16V8"/><path d="M18 16v-3"/>`},
-	"cluster":  {Body: `<rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="5" rx="1.5"/><rect x="14" y="15" width="7" height="5" rx="1.5"/>`},
-	"deploys":  {Body: `<path d="M12 3l3 4h-2v6h-2V7H9z"/><path d="M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/><path d="M8 14h8"/>`},
+	// Drawn on the same axes as metrics, because it is the same kind of
+	// picture — but a line rising to an arrow rather than bars, since what this
+	// page answers is which way the numbers went and not what they were.
+	"analytics":  {Body: `<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 16 3.5-3.5 2.5 2.5L19 9"/><path d="M15 9h4v4"/>`},
+	"cluster":    {Body: `<rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="5" rx="1.5"/><rect x="14" y="15" width="7" height="5" rx="1.5"/>`},
+	"deploys":    {Body: `<path d="M12 3l3 4h-2v6h-2V7H9z"/><path d="M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/><path d="M8 14h8"/>`},
 	"registries": {Body: `<path d="M3 8l9-4 9 4-9 4z"/><path d="M3 12l9 4 9-4"/><path d="M3 16l9 4 9-4"/>`},
 	"storage":    {Body: `<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6"/><path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/>`},
 	"secrets":    {Body: `<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v2"/>`},

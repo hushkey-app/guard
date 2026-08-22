@@ -163,3 +163,18 @@ on its own. `ralph.sh` greps for it.
   preview: it names nothing and counts refusals. `Enabled` is the load-bearing
   field for D3 — the page's "analytics is off" state must come from a value,
   since a configured tracker nobody has visited yet draws the same empty grid.
+
+## D1 — the glyph, on the same axes as metrics
+- commit: (this one)
+- gates: build ok / howl ok / make test ok
+- notes: one row in `Icons`, `analytics` — a line rising to an arrow over the
+  same two axes `metrics` draws, because they are the same kind of picture and
+  the interior is what separates them at `size-4`. Shipped `client/ui/icons_test.go`
+  (the folder had no test): a missing glyph is silent twice over — `Icon`
+  renders nothing and `NavIcon` falls back to `dot` — so the names asked for by
+  hand are pinned, and every row is checked against the house weight. It lists
+  `analytics` beside `navIcons` because the glyph lands a task before its
+  sidebar row does; D2 makes that entry the sidebar's own. No Tailwind class
+  changed, so no `make css`. `client/public/views.wasm` is dirty from `make
+  test`'s generate step and was dirty before this branch — left out, as every
+  commit here has.
