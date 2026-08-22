@@ -8,16 +8,9 @@ import (
 // A name the registry does not know renders nothing, and a nav route with no
 // entry falls back to a dot. Both are the right answer in a browser and the
 // wrong one in a build: the row that lost its glyph looks like somebody's
-// decision. So the names the interface asks for by hand are pinned here.
-//
-// "analytics" is listed beside the sidebar's own because the glyph lands
-// before the row that uses it does.
+// decision. So every name the sidebar asks for is pinned here.
 func TestNamedGlyphsAreRegistered(t *testing.T) {
-	names := []string{"analytics"}
 	for _, name := range navIcons {
-		names = append(names, name)
-	}
-	for _, name := range names {
 		if _, ok := icon(name); !ok {
 			t.Errorf("%q is asked for by name and is not in the registry", name)
 		}

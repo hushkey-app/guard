@@ -12,16 +12,16 @@ type NavGroup struct {
 }
 
 // navOrder is the sidebar's running order and its group headings: first the
-// pages you keep open, then the three OTLP signals you go digging through, then
-// the things the cluster is made of. Only the order and the headings live here
-// — row labels still come from the route table, so renaming a page renames it
-// in the sidebar.
+// pages you keep open, then the signals you go digging through — the three that
+// arrive over OTLP and the one the browser sends — then the things the cluster
+// is made of. Only the order and the headings live here — row labels still come
+// from the route table, so renaming a page renames it in the sidebar.
 var navOrder = []struct {
 	Label    string
 	Patterns []string
 }{
 	{"Watch", []string{"/", "/views"}},
-	{"Signals", []string{"/logs", "/traces", "/metrics"}},
+	{"Signals", []string{"/logs", "/traces", "/metrics", "/analytics"}},
 	{"Infrastructure", []string{"/cluster", "/deploys", "/registries", "/storage", "/secrets"}},
 }
 
@@ -38,6 +38,7 @@ var navIcons = map[string]string{
 	"/logs":       "logs",
 	"/traces":     "traces",
 	"/metrics":    "metrics",
+	"/analytics":  "analytics",
 	"/cluster":    "cluster",
 	"/deploys":    "deploys",
 	"/registries": "registries",
