@@ -16,3 +16,16 @@ Nobody is reading this while the loop runs. It is the handover.
   — the same `preparePathRules` the save runs, so the dialog cannot describe
   something the press will not do. The error is how a pattern that will not
   compile is reported.
+
+- **A6** — the strip's session count has no source but `analytics_seen`: the
+  rollup is keyed per path, so summing it counts one visit once per page and
+  views-per-session would read ~1.0 forever. A7 purges seen behind the rollup
+  (7 days against 90), so on those defaults the strip goes quiet for any window
+  older than a week while Views stays complete — the ratios would read as
+  nothing rather than as a number, which is the silence guard prefers but is
+  still a strip that cannot answer "versus last month". Built it per the plan
+  and said so in the code. The two ways out, for A7/C1/D5 to choose between:
+  hold the seen window at the rollup window (the table that grows with traffic
+  grows thirteen times), or write one site-wide row per day at ingest (a
+  sentinel path like `(other)`, which the grid read and the backup then have to
+  know about).

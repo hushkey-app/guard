@@ -85,7 +85,7 @@ it is testable with no browser and no HTTP.
     changing a rule does not rewrite history.
   - Verify: `go test ./internal/telemetry/ -run Analytics`
 
-- [ ] **A6 — the read**
+- [x] **A6 — the read**
   - Depends: A5
   - Files: `internal/telemetry/analytics.go`, `internal/telemetry/analytics_test.go`
   - Do: `Store.AnalyticsPaths(from, to time.Time) ([]model.PathRow, error)` —

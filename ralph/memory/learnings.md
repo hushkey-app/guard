@@ -33,3 +33,6 @@ trap **there**, and put a cross-cutting one here.
 - A glob pattern is validated by probing it — `path.Match(pattern, "/")` returns
   `ErrBadPattern` for a malformed one — which is how a rule that could never
   fire is refused while somebody is still typing it.
+- `analytics_rollup` cannot answer a site-wide session count. It is keyed
+  (day, path, action), so summing sessions across paths counts one visit once
+  per page it read; only `analytics_seen` knows the difference.

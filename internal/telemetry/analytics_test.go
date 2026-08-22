@@ -699,3 +699,250 @@ func TestAnalyticsPathRulePreviewProvesARuleBeforeItIsStored(t *testing.T) {
 		t.Fatal("the preview accepted a pattern the save would refuse")
 	}
 }
+
+// pathRow finds one line of the grid, because a test that indexed into the
+// slice would be asserting the ordering by accident everywhere.
+func pathRow(t *testing.T, grid []model.PathRow, path string) model.PathRow {
+	t.Helper()
+	for _, row := range grid {
+		if row.Path == path {
+			return row
+		}
+	}
+	t.Fatalf("the grid has no row for %s", path)
+	return model.PathRow{}
+}
+
+// The grid is the feature, and the rate is the only reason a column is on it:
+// the sessions that did the action over the sessions that saw the page. So the
+// test builds a page three sessions saw and two of them pressed, and asserts
+// the arithmetic rather than the counts it is made of.
+func TestAnalyticsPathsRatesAgainstTheSessionsThatSawThePage(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for _, b := range []model.Beacon{
+		beacon("a1", "/pricing", "page_view", "signup_click"),
+		beacon("b2", "/pricing", "page_view"),
+		beacon("c3", "/pricing", "page_view", "signup_click"),
+	} {
+		if err := store.addAnalyticsAt(b, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	grid, err := store.AnalyticsPaths(at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := pathRow(t, grid, "/pricing")
+	if row.Views != 3 || row.Sessions != 3 {
+		t.Fatalf("the page was %d views over %d sessions", row.Views, row.Sessions)
+	}
+	cell := row.Actions["signup_click"]
+	if cell.Events != 2 || cell.Sessions != 2 {
+		t.Fatalf("the action was %d events over %d sessions", cell.Events, cell.Sessions)
+	}
+	if cell.Rate != 2.0/3.0 {
+		t.Fatalf("two sessions of three converted at %v", cell.Rate)
+	}
+	// page_view is the Views column. A cell for it would draw every page in the
+	// product converting at 100% in a column of its own.
+	if _, drawn := row.Actions[actionPageView]; drawn {
+		t.Fatal("page_view came back as a column")
+	}
+}
+
+// The rule this feature would be least forgiven for breaking: a dash, never a
+// zero. An action that never happened on a path has no cell at all, so the
+// renderer cannot draw 0.0% beside a page that has no button for it.
+func TestAnalyticsPathsLeaveANeverSeenActionOut(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	if err := store.addAnalyticsAt(beacon("a1", "/pricing", "page_view", "signup_click"), at); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.addAnalyticsAt(beacon("a1", "/docs", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+
+	grid, err := store.AnalyticsPaths(at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := pathRow(t, grid, "/docs")
+	if cell, drawn := docs.Actions["signup_click"]; drawn {
+		t.Fatalf("a page with no signup button carries a cell of %d at %v", cell.Events, cell.Rate)
+	}
+	if len(docs.Actions) != 0 {
+		t.Fatalf("a page nobody pressed anything on carries %d cells", len(docs.Actions))
+	}
+}
+
+// Ordered by views, because the grid is read from the top and the page nobody
+// visits is not the one somebody opened it for. Ties break on the path so a
+// background refresh cannot reshuffle the rows under a reader.
+func TestAnalyticsPathsAreOrderedByViews(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	for i := range 3 {
+		if err := store.addAnalyticsAt(beacon(fmt.Sprintf("s%d", i), "/", "page_view"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.addAnalyticsAt(beacon("a1", "/pricing", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.addAnalyticsAt(beacon("a1", "/docs", "page_view"), at); err != nil {
+		t.Fatal(err)
+	}
+
+	grid, err := store.AnalyticsPaths(at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/", "/docs", "/pricing"}
+	if len(grid) != len(want) {
+		t.Fatalf("the grid has %d rows", len(grid))
+	}
+	for i, path := range want {
+		if grid[i].Path != path {
+			t.Fatalf("row %d is %s, not %s", i, grid[i].Path, path)
+		}
+	}
+}
+
+// A window is whole UTC days at both ends — the rollup has no finer grain —
+// and both ends are included, or the page somebody is watching while they
+// instrument it draws nothing.
+func TestAnalyticsPathsCountOnlyTheWindow(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	monday := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	tuesday := monday.Add(24 * time.Hour)
+	wednesday := monday.Add(48 * time.Hour)
+	for _, day := range []time.Time{monday, tuesday, wednesday} {
+		if err := store.addAnalyticsAt(beacon("a1", "/pricing", "page_view", "signup_click"), day); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	grid, err := store.AnalyticsPaths(monday, tuesday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := pathRow(t, grid, "/pricing")
+	// Two days of one returning session is two sessions, which is the unit the
+	// rollup is keyed in — and the same unit both halves of the rate use, so
+	// the visit that came back cannot move the percentage.
+	if row.Views != 2 || row.Sessions != 2 {
+		t.Fatalf("two days of the window came back as %d views over %d sessions", row.Views, row.Sessions)
+	}
+	if cell := row.Actions["signup_click"]; cell.Events != 2 || cell.Rate != 1 {
+		t.Fatalf("the action came back as %d events at %v", cell.Events, cell.Rate)
+	}
+}
+
+// A path can carry an action and no page view — a tracker firing on a route the
+// page view never reached. The counts are real and are kept; the rate is not,
+// because there is no denominator, and 0% would be a conversion figure guard
+// invented.
+func TestAnalyticsPathsHaveNoRateWithoutAPageView(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	if err := store.addAnalyticsAt(beacon("a1", "/pricing", "signup_click"), at); err != nil {
+		t.Fatal(err)
+	}
+
+	grid, err := store.AnalyticsPaths(at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := pathRow(t, grid, "/pricing")
+	if row.Views != 0 || row.Sessions != 0 {
+		t.Fatalf("a path nobody viewed reads %d views over %d sessions", row.Views, row.Sessions)
+	}
+	cell := row.Actions["signup_click"]
+	if cell.Events != 1 || cell.Sessions != 1 {
+		t.Fatalf("the action that did happen came back as %d events over %d sessions", cell.Events, cell.Sessions)
+	}
+	if cell.Rate != 0 {
+		t.Fatalf("a rate of %v was computed against no sessions", cell.Rate)
+	}
+}
+
+// The strip is two windows of equal length, because a number on its own is not
+// a measurement. Sessions are counted site-wide rather than summed per path —
+// one visit reading three pages is one session, and the ratio is the whole
+// point of the row.
+func TestAnalyticsSummaryComparesTheWindowBeforeIt(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	monday := time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC)
+	tuesday := monday.Add(24 * time.Hour)
+	// The window: one session reading two pages and pressing once, and a second
+	// session reading one — two sessions, three views, one action.
+	if err := store.addAnalyticsAt(beacon("a1", "/", "page_view"), monday); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.addAnalyticsAt(beacon("a1", "/pricing", "page_view", "signup_click"), monday); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.addAnalyticsAt(beacon("b2", "/", "page_view"), tuesday); err != nil {
+		t.Fatal(err)
+	}
+	// The window before it, of equal length: two days back, one session, one view.
+	if err := store.addAnalyticsAt(beacon("c3", "/", "page_view"), monday.Add(-48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := store.AnalyticsSummary(monday, tuesday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Window.Sessions != 2 || summary.Window.Views != 3 {
+		t.Fatalf("the window is %d sessions over %d views", summary.Window.Sessions, summary.Window.Views)
+	}
+	if summary.Window.ViewsPerSession != 1.5 || summary.Window.ActionsPerSession != 0.5 {
+		t.Fatalf("the ratios are %v views and %v actions per session",
+			summary.Window.ViewsPerSession, summary.Window.ActionsPerSession)
+	}
+	if summary.Previous.Sessions != 1 || summary.Previous.Views != 1 {
+		t.Fatalf("the previous window is %d sessions over %d views", summary.Previous.Sessions, summary.Previous.Views)
+	}
+	if summary.Previous.ActionsPerSession != 0 {
+		t.Fatalf("a window with no actions reads %v actions per session", summary.Previous.ActionsPerSession)
+	}
+}
+
+// An empty window is silence rather than zero, and a ratio over no sessions is
+// the arithmetic that would otherwise produce a number nobody measured.
+func TestAnalyticsSummaryIsSilentOnAnEmptyWindow(t *testing.T) {
+	store := NewStore(100)
+	t.Cleanup(func() { store.Close() })
+
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	summary, err := store.AnalyticsSummary(at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Window != (model.AnalyticsWindow{}) || summary.Previous != (model.AnalyticsWindow{}) {
+		t.Fatalf("a window nothing arrived in reads %+v", summary)
+	}
+	grid, err := store.AnalyticsPaths(at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(grid) != 0 {
+		t.Fatalf("a window nothing arrived in has %d rows", len(grid))
+	}
+}

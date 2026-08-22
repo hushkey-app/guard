@@ -52,3 +52,17 @@ on its own. `ralph.sh` greps for it.
   `rules.post` endpoint wants; a rule has no history to keep, unlike a command.
   Matching is `path.Match`, so `*` stops at `/`. Both halves are lowercased,
   because a pattern with a capital could never match a normalised path.
+
+## A6 — the grid and the strip, read from the rollup
+- commit: (this one)
+- gates: build ok / howl ok / make test ok
+- notes: `AnalyticsPaths` carries **every** action per path, not just the pinned
+  ones — D7's fold needs them and a second read would be a second answer. Rate
+  is computed after the whole path is read (a GROUP BY answers in any order, and
+  most names sort before `page_view`); no page_view row means no denominator, so
+  the cell keeps its counts at rate 0 and the row's own zero sessions is what
+  says so. **The strip's Sessions can only come from `analytics_seen`** — the
+  rollup is per path, so summing it counts one visit once per page — which means
+  A7's seen window bounds how far back the strip can count. See questions.md.
+  `model.AnalyticsWindow`/`AnalyticsSummary` are new in `model/analytics.go`,
+  outside A6's Files list, because a type the API returns must live there.

@@ -213,6 +213,32 @@ type PathRow struct {
 	Actions  map[string]ActionCell `json:"actions,omitempty"`
 }
 
+// An AnalyticsWindow is the strip's four numbers over one span of days.
+//
+// The ratios are carried rather than left to the renderer because the
+// denominator is the thing that is easy to get wrong: views per session is
+// views over *sessions*, not over page rows, and a page computing it from two
+// numbers it happens to have on screen would be a second answer to the
+// question this type exists to answer once.
+type AnalyticsWindow struct {
+	Sessions          int64   `json:"sessions"`
+	Views             int64   `json:"views"`
+	ViewsPerSession   float64 `json:"views_per_session"`
+	ActionsPerSession float64 `json:"actions_per_session"`
+}
+
+// An AnalyticsSummary is the strip: the window somebody asked for, and the one
+// of equal length immediately before it.
+//
+// Both, always, because a number on its own is not a measurement — "8,102
+// sessions" is only worth reading beside what it was last week, and a page that
+// had to ask twice to say so would be a page drawing two windows that were
+// computed a second apart.
+type AnalyticsSummary struct {
+	Window   AnalyticsWindow `json:"window"`
+	Previous AnalyticsWindow `json:"previous"`
+}
+
 // An Action is a discovered name, and whether somebody decided it mattered.
 //
 // Discovery is the machine's half — names are never declared in advance,

@@ -31,6 +31,7 @@ import (
 	// Imported as glob because Match is the only thing wanted from it and
 	// `path` is what half the variables in this file are called.
 	glob "path"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -520,4 +521,169 @@ func applyPathRules(rules []model.PathRule, path string) string {
 		}
 	}
 	return path
+}
+
+// The read: the grid, and the strip above it.
+//
+// Both are answered from `analytics_rollup` rather than from the raw feed,
+// because the raw feed is swept by the telemetry retention and "versus last
+// month" is the question analytics is actually asked. A window is therefore
+// whole UTC days at both ends — the rollup has no finer grain, and an hour
+// somebody typed would be silently rounded into one anyway.
+
+// analyticsDays is the span of whole UTC days a window of moments covers, both
+// ends included.
+//
+// Inclusive on purpose: a window ending now has to contain today, or the page
+// somebody is watching while they instrument it draws nothing.
+func analyticsDays(from, to time.Time) (first, last int64) {
+	first, last = epochDay(from), epochDay(to)
+	if first > last {
+		first, last = last, first
+	}
+	return first, last
+}
+
+// AnalyticsPaths is the grid: one row per path over the window, ordered by
+// views, with a cell per action that happened on it.
+//
+// The rate is the only reason a column exists — the sessions that did the
+// action over the sessions that saw the page — so both halves are summed the
+// same way and the ratio is between two numbers of the same kind. Summed across
+// days means a session that came back on two days counts twice, which is the
+// unit the rollup is keyed in and the unit the strip uses: what cannot be
+// recovered once `analytics_seen` is purged is exactly what would make it
+// anything else.
+//
+// Every action is carried, not just the pinned ones. The columns are the pinned
+// ones, but a path row opens onto everything that happened on it, and a second
+// read for the fold would be a second answer to what happened on a page.
+func (s *Store) AnalyticsPaths(from, to time.Time) ([]model.PathRow, error) {
+	first, last := analyticsDays(from, to)
+	rows, err := s.rdb.Query(`SELECT path, action, SUM(events), SUM(sessions)
+FROM analytics_rollup WHERE day BETWEEN ? AND ? GROUP BY path, action`, first, last)
+	if err != nil {
+		return nil, fmt.Errorf("read analytics paths: %w", err)
+	}
+	defer rows.Close()
+
+	index := make(map[string]*model.PathRow)
+	var found []*model.PathRow
+	for rows.Next() {
+		var path, action string
+		var events, sessions int64
+		if err := rows.Scan(&path, &action, &events, &sessions); err != nil {
+			return nil, err
+		}
+		row := index[path]
+		if row == nil {
+			row = &model.PathRow{Path: path}
+			index[path] = row
+			found = append(found, row)
+		}
+		// page_view is the Views column rather than a cell. It is counted like
+		// any other action and is never offered as one, so a grid that carried
+		// it would draw every page converting at 100% in a column of its own.
+		if action == actionPageView {
+			row.Views, row.Sessions = events, sessions
+			continue
+		}
+		if row.Actions == nil {
+			row.Actions = make(map[string]model.ActionCell)
+		}
+		row.Actions[action] = model.ActionCell{Events: events, Sessions: sessions}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]model.PathRow, 0, len(found))
+	for _, row := range found {
+		for name, cell := range row.Actions {
+			// The denominator is only known once the whole path has been read —
+			// a group by answers in whatever order it likes, and half the action
+			// names in an alphabet sort before `page_view`.
+			//
+			// No denominator is no rate, and the cell keeps its counts: a path
+			// with actions and no page views is a real thing (a tracker firing
+			// on a route the page view never reached), and inventing 0% for it
+			// would be a conversion figure guard made up. The row's own zero
+			// sessions is what says so.
+			if row.Sessions > 0 {
+				cell.Rate = float64(cell.Sessions) / float64(row.Sessions)
+				row.Actions[name] = cell
+			}
+		}
+		out = append(out, *row)
+	}
+	// Ordered here rather than in SQL because the ordering key is the page_view
+	// row's events, which is one row of the group the sort is over. Ties break
+	// on the path so the grid does not reshuffle under somebody reading it.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Views != out[j].Views {
+			return out[i].Views > out[j].Views
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out, nil
+}
+
+// AnalyticsSummary is the strip: the window, and the one of equal length
+// immediately before it.
+//
+// The previous window is computed here rather than asked for twice, because two
+// windows that do not line up are a change figure nobody can check — and equal
+// length is the only comparison that means anything.
+func (s *Store) AnalyticsSummary(from, to time.Time) (model.AnalyticsSummary, error) {
+	first, last := analyticsDays(from, to)
+	span := last - first + 1
+	window, err := s.analyticsWindow(first, last)
+	if err != nil {
+		return model.AnalyticsSummary{}, err
+	}
+	previous, err := s.analyticsWindow(first-span, first-1)
+	if err != nil {
+		return model.AnalyticsSummary{}, err
+	}
+	return model.AnalyticsSummary{Window: window, Previous: previous}, nil
+}
+
+// analyticsWindow is the four numbers over one span of days.
+//
+// Views and actions are sums over the rollup, which is exact for as long as the
+// rollup is kept. Sessions come from `analytics_seen`, because that is the only
+// table that knows a session saw three pages rather than three sessions seeing
+// one — summing the rollup's per-path sessions would count a visit once per
+// page and make views per session read 1.0 forever.
+//
+// That is the number this window is bounded by: the seen rows are purged behind
+// the rollup, so the strip can only count sessions as far back as they go.
+func (s *Store) analyticsWindow(first, last int64) (model.AnalyticsWindow, error) {
+	var out model.AnalyticsWindow
+	var actions int64
+	err := s.rdb.QueryRow(`SELECT
+  COALESCE(SUM(CASE WHEN action = ? THEN events END), 0),
+  COALESCE(SUM(CASE WHEN action <> ? THEN events END), 0)
+FROM analytics_rollup WHERE day BETWEEN ? AND ?`,
+		actionPageView, actionPageView, first, last).Scan(&out.Views, &actions)
+	if err != nil {
+		return model.AnalyticsWindow{}, fmt.Errorf("read analytics window: %w", err)
+	}
+	// Distinct per day and then added, which is the unit the rollup is keyed in:
+	// a session that came back tomorrow is tomorrow's session too, and counting
+	// it once over a month would be a denominator that shrinks the longer the
+	// window somebody picks.
+	err = s.rdb.QueryRow(`SELECT COALESCE(SUM(sessions), 0) FROM
+(SELECT COUNT(DISTINCT session) AS sessions FROM analytics_seen WHERE day BETWEEN ? AND ? GROUP BY day)`,
+		first, last).Scan(&out.Sessions)
+	if err != nil {
+		return model.AnalyticsWindow{}, fmt.Errorf("count analytics sessions: %w", err)
+	}
+	// No sessions is no ratio. An empty window is silence rather than zero, and
+	// the two numbers above are what the page draws the dash from.
+	if out.Sessions > 0 {
+		out.ViewsPerSession = float64(out.Views) / float64(out.Sessions)
+		out.ActionsPerSession = float64(actions) / float64(out.Sessions)
+	}
+	return out, nil
 }
