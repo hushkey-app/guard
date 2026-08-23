@@ -78,7 +78,14 @@ func (h Handler) RegisterBrowser(mux *http.ServeMux, config Browser) {
 
 	mux.HandleFunc("POST /v1/rum/traces", h.browser(config, limiter, "traces"))
 	mux.HandleFunc("POST /v1/rum/logs", h.browser(config, limiter, "logs"))
-	// The preflight the browser sends before either of the above.
+	// What a person did, rather than what the page's code did. Guard's own
+	// JSON rather than OTLP (analytics.go says why), but the same door — so it
+	// is on when the other two are and gated by everything they are gated by.
+	mux.HandleFunc("POST /v1/rum/events", h.beacon(config, limiter))
+	// The tracker that posts to it, mounted on the same switch: a script that
+	// could only ever be refused is a script nobody should be able to embed.
+	mux.HandleFunc("GET /v1/rum/track.js", trackJS)
+	// The preflight the browser sends before any of the above.
 	mux.HandleFunc("OPTIONS /v1/rum/{signal}", func(w http.ResponseWriter, r *http.Request) {
 		if !cors(w, r, config.Origins) {
 			http.Error(w, "origin not allowed", http.StatusForbidden)

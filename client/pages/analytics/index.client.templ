@@ -1,0 +1,282 @@
+// Package analytics is the tracker's page: one row per URL, one column per
+// action somebody decided mattered.
+//
+// It ships three bands and shows exactly one of them, and which one is a value
+// rather than a guess. `GET /api/analytics/health` answers `enabled` — an
+// origin is allowed, so the door is open — and `last_event`; off, configured
+// but never visited, and live are three different sentences, and a configured
+// tracker nobody has been to yet draws the same empty grid as a door that was
+// never opened.
+//
+// That decision cannot be made here. This is a .client route, so this Go code
+// also runs in wasm, where there is no request and no environment to read — and
+// the band that says "analytics is off" is exactly the one that must never be
+// shown to somebody whose tracker is working. So all three start hidden and
+// client/public/analytics.js unhides the one health named.
+package analytics
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/alert"
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/hushkey-app/guard/client/lifecycle"
+	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
+)
+
+templ Head() {
+	<title>Analytics — Guard</title>
+	<meta name="description" content="What a person did: page views, the actions they pressed, and the session that ties the two together."/>
+}
+
+templ Page() {
+	<section data-analytics-page class="space-y-8">
+		@ui.PageHeading("What people did", "Analytics",
+			"The URL is the group and an action is a column. Guard counts sessions — not users, not visitors, not people — and one row is one page of your product.")
+		@analyticsOff()
+		@analyticsInstall()
+		@analyticsLive()
+		@components.AnalyticsStat()
+		@components.AnalyticsGrid()
+		@components.AnalyticsFold()
+		<!-- The two editors and the typed confirmation, at the end of the
+		     document: they are overlays, so where they sit in the markup is not
+		     where they appear, and putting them here keeps the reading order the
+		     page's. -->
+		@components.AnalyticsControls()
+		@components.ConfirmDialog()
+	</section>
+}
+
+// analyticsOff is the unconfigured answer, and it names the variable because
+// "analytics is off" without it is a dead end: the reader's next question is
+// always which one, and guard is the only thing that knows.
+templ analyticsOff() {
+	<div data-analytics-off hidden>
+		@alert.Alert() {
+			@alert.Title() {
+				Analytics is off
+			}
+			@alert.Description() {
+				<p>
+					The browser door opens for the origins <code class="font-mono">GUARD_RUM_ORIGINS</code>
+					names, and nothing else — configured is on, unconfigured is off, the same rule
+					signing in keeps. Set it to the origins your site is served from and restart;
+					the tracker, this page and <code class="font-mono">/v1/rum/traces</code> all come
+					up together, because they are one door.
+				</p>
+				<div class="mt-3">
+					@button.Button(button.Props{Href: "/settings/config", Variant: button.VariantOutline, Size: button.SizeSm}) {
+						Settings → Configuration
+					}
+				</div>
+			}
+		}
+	</div>
+}
+
+// analyticsInstall is the whole page until the first event arrives, and then it
+// is gone. Nothing to configure and nothing to install on guard's side: the
+// script is served from the same binary the beacons post back to.
+//
+// The instructions moved into a dialog. They were four paragraphs and two notes
+// sitting above a page that would have data on it in a minute — read once by
+// whoever set it up, and then in the way forever. The tag itself stays out here,
+// because it is the one thing somebody has come to copy.
+templ analyticsInstall() {
+	<div data-analytics-install hidden class="space-y-4">
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Install
+				}
+				@card.Description() {
+					One tag, no build step, nothing to install. Guard is listening and has heard nothing yet.
+				}
+			}
+			@card.Content(card.ContentProps{Class: "space-y-4"}) {
+				<!-- Filled in the browser from location.origin. Guard behind a
+				     proxy has no idea what URL somebody reached it on, so the
+				     only place this answer is right is the tab it is read in. -->
+				<div class="flex items-center gap-2">
+					<code data-analytics-script class="min-w-0 flex-1 truncate rounded bg-muted/60 px-3 py-2 font-mono text-xs"></code>
+					@button.Button(button.Props{
+						Variant:    button.VariantOutline,
+						Size:       button.SizeSm,
+						Attributes: templ.Attributes{"data-analytics-copy": true},
+					}) {
+						Copy
+					}
+				</div>
+				@AnalyticsHowTo("analytics-howto-install")
+			}
+		}
+	</div>
+}
+
+// AnalyticsHowTo is the whole of "how do I send data to this page", in tabs.
+//
+// It appears twice — on the install card and on the live page — because the
+// question does not stop being asked once the first beacon arrives: the second
+// one is "how do I track a button", and by then the install card is gone.
+//
+// Hence the id argument. Both bands are in the document at once with one of
+// them hidden, and two copies sharing an id would mean the second trigger's
+// `for` pointed at the first one's checkbox — a button that opens a dialog
+// inside a `hidden` band, which is a button that does nothing.
+templ AnalyticsHowTo(id string) {
+	@components.HowTo(id, "Send data to Analytics", "How to use", []components.HowToTab{
+		{Label: "1 · The tag", Body: howToTag()},
+		{Label: "2 · Actions", Body: howToActions()},
+		{Label: "3 · Origins", Body: howToOrigins()},
+		{Label: "4 · Relay", Body: howToRelay()},
+	})
+}
+
+templ howToTag() {
+	<p>Put this in your page, once, anywhere in the document:</p>
+	<pre data-analytics-script-copy class="overflow-x-auto rounded bg-muted/60 p-3 font-mono text-xs text-foreground"></pre>
+	<p>
+		It fires <code class="font-mono">page_view</code> on load and on every
+		<code class="font-mono">pushState</code>, so a single-page app needs no second call.
+		Two kilobytes, no build step, no dependency.
+	</p>
+	<p>
+		Guard counts <strong class="text-foreground">sessions</strong> — 16 random bytes in
+		<code class="font-mono">sessionStorage</code>, thirty minutes of quiet ends one. No cookie and no
+		address, so one person in two tabs is two sessions. That is said out loud because a number
+		that is exactly what it says beats one that is approximately what somebody wanted.
+	</p>
+}
+
+templ howToActions() {
+	<p>An action is a column on this page. Name it in your markup:</p>
+	<pre class="overflow-x-auto rounded bg-muted/60 p-3 font-mono text-xs text-foreground">&lt;button data-guard-track="signup_click"&gt;Sign up&lt;/button&gt;</pre>
+	<p>
+		One delegated click listener fires the action named by the nearest
+		<code class="font-mono">data-guard-track</code> ancestor. The selector lives in your markup, where
+		whoever changes the markup can see it — a selector stored in guard reads zero on the day the
+		markup changes, and nothing tells you.
+	</p>
+	<p>For anything that is not a click:</p>
+	<!-- Through a Go string: a literal { in templ text opens an expression. -->
+	<pre class="overflow-x-auto rounded bg-muted/60 p-3 font-mono text-xs text-foreground">{ `guard.track("checkout_done", { plan: "pro" })` }</pre>
+	<p>
+		Names are discovered, never declared — the first beacon carrying one creates the action.
+		Pinning it as a column is done here, on this page.
+		<code class="font-mono">page_view</code> is reserved: it is the Views column.
+	</p>
+}
+
+templ howToOrigins() {
+	<p>
+		The browser intake is off until an origin is named. Set
+		<code class="font-mono">GUARD_RUM_ORIGINS</code> on
+		<a href="/settings/config" class="underline">Settings → Configuration</a>, then restart guard.
+	</p>
+	<p><strong class="text-foreground">Several domains are a comma-separated list:</strong></p>
+	<pre class="overflow-x-auto rounded bg-muted/60 p-3 font-mono text-xs text-foreground">https://example.com, https://www.example.com, https://app.example.com</pre>
+	<p>
+		An origin is scheme, host and port — no path and no trailing slash. They are matched exactly,
+		so <code class="font-mono">https://example.com</code> does <em>not</em> cover
+		<code class="font-mono">www.</code>, and <code class="font-mono">http://</code> does not cover
+		<code class="font-mono">https://</code>. Guard echoes back whichever one matched, so every
+		domain on the list works at once.
+	</p>
+	<p>
+		<code class="font-mono">*</code> allows any origin. It is there for a staging box and is the
+		wrong answer for anything published.
+	</p>
+}
+
+templ howToRelay() {
+	<p>
+		<strong class="text-foreground">The recommended deployment does not publish guard at all.</strong>
+		Every blocklist blocks a path called analytics, and a beacon to a hostname that is not yours is
+		the first thing an extension drops.
+	</p>
+	<p>
+		Serve the tag from the application you already expose and forward the beacons to guard inside
+		the VPC. The browser posts to your origin, nothing new is published, and guard needs no CORS at
+		all — a server-to-server post sends no <code class="font-mono">Origin</code>, and the intake
+		allows that for exactly this reason.
+	</p>
+	<pre class="overflow-x-auto rounded bg-muted/60 p-3 font-mono text-xs text-foreground">&lt;script defer src="/telemetry.js" data-endpoint="/api/telemetry/events"&gt;&lt;/script&gt;</pre>
+	<p>
+		Without <code class="font-mono">data-endpoint</code> the tracker derives it from its own
+		<code class="font-mono">src</code>. <code class="font-mono">docs/browser-telemetry.md</code> has
+		the handler to put behind it, including the <code class="font-mono">X-Forwarded-For</code> line
+		that keeps guard's rate limit counting visitors rather than counting your relay.
+	</p>
+}
+
+// analyticsLive is the page proper: the window, the strip, then the grid.
+//
+// The last two are empty containers because neither has a shape until something
+// is fetched — the grid's columns are the pinned actions, which is data, and a
+// header row written here would be a second list of them to keep in step.
+templ analyticsLive() {
+	<div data-analytics-live hidden class="space-y-6">
+		@card.Card(card.Props{Size: card.SizeSm}) {
+			@card.Content() {
+				<div class="flex flex-wrap items-end justify-between gap-3">
+					<!-- No "all retained" here, unlike every other window in the
+					     dashboard: the strip's second half is the window of equal
+					     length before this one, and all-time has no previous to
+					     be compared against. -->
+					@ui.Field("", "analytics-range", "Window") {
+						<span class="relative flex items-center">
+							<select
+								id="analytics-range"
+								data-analytics-range
+								class="cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground"
+							>
+								<option value="24h">Last 24 hours</option>
+								<option value="7d" selected>Last 7 days</option>
+								<option value="30d">Last 30 days</option>
+								<option value="90d">Last 90 days</option>
+							</select>
+							@ui.Chevron()
+						</span>
+					}
+					<div class="flex items-center gap-3">
+						<p class="text-xs text-muted-foreground">
+							Against the window of equal length before it. Days are UTC, because the rollup is.
+						</p>
+						<!-- The same dialog the install card offers. It belongs here too:
+						     the install card is gone once the first beacon lands, and the
+						     next question — "how do I track a button" — is asked after
+						     that, not before it. -->
+						@AnalyticsHowTo("analytics-howto-live")
+					</div>
+				</div>
+			}
+		}
+		<div data-analytics-strip class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"></div>
+		@card.Card(card.Props{Class: "gap-0 py-0"}) {
+			<!-- The two controls sit on the grid they change rather than on a
+			     settings page: the columns are the pinned actions and the rows are
+			     what a path rule made of the URLs, and both are decisions somebody
+			     makes while looking at what they did. -->
+			<div class="flex flex-wrap items-start justify-between gap-3 border-b border-border p-5">
+				<div>
+					<h2 class="font-medium">Actions per URL</h2>
+					<p class="mt-1 text-xs text-muted-foreground">
+						One row per path, sorted by any column. A cell is the sessions that did the action
+						over the sessions that saw the page; a dash means it was never seen there.
+					</p>
+				</div>
+				<div class="flex flex-wrap items-center gap-2">
+					@components.AnalyticsControlOpen("analytics-actions", "Actions")
+					@components.AnalyticsControlOpen("analytics-rules", "Path rules")
+				</div>
+			</div>
+			<div data-analytics-grid class="p-5">
+				@ui.Empty("Loading paths…")
+			</div>
+		}
+	</div>
+}
+
+func Mount()   { lifecycle.Mount("analytics") }
+func Unmount() { lifecycle.Unmount("analytics") }

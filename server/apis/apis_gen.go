@@ -4,34 +4,36 @@
 package apis
 
 import (
-	e0 "github.com/hushkey-app/guard/server/apis/backup"
-	e1 "github.com/hushkey-app/guard/server/apis/cloud"
-	e2 "github.com/hushkey-app/guard/server/apis/cloud/accounts"
-	e3 "github.com/hushkey-app/guard/server/apis/cloud/storage"
-	e4 "github.com/hushkey-app/guard/server/apis/cluster"
-	e5 "github.com/hushkey-app/guard/server/apis/cluster/env"
-	e6 "github.com/hushkey-app/guard/server/apis/cluster/monitors"
-	e7 "github.com/hushkey-app/guard/server/apis/cluster/provider"
-	e8 "github.com/hushkey-app/guard/server/apis/config"
-	e9 "github.com/hushkey-app/guard/server/apis/deploy"
-	e10 "github.com/hushkey-app/guard/server/apis/deploy/groups"
-	e11 "github.com/hushkey-app/guard/server/apis/deploy/runs"
-	e12 "github.com/hushkey-app/guard/server/apis/deploy/templates"
-	e13 "github.com/hushkey-app/guard/server/apis/events"
-	e14 "github.com/hushkey-app/guard/server/apis/logs"
-	e15 "github.com/hushkey-app/guard/server/apis/members"
-	e16 "github.com/hushkey-app/guard/server/apis/metrics"
-	e17 "github.com/hushkey-app/guard/server/apis/registries"
-	e18 "github.com/hushkey-app/guard/server/apis/secrets"
-	e19 "github.com/hushkey-app/guard/server/apis/secrets/envs"
-	e20 "github.com/hushkey-app/guard/server/apis/secrets/keys"
-	e21 "github.com/hushkey-app/guard/server/apis/secrets/values"
-	e22 "github.com/hushkey-app/guard/server/apis/settings"
-	e23 "github.com/hushkey-app/guard/server/apis/status"
-	e24 "github.com/hushkey-app/guard/server/apis/traces"
-	e25 "github.com/hushkey-app/guard/server/apis/update"
-	e26 "github.com/hushkey-app/guard/server/apis/views"
-	e27 "github.com/hushkey-app/guard/server/apis/webhooks"
+	e0 "github.com/hushkey-app/guard/server/apis/analytics"
+	e1 "github.com/hushkey-app/guard/server/apis/backup"
+	e2 "github.com/hushkey-app/guard/server/apis/cloud"
+	e3 "github.com/hushkey-app/guard/server/apis/cloud/accounts"
+	e4 "github.com/hushkey-app/guard/server/apis/cloud/storage"
+	e5 "github.com/hushkey-app/guard/server/apis/cluster"
+	e6 "github.com/hushkey-app/guard/server/apis/cluster/env"
+	e7 "github.com/hushkey-app/guard/server/apis/cluster/monitors"
+	e8 "github.com/hushkey-app/guard/server/apis/cluster/provider"
+	e9 "github.com/hushkey-app/guard/server/apis/config"
+	e10 "github.com/hushkey-app/guard/server/apis/deploy"
+	e11 "github.com/hushkey-app/guard/server/apis/deploy/groups"
+	e12 "github.com/hushkey-app/guard/server/apis/deploy/runs"
+	e13 "github.com/hushkey-app/guard/server/apis/deploy/templates"
+	e14 "github.com/hushkey-app/guard/server/apis/events"
+	e15 "github.com/hushkey-app/guard/server/apis/info"
+	e16 "github.com/hushkey-app/guard/server/apis/logs"
+	e17 "github.com/hushkey-app/guard/server/apis/members"
+	e18 "github.com/hushkey-app/guard/server/apis/metrics"
+	e19 "github.com/hushkey-app/guard/server/apis/registries"
+	e20 "github.com/hushkey-app/guard/server/apis/secrets"
+	e21 "github.com/hushkey-app/guard/server/apis/secrets/envs"
+	e22 "github.com/hushkey-app/guard/server/apis/secrets/keys"
+	e23 "github.com/hushkey-app/guard/server/apis/secrets/values"
+	e24 "github.com/hushkey-app/guard/server/apis/settings"
+	e25 "github.com/hushkey-app/guard/server/apis/status"
+	e26 "github.com/hushkey-app/guard/server/apis/traces"
+	e27 "github.com/hushkey-app/guard/server/apis/update"
+	e28 "github.com/hushkey-app/guard/server/apis/views"
+	e29 "github.com/hushkey-app/guard/server/apis/webhooks"
 	"github.com/mirairoad/howl-go/core/api"
 )
 
@@ -39,125 +41,136 @@ import (
 // Pass it to api.Register together with the application's api.Config.
 func FsApiRoutes() []api.Route {
 	return []api.Route{
-		api.At("GET", "/api/backup", e0.Summary),
-		api.At("POST", "/api/backup", e0.Export),
-		api.At("POST", "/api/backup/restore", e0.Apply),
-		api.At("GET", "/api/cloud/accounts", e1.Accounts),
-		api.At("POST", "/api/cloud/accounts", e1.AddAccount),
-		api.At("PUT", "/api/cloud/accounts/s3", e2.SetS3),
-		api.At("DELETE", "/api/cloud/accounts/{id}", e2.Remove),
-		api.At("GET", "/api/cloud/providers", e1.Providers),
-		api.At("DELETE", "/api/cloud/storage", e3.Remove),
-		api.At("GET", "/api/cloud/storage", e3.Overview),
-		api.At("POST", "/api/cloud/storage", e3.Create),
-		api.At("POST", "/api/cloud/storage/keys", e3.Keys),
-		api.At("PUT", "/api/cloud/storage/label", e3.Label),
-		api.At("POST", "/api/cloud/storage/link", e3.Link),
-		api.At("GET", "/api/cloud/storage/objects", e3.Objects),
-		api.At("GET", "/api/cloud/storage/options", e3.Options),
-		api.At("POST", "/api/cloud/storage/regenerate", e3.Regenerate),
-		api.At("GET", "/api/cluster", e4.List),
-		api.At("POST", "/api/cluster", e4.Add),
-		api.At("PUT", "/api/cluster/actions", e4.Actions),
-		api.At("PUT", "/api/cluster/assign", e4.Assign),
-		api.At("POST", "/api/cluster/check", e4.CheckNow),
-		api.At("POST", "/api/cluster/duplicate", e4.Duplicate),
-		api.At("GET", "/api/cluster/env", e5.Read),
-		api.At("PUT", "/api/cluster/env", e5.Save),
-		api.At("POST", "/api/cluster/env/inject", e5.Inject),
-		api.At("POST", "/api/cluster/exec", e4.Exec),
-		api.At("GET", "/api/cluster/monitors", e6.List),
-		api.At("PUT", "/api/cluster/monitors", e6.Save),
-		api.At("DELETE", "/api/cluster/monitors/{id}", e6.Delete),
-		api.At("GET", "/api/cluster/provider", e7.Instance),
-		api.At("POST", "/api/cluster/provider/import", e7.Import),
-		api.At("GET", "/api/cluster/provider/instances", e7.Instances),
-		api.At("PUT", "/api/cluster/provider/link", e7.Link),
-		api.At("POST", "/api/cluster/provider/power", e7.Power),
-		api.At("POST", "/api/cluster/provider/restore", e7.Restore),
-		api.At("DELETE", "/api/cluster/provider/snapshots", e7.DeleteSnapshot),
-		api.At("GET", "/api/cluster/provider/snapshots", e7.Snapshots),
-		api.At("POST", "/api/cluster/provider/snapshots", e7.TakeSnapshot),
-		api.At("POST", "/api/cluster/run", e4.Run),
-		api.At("GET", "/api/cluster/runs", e4.Runs),
-		api.At("POST", "/api/cluster/ssh", e4.SSHCheck),
-		api.At("POST", "/api/cluster/stats", e4.SampleNow),
-		api.At("GET", "/api/cluster/topology", e4.Topology),
-		api.At("DELETE", "/api/cluster/{id}", e4.Remove),
-		api.At("GET", "/api/cluster/{id}", e4.Read),
-		api.At("PUT", "/api/cluster/{id}", e4.Update),
-		api.At("GET", "/api/config", e8.Read),
-		api.At("PUT", "/api/config", e8.Update),
-		api.At("POST", "/api/config/generate", e8.Generate),
-		api.At("POST", "/api/config/restart", e8.Restart),
-		api.At("POST", "/api/deploy", e9.Deploy),
-		api.At("POST", "/api/deploy/cancel", e9.Cancel),
-		api.At("GET", "/api/deploy/groups", e10.Groups),
-		api.At("POST", "/api/deploy/groups", e10.Save),
-		api.At("DELETE", "/api/deploy/groups/{id}", e10.Remove),
-		api.At("GET", "/api/deploy/prepare", e9.Preparing),
-		api.At("POST", "/api/deploy/prepare", e9.Prepare),
-		api.At("POST", "/api/deploy/resolve", e9.Resolve),
-		api.At("GET", "/api/deploy/runs", e11.Runs),
-		api.At("GET", "/api/deploy/runs/{id}", e11.Read),
-		api.At("GET", "/api/deploy/state", e9.State),
-		api.At("GET", "/api/deploy/templates", e12.Templates),
-		api.At("POST", "/api/deploy/templates", e12.Save),
-		api.At("DELETE", "/api/deploy/templates/{id}", e12.Remove),
-		api.At("GET", "/api/deploy/templates/{id}", e12.Read),
-		api.At("GET", "/api/events", e13.List),
-		api.At("GET", "/api/events/{id}", e13.ByID),
+		api.At("GET", "/api/analytics", e0.Index),
+		api.At("GET", "/api/analytics/actions", e0.Actions),
+		api.At("POST", "/api/analytics/actions", e0.Pin),
+		api.At("GET", "/api/analytics/health", e0.Health),
+		api.At("GET", "/api/analytics/path", e0.Path),
+		api.At("POST", "/api/analytics/preview", e0.Preview),
+		api.At("GET", "/api/analytics/rules", e0.Rules),
+		api.At("POST", "/api/analytics/rules", e0.SaveRules),
+		api.At("DELETE", "/api/analytics/{id}", e0.Remove),
+		api.At("GET", "/api/backup", e1.Summary),
+		api.At("POST", "/api/backup", e1.Export),
+		api.At("POST", "/api/backup/restore", e1.Apply),
+		api.At("GET", "/api/cloud/accounts", e2.Accounts),
+		api.At("POST", "/api/cloud/accounts", e2.AddAccount),
+		api.At("PUT", "/api/cloud/accounts/s3", e3.SetS3),
+		api.At("DELETE", "/api/cloud/accounts/{id}", e3.Remove),
+		api.At("GET", "/api/cloud/providers", e2.Providers),
+		api.At("DELETE", "/api/cloud/storage", e4.Remove),
+		api.At("GET", "/api/cloud/storage", e4.Overview),
+		api.At("POST", "/api/cloud/storage", e4.Create),
+		api.At("POST", "/api/cloud/storage/keys", e4.Keys),
+		api.At("PUT", "/api/cloud/storage/label", e4.Label),
+		api.At("POST", "/api/cloud/storage/link", e4.Link),
+		api.At("GET", "/api/cloud/storage/objects", e4.Objects),
+		api.At("GET", "/api/cloud/storage/options", e4.Options),
+		api.At("POST", "/api/cloud/storage/regenerate", e4.Regenerate),
+		api.At("GET", "/api/cluster", e5.List),
+		api.At("POST", "/api/cluster", e5.Add),
+		api.At("PUT", "/api/cluster/actions", e5.Actions),
+		api.At("PUT", "/api/cluster/assign", e5.Assign),
+		api.At("POST", "/api/cluster/check", e5.CheckNow),
+		api.At("POST", "/api/cluster/duplicate", e5.Duplicate),
+		api.At("GET", "/api/cluster/env", e6.Read),
+		api.At("PUT", "/api/cluster/env", e6.Save),
+		api.At("POST", "/api/cluster/env/inject", e6.Inject),
+		api.At("POST", "/api/cluster/exec", e5.Exec),
+		api.At("GET", "/api/cluster/monitors", e7.List),
+		api.At("PUT", "/api/cluster/monitors", e7.Save),
+		api.At("DELETE", "/api/cluster/monitors/{id}", e7.Delete),
+		api.At("GET", "/api/cluster/provider", e8.Instance),
+		api.At("POST", "/api/cluster/provider/import", e8.Import),
+		api.At("GET", "/api/cluster/provider/instances", e8.Instances),
+		api.At("PUT", "/api/cluster/provider/link", e8.Link),
+		api.At("POST", "/api/cluster/provider/power", e8.Power),
+		api.At("POST", "/api/cluster/provider/restore", e8.Restore),
+		api.At("DELETE", "/api/cluster/provider/snapshots", e8.DeleteSnapshot),
+		api.At("GET", "/api/cluster/provider/snapshots", e8.Snapshots),
+		api.At("POST", "/api/cluster/provider/snapshots", e8.TakeSnapshot),
+		api.At("POST", "/api/cluster/run", e5.Run),
+		api.At("GET", "/api/cluster/runs", e5.Runs),
+		api.At("POST", "/api/cluster/ssh", e5.SSHCheck),
+		api.At("POST", "/api/cluster/stats", e5.SampleNow),
+		api.At("GET", "/api/cluster/topology", e5.Topology),
+		api.At("DELETE", "/api/cluster/{id}", e5.Remove),
+		api.At("GET", "/api/cluster/{id}", e5.Read),
+		api.At("PUT", "/api/cluster/{id}", e5.Update),
+		api.At("GET", "/api/config", e9.Read),
+		api.At("PUT", "/api/config", e9.Update),
+		api.At("POST", "/api/config/generate", e9.Generate),
+		api.At("POST", "/api/config/restart", e9.Restart),
+		api.At("POST", "/api/deploy", e10.Deploy),
+		api.At("POST", "/api/deploy/cancel", e10.Cancel),
+		api.At("GET", "/api/deploy/groups", e11.Groups),
+		api.At("POST", "/api/deploy/groups", e11.Save),
+		api.At("DELETE", "/api/deploy/groups/{id}", e11.Remove),
+		api.At("GET", "/api/deploy/prepare", e10.Preparing),
+		api.At("POST", "/api/deploy/prepare", e10.Prepare),
+		api.At("POST", "/api/deploy/resolve", e10.Resolve),
+		api.At("GET", "/api/deploy/runs", e12.Runs),
+		api.At("GET", "/api/deploy/runs/{id}", e12.Read),
+		api.At("GET", "/api/deploy/state", e10.State),
+		api.At("GET", "/api/deploy/templates", e13.Templates),
+		api.At("POST", "/api/deploy/templates", e13.Save),
+		api.At("DELETE", "/api/deploy/templates/{id}", e13.Remove),
+		api.At("GET", "/api/deploy/templates/{id}", e13.Read),
+		api.At("GET", "/api/events", e14.List),
+		api.At("GET", "/api/events/{id}", e14.ByID),
 		api.At("GET", "/api/facets", Facets),
-		api.At("GET", "/api/logs", e14.List),
-		api.At("POST", "/api/logs", e14.Write),
-		api.At("GET", "/api/members", e15.List),
-		api.At("POST", "/api/members", e15.Add),
-		api.At("DELETE", "/api/members/{email}", e15.Remove),
-		api.At("GET", "/api/metrics/series", e16.Series),
-		api.At("DELETE", "/api/registries", e17.Remove),
-		api.At("GET", "/api/registries", e17.Overview),
-		api.At("POST", "/api/registries", e17.Create),
-		api.At("GET", "/api/registries/options", e17.Options),
-		api.At("DELETE", "/api/registries/repos", e17.DeleteRepo),
-		api.At("GET", "/api/registries/repos", e17.Repos),
-		api.At("DELETE", "/api/registries/tags", e17.DeleteTag),
-		api.At("GET", "/api/registries/tags", e17.Tags),
-		api.At("GET", "/api/secrets", e18.List),
-		api.At("POST", "/api/secrets", e18.Save),
-		api.At("GET", "/api/secrets/envs", e19.List),
-		api.At("POST", "/api/secrets/envs", e19.Save),
-		api.At("DELETE", "/api/secrets/envs/{id}", e19.Delete),
-		api.At("GET", "/api/secrets/export", e18.ExportEnv),
-		api.At("POST", "/api/secrets/import", e18.Import),
-		api.At("GET", "/api/secrets/keys", e20.List),
-		api.At("POST", "/api/secrets/keys", e20.Create),
-		api.At("DELETE", "/api/secrets/keys/{id}", e20.Revoke),
-		api.At("GET", "/api/secrets/values", e21.List),
-		api.At("PUT", "/api/secrets/values", e21.Save),
-		api.At("DELETE", "/api/secrets/values/{id}", e21.Delete),
-		api.At("DELETE", "/api/secrets/{id}", e18.Delete),
-		api.At("GET", "/api/settings", e22.Read),
-		api.At("PUT", "/api/settings", e22.Update),
-		api.At("POST", "/api/settings/purge", e22.Purge),
-		api.At("GET", "/api/status", e23.Public),
+		api.At("GET", "/api/info", e15.Instance),
+		api.At("GET", "/api/logs", e16.List),
+		api.At("POST", "/api/logs", e16.Write),
+		api.At("GET", "/api/members", e17.List),
+		api.At("POST", "/api/members", e17.Add),
+		api.At("DELETE", "/api/members/{email}", e17.Remove),
+		api.At("GET", "/api/metrics/series", e18.Series),
+		api.At("DELETE", "/api/registries", e19.Remove),
+		api.At("GET", "/api/registries", e19.Overview),
+		api.At("POST", "/api/registries", e19.Create),
+		api.At("GET", "/api/registries/options", e19.Options),
+		api.At("DELETE", "/api/registries/repos", e19.DeleteRepo),
+		api.At("GET", "/api/registries/repos", e19.Repos),
+		api.At("DELETE", "/api/registries/tags", e19.DeleteTag),
+		api.At("GET", "/api/registries/tags", e19.Tags),
+		api.At("GET", "/api/secrets", e20.List),
+		api.At("POST", "/api/secrets", e20.Save),
+		api.At("GET", "/api/secrets/envs", e21.List),
+		api.At("POST", "/api/secrets/envs", e21.Save),
+		api.At("DELETE", "/api/secrets/envs/{id}", e21.Delete),
+		api.At("GET", "/api/secrets/export", e20.ExportEnv),
+		api.At("POST", "/api/secrets/import", e20.Import),
+		api.At("GET", "/api/secrets/keys", e22.List),
+		api.At("POST", "/api/secrets/keys", e22.Create),
+		api.At("DELETE", "/api/secrets/keys/{id}", e22.Revoke),
+		api.At("GET", "/api/secrets/values", e23.List),
+		api.At("PUT", "/api/secrets/values", e23.Save),
+		api.At("DELETE", "/api/secrets/values/{id}", e23.Delete),
+		api.At("DELETE", "/api/secrets/{id}", e20.Delete),
+		api.At("GET", "/api/settings", e24.Read),
+		api.At("PUT", "/api/settings", e24.Update),
+		api.At("POST", "/api/settings/purge", e24.Purge),
+		api.At("GET", "/api/status", e25.Public),
 		api.At("GET", "/api/summary", Summary),
-		api.At("GET", "/api/traces/{id}", e24.ByID),
-		api.At("GET", "/api/update", e25.State),
-		api.At("POST", "/api/update", e25.Apply),
-		api.At("GET", "/api/views", e26.List),
-		api.At("POST", "/api/views", e26.Create),
-		api.At("GET", "/api/views/catalogue", e26.Catalogue),
-		api.At("GET", "/api/views/data", e26.Data),
-		api.At("POST", "/api/views/drill", e26.Drill),
-		api.At("PUT", "/api/views/order", e26.Order),
-		api.At("POST", "/api/views/preview", e26.Preview),
-		api.At("POST", "/api/views/samples", e26.Samples),
-		api.At("DELETE", "/api/views/{id}", e26.Remove),
-		api.At("PUT", "/api/views/{id}", e26.Update),
-		api.At("GET", "/api/webhooks", e27.List),
-		api.At("PUT", "/api/webhooks", e27.Save),
-		api.At("POST", "/api/webhooks/test", e27.Test),
-		api.At("DELETE", "/api/webhooks/{id}", e27.Delete),
+		api.At("GET", "/api/traces/{id}", e26.ByID),
+		api.At("GET", "/api/update", e27.State),
+		api.At("POST", "/api/update", e27.Apply),
+		api.At("POST", "/api/update/check", e27.Check),
+		api.At("GET", "/api/views", e28.List),
+		api.At("POST", "/api/views", e28.Create),
+		api.At("GET", "/api/views/catalogue", e28.Catalogue),
+		api.At("GET", "/api/views/data", e28.Data),
+		api.At("POST", "/api/views/drill", e28.Drill),
+		api.At("PUT", "/api/views/order", e28.Order),
+		api.At("POST", "/api/views/preview", e28.Preview),
+		api.At("POST", "/api/views/samples", e28.Samples),
+		api.At("DELETE", "/api/views/{id}", e28.Remove),
+		api.At("PUT", "/api/views/{id}", e28.Update),
+		api.At("GET", "/api/webhooks", e29.List),
+		api.At("PUT", "/api/webhooks", e29.Save),
+		api.At("POST", "/api/webhooks/test", e29.Test),
+		api.At("DELETE", "/api/webhooks/{id}", e29.Delete),
 		api.At("GET", "/healthz", Health),
 	}
 }

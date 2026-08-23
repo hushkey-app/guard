@@ -12,9 +12,19 @@ After=guard.service
 # and the two processes have to be given the same one or the vault answers with
 # values it cannot decrypt.
 EnvironmentFile=-/etc/guard/guard.env
-# Bind to the VPC address rather than 0.0.0.0. Nothing about this wants to be
-# on the internet.
-ExecStart=/usr/local/bin/guard-vault -db /var/lib/guard/guard.db -addr 127.0.0.1:4319
+# No -addr, for the same reason guard.service has none: an address hardcoded
+# here outranks everything. The flag is the escape hatch and it wins over the
+# stored value and over the environment, so a unit that types one turns the
+# "Vault listen address" row on Settings into a page that lies — and the vault's
+# whole job is answering applications on *other* machines, which loopback cannot
+# do. `GUARD_VAULT_ADDR` in /etc/guard/guard.env or on the configuration page is
+# where it belongs; unset it is :4319 on every interface.
+#
+# That last part is deliberate and worth saying out loud: the perimeter is the
+# provider's firewall group, exactly as it is for guard's own :4318. Every
+# answer here needs a scoped key, but a key is not a reason to publish the door
+# — keep 4319 off the public interface and open to the VPC only.
+ExecStart=/usr/local/bin/guard-vault -db /var/lib/guard/guard.db
 User=guard
 Restart=always
 RestartSec=2

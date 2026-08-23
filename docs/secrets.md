@@ -190,16 +190,62 @@ guard-vault -db /data/guard.db   # the usual deployment
 guard-vault fetch -workspace hushkey -env local   # print one, no server
 ```
 
+## Two doors, and which one is the real one
+
+The vault answers on **:4319**, and that is the door that matters: a second
+process sharing nothing with guard but a database file and a key file, deployed
+and restarted separately, so an application asking for its database password at
+boot is not waiting on the dashboard's release.
+
+`GUARD_VAULT_PROXY=1` adds a second one — `GET /v1/secrets` and
+`GET /v1/secrets/{key}` on **guard's own port**, reverse-proxied to the first.
+It is for the caller that cannot reach :4319: an application outside the VPC, or
+one behind a proxy that terminates a single hostname. It is a proxy rather than
+a second implementation, so there is exactly one place that checks a key, one
+place that decides what an environment holds, and one read log — a test asks
+both doors the same question and compares the answers, including the refusals.
+
+**Off unless switched on**, and that is not caution for its own sake. Guard's
+port is usually the published one — a domain, a certificate, a CDN in front —
+and turning this on means a leaked key is usable from the internet rather than
+from inside your network. Both the on and the off are said in the boot log, so
+"why is /v1/secrets a 404" is answerable without reading this page.
+
+Three things it does not do:
+
+- **It adds no credential of its own.** The Authorization header travels
+  untouched and the vault answers it. `GUARD_TOKEN` opens every write endpoint
+  in guard's API and does not open this one, because guard never inspects the
+  header — it forwards it.
+- **It proxies two routes, not a prefix.** Forwarding `/v1/` wholesale would put
+  whatever the vault grows later on the public port without anybody choosing it.
+- **It sends no `X-Forwarded-For`.** The vault records the caller's address in
+  its read log, and a header the caller controls is not the address — through
+  the proxy it records guard's, honestly, rather than a number somebody typed.
+
+A vault that is not answering is a **502 that says so**, because the two
+processes restart on their own schedules and "the vault is down" and "your key
+is wrong" must not look alike.
+
 `GUARD_VAULT_ADDR` and `GUARD_DB_PATH` configure it; flags of the same names
-override. How often one key's use is recorded (a minute) is the server's own answer.
+override — and that is worth knowing before you type one into a unit file. A
+typed flag beats the stored value *and* the environment, so a unit carrying
+`-addr` makes the "Vault listen address" row on Settings → Configuration a
+field that changes nothing. `deploy/guard-vault.service` therefore carries no
+`-addr` at all. How often one key's use is recorded (a minute) is the server's own answer.
 
 `make dev` starts it beside guard on :4319, under its own watcher
 (`dev/vault`), sharing the terminal — its lines carry `app=vault`. A failed
 build leaves the running vault alone, the same bargain howl dev makes. Set
 `GUARD_VAULT_ADDR=` to leave it out.
 
-In production it is its own systemd unit, bound to the VPC address, with
-`Restart=always` — it is somebody's boot dependency.
+In production it is its own systemd unit with `Restart=always` — it is
+somebody's boot dependency. **Loopback is not an address for it.** The vault
+exists to answer applications on *other* machines, so a unit binding
+`127.0.0.1` leaves every one of them with `connection refused` while the box
+itself answers perfectly, which is a confusing morning. Bind the VPC address or
+leave it on every interface and let the provider's firewall group be the
+perimeter, exactly as guard's own :4318 does.
 
 ### As a plain binary, which is the better default
 
@@ -226,7 +272,10 @@ Description=guard-vault — secrets for the applications
 After=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/guard-vault -db /var/lib/guard/guard.db -addr 10.0.0.5:4319
+# The address through the environment rather than a flag, so the configuration
+# page stays the place it is set. A flag here would outrank it.
+Environment=GUARD_VAULT_ADDR=10.0.0.5:4319
+ExecStart=/usr/local/bin/guard-vault -db /var/lib/guard/guard.db
 User=guard
 Restart=always
 RestartSec=2

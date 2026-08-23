@@ -232,3 +232,154 @@ type RestoreRequest struct {
 	Passphrase string       `json:"passphrase"`
 	Backup     model.Backup `json:"backup"`
 }
+
+// AnalyticsQuery is the window the strip and the grid are read over.
+//
+// Bounded at both ends, unlike ViewDataQuery: the rollup is keyed by whole UTC
+// days and the strip's second half is the window of equal length before this
+// one, so "all retained" — a real answer everywhere else in the dashboard —
+// has no previous to compare against and is refused here rather than answered
+// with a comparison against nothing.
+type AnalyticsQuery struct {
+	Range string    `query:"range"`
+	From  time.Time `query:"from"`
+	To    time.Time `query:"to"`
+}
+
+// The window a request that names none is read over. Seven days because the
+// rollup's grain is a day and one of them is a sample rather than a trend;
+// there is no knob, for the reason there is no knob anywhere else in guard.
+const defaultAnalyticsWindow = 7 * 24 * time.Hour
+
+func (q AnalyticsQuery) Validate() error {
+	if q.Range == "all" {
+		return api.Invalid("range", "analytics is read over a bounded window, so it has no all")
+	}
+	if q.Range != "" {
+		d, err := model.ParseDuration(q.Range)
+		if err != nil {
+			return api.Invalid("range", err.Error())
+		}
+		if d <= 0 {
+			return api.Invalid("range", "is not a window")
+		}
+	}
+	if !q.From.IsZero() && !q.To.IsZero() && q.To.Before(q.From) {
+		return api.Invalid("to", "is before from")
+	}
+	return nil
+}
+
+// Window resolves the request into the two instants the rollup is asked for. A
+// custom From wins over a range, and an absent To means now — which is what
+// makes "from the first of the month" a window somebody can type.
+func (q AnalyticsQuery) Window(now time.Time) (from, to time.Time) {
+	from, to = q.From, q.To
+	if to.IsZero() {
+		to = now
+	}
+	if !from.IsZero() {
+		return from, to
+	}
+	d, err := model.ParseDuration(q.Range)
+	if err != nil || d <= 0 {
+		d = defaultAnalyticsWindow
+	}
+	return to.Add(-d), to
+}
+
+// AnalyticsPathQuery is one opened row: the grid's window, plus the path it was
+// opened on.
+//
+// The window half delegates rather than repeating itself, so the refusal
+// AnalyticsQuery makes — analytics has no "all retained" — holds for the fold
+// too. A chart drawn over a window the grid above it cannot be read over would
+// be two windows on one screen.
+type AnalyticsPathQuery struct {
+	Path  string    `query:"path"`
+	Range string    `query:"range"`
+	From  time.Time `query:"from"`
+	To    time.Time `query:"to"`
+}
+
+func (q AnalyticsPathQuery) Validate() error {
+	if strings.TrimSpace(q.Path) == "" {
+		return api.Invalid("path", "is the path the row was opened on")
+	}
+	return q.window().Validate()
+}
+
+// Window resolves the request into the two instants the rollup is asked for,
+// by the same rules the grid's own query keeps.
+func (q AnalyticsPathQuery) Window(now time.Time) (from, to time.Time) {
+	return q.window().Window(now)
+}
+
+func (q AnalyticsPathQuery) window() AnalyticsQuery {
+	return AnalyticsQuery{Range: q.Range, From: q.From, To: q.To}
+}
+
+// AnalyticsPath is what one opened row is drawn from: the path's days, and
+// where the sessions on it came from.
+//
+// Both in one answer for the reason Analytics is one — they are two halves of
+// one panel over one window, and a fold that asked twice would be two windows
+// in one box and two round trips to open it.
+type AnalyticsPath struct {
+	Series  []model.PathPoint `json:"series"`
+	Sources []model.SourceRow `json:"sources"`
+}
+
+// ActionPins is the grid's columns: the pinned action names, in the order they
+// are drawn.
+//
+// The whole set every time, rather than a name and a verb. Pinning a fourth
+// column and dragging it into second place is one decision, and unpinning the
+// last one is an empty list — a request that said "unpin this" would need the
+// order to be somebody else's problem, and the order is the point.
+type ActionPins struct {
+	Pinned []string `json:"pinned"`
+}
+
+func (p ActionPins) Validate() error {
+	for _, name := range p.Pinned {
+		if strings.TrimSpace(name) == "" {
+			return api.Invalid("pinned", "is a list of action names")
+		}
+	}
+	return nil
+}
+
+// Analytics is the top of the page in one answer: the strip, and the grid under
+// it.
+//
+// One request rather than two for the reason Catalogue is one — the strip's
+// totals and the grid's rows are the same window, and two calls a second apart
+// are two windows, so the numbers somebody is reading side by side would not
+// add up.
+type Analytics struct {
+	Summary model.AnalyticsSummary `json:"summary"`
+	Paths   []model.PathRow        `json:"paths"`
+}
+
+// PathRuleSet is the whole ordered list of path rules — the body of the save
+// and the body of the preview, which are one shape because the preview's only
+// job is to prove exactly what the save would store.
+//
+// The whole list every time, for the reason ActionPins is: order is the rule,
+// since the first match wins, and a request that edited one row would leave the
+// order to be somebody else's problem.
+type PathRuleSet struct {
+	Rules []model.PathRule `json:"rules"`
+}
+
+// A PathPreview is one path as it arrived and the row it would be counted
+// under.
+//
+// Both halves, rather than the result alone: a rule that collapses nothing
+// looks identical to a rule that works unless the page can show what it was
+// given, and "prove it before you store it" is the whole point of the dialog.
+type PathPreview struct {
+	Path   string `json:"path"`
+	Result string `json:"result"`
+}

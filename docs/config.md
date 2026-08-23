@@ -37,6 +37,18 @@ configuration system running beside the environment — there is one, and this
 fills it in. Which is why the page is honest about needing a restart: a process
 has its environment from the moment it starts, and only a start reads one.
 
+## What a row shows
+
+Label, name, where the value came from, and the help. An entry may also carry an
+**`Example`**, drawn under the box as `e.g. …`.
+
+It is never a default and nothing is ever stored or applied from it. It exists
+because `Help` can say "comma-separated origins" and the next person still types
+one origin and wonders whether a second is allowed, or writes them with spaces
+and no comma, or wraps the list in brackets. Two of them written out answers all
+three without being read as a sentence. `GUARD_RUM_ORIGINS` has one; anything
+whose *shape* is the question should get one.
+
 ## Two pages
 
 The catalogue is drawn by two pages, and the group says which:

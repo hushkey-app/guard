@@ -6,9 +6,12 @@ land over OTLP, get stored in SQLite, and are explored from a howl-go UI.
 ```
 main.go                       wiring: store, howl-go app, ingest routes
 internal/ingest/otlp.go       OTLP/HTTP + the JSON API the dashboard reads
+internal/ingest/analytics.go  the beacon door: guard's own JSON, not OTLP
+internal/ingest/track.js      the two kilobytes somebody else's page runs
 internal/telemetry/model.go   storage, retention, snapshots
 internal/telemetry/cluster.go the machines watched from outside, and their commands
 internal/telemetry/views.go   saved views: the query compiler and its CRUD
+internal/telemetry/analytics.go what a browser did: the rollup that outlives the raw feed
 internal/telemetry/backup.go  the configuration as one file: what travels, what never does
 internal/telemetry/deploy.go   the groups, the versioned templates, the runs, what is running
 internal/telemetry/provider.go the stored cloud accounts and their sealed keys
@@ -30,6 +33,8 @@ internal/secrets/secrets.go   AES-GCM at rest, for the SSH passwords and the sto
 internal/telemetry/vault.go   the secrets: environments, values, the keys that read them
 internal/vault/               the second binary's half: read the file, answer a key
 cmd/vault/                    guard-vault — secrets served while guard is down
+internal/hostinfo/            what the box guard runs on is: /proc, one statfs, nothing stored
+internal/vaultproxy/          /v1/secrets on guard's port, forwarded to the vault
 internal/config/config.go     every GUARD_* variable: the catalogue, stored, applied at startup
 internal/auth/               sign in with Google or Apple, and who is allowed in
 client/pages/                 the dashboard — howl-go filesystem routes
@@ -39,6 +44,7 @@ client/public/core.js         helpers shared by the three client modules
 client/public/charts.js       the panel renderers, hand-drawn SVG
 client/public/views.js        the views page: panels, builder, live preview
 client/public/guard.js        tables, filters, detail panel, the live tick
+client/public/analytics.js    the analytics page: the strip, the grid, the fold, the two editors
 client/public/registries.js   the registries drill
 client/public/cloud.js        the cloud accounts, the machine link, the provider strip
 client/public/storage.js      the object storage page
@@ -46,6 +52,7 @@ client/public/secrets.js      the secrets page: environments, pairs, keys, .env 
 client/public/config.js       both settings forms: the catalogue, filtered per page
 client/public/backup.js       the backup page: the sections, the download, the restore
 client/public/deploys.js      the deploys page: groups, templates, runs, the press
+client/public/editor.js       the compose box: YAML highlighting behind a textarea, ⌘/ comments
 client/styles/app.css         stylesheet source — compiles to client/public/app.css
 ```
 
@@ -113,10 +120,12 @@ panel that reads an existing shape is a renderer in `charts.js` and an entry in
   caller text into SQL** — a field is looked up in `model.Columns` or bound as a JSON path,
   and values are always parameters. Keep it that way; it is the only reason a dashboard
   user may compose queries at all.
-- Grouping by an attribute is a `json_extract` over every candidate row. Five attributes
-  (`http.route`, method, status, `client.address`, `db.system`) have generated columns and
-  indexes, and both OpenTelemetry spellings of each resolve to the same column on purpose.
-  Adding a sixth means an entry in `indexedAttributes` and nothing else.
+- Grouping by an attribute is a `json_extract` over every candidate row. Six attributes
+  (`http.route`, method, status, `client.address`, `db.system`, and `rum.session_id` — the
+  browser session the tracker mints, which is what makes a path on `/analytics` walkable
+  into `/traces`) have generated columns and indexes, and both OpenTelemetry spellings of
+  each resolve to the same column on purpose. Adding a seventh means an entry in
+  `indexedAttributes` and nothing else.
 - Percentiles are exact nearest-rank, computed with window functions, because SQLite has
   no percentile function and a silently interpolated p95 is a number people act on.
 - **A duration is drawn as a duration.** `model.AlertUnit` marks a query measuring
@@ -131,10 +140,11 @@ panel that reads an existing shape is a renderer in `charts.js` and an entry in
 
 A machine is declared rather than discovered, so guard can say "VPS-1 has been
 down for six minutes" about a box that stopped talking to anyone. Two pages
-share one renderer (`client/public/cluster.js`): `/settings/cluster` declares,
-edits and locks machines; `/cluster` is the operational surface — a **list**, one line per
-machine, grouped, with the stored commands a click away and deliberately
-nothing that could redefine one. The head is what a machine is *found* by —
+share one renderer (`client/public/cluster.js`). Both now live on `/cluster`:
+the grouped ops surface — a **list**, one line per machine, with the stored
+commands a click away — and, below it, the form and rows that declare, edit and
+lock. `/settings/cluster` is a permanent redirect here; settings is
+configuration only. The head is what a machine is *found* by —
 status, name, tags, address, and five numbers in fixed columns — and the fold
 is what it is *acted on* by. Shut is the default; open is what is remembered.
 A tag is a label
@@ -445,6 +455,61 @@ The recommended deployment relays through the application you already expose
 rather than publishing guard: a server-to-server post carries no `Origin`,
 which the intake allows for exactly that reason.
 
+## Analytics
+
+`/analytics` is the one signal that measures what a *person* did rather than
+what a process did — read `docs/analytics.md` before changing any of it. One
+sentence organises it: **the URL is the group, an action is a column.** A
+two-kilobyte tracker (`internal/ingest/track.js`, served from
+`/v1/rum/track.js`) posts guard's own JSON to `/v1/rum/events`, a third path on
+the browser door — so it adds **no `GUARD_*` variable**: `GUARD_RUM_ORIGINS`
+opens all of it, and the page's three bands (off, install, live) come from
+`GET /api/analytics/health` rather than from an absence of rows.
+
+- **Guard counts sessions, and says the word.** Not users, not visitors, not
+  people — 16 random bytes in `sessionStorage`, thirty minutes of quiet ends
+  one, no cookie and no address. One person in two tabs is two sessions, said
+  out loud, because a number that is exactly what it says beats one that is
+  approximately what somebody wanted.
+- **The rollup is the truth and the raw feed is a courtesy.**
+  `analytics_events` goes with the telemetry on `retention_hours`;
+  `analytics_rollup` is one row per day, path and action, kept in days, because
+  "versus last month" is the question analytics is actually asked.
+  `analytics_seen` is what makes the session counts exact rather than a sketch
+  — the `INSERT OR IGNORE` that changed nothing is the count — and it is purged
+  behind the rollup, **after which the counts stand and cannot be recomputed**.
+  The two retention numbers are rows in `settings`, typed on Settings → Data
+  storage beside the two that were already there.
+- **A ceiling is announced, never silent.** A thousand paths a day and a
+  hundred campaigns per path roll into `(other)`, whose count is real; the
+  two-hundredth action name is **refused whole**, because two teams' events in
+  one column is a wrong number nobody can see is wrong where a missing one is a
+  number on the health page. Every refusal is on `GET /api/analytics/health`,
+  since a tracker being silently dropped is the failure mode people take weeks
+  to notice.
+- **Discovery is the machine's half, pinning is the person's.** Names are never
+  declared in advance; a pinned action is a column, in a stored order, and the
+  rest still count and still show when a path row is opened. `page_view` is
+  reserved — it is the Views column. Deleting an action is a purge of what was
+  counted under it, not a mute, and the next beacon rediscovers the name.
+- **Path rules are applied at ingest**, glob rather than regex, first match
+  wins — so a rule shapes what is stored, cannot rewrite the days already
+  rolled up, and is what stops the path ceiling ever being reached. The preview
+  runs the same call the save runs.
+- **A dash, never a zero.** A cell is the sessions that did the action over the
+  sessions that saw the page; an action never seen on a path has no cell, and
+  `0.0%` beside a column that page has no button for is a lie in a fixed-width
+  font.
+- **Guard stores no CSS selector and autocaptures nothing.** The selector lives
+  in the markup as `data-guard-track="signup_click"`, where whoever changes the
+  markup can see it — a selector in guard's database reads zero on the day the
+  markup changes.
+- **The session id is a join key**, indexed as `rum.session_id`, so a bad rate
+  walks into `/traces?rum_path=/pricing`: the link carries the path and the
+  database turns it into the sessions, which reaches exactly as far back as
+  `analytics_seen` is kept. The tracker publishes `guard.session()` for the
+  OpenTelemetry web SDK beside it to tag spans with.
+
 ## Build and run
 
 ```bash
@@ -482,12 +547,15 @@ secrets are sealed with — unset, guard generates `<db>.key` beside the databas
 part of the backup and never part of the repository. **`guard-vault` will not generate
 one**: without the key it refuses to start rather than answering with values it cannot
 decrypt. `GUARD_VAULT_ADDR` (:4319) is where it listens; how often one key's use is
-recorded is the server's own answer. `GUARD_SSH_TIMEOUT` bounds one command run,
+recorded is the server's own answer. `GUARD_VAULT_PROXY=1` also serves
+`/v1/secrets` on guard's port, forwarded to the vault — one door for the VPC,
+one for a caller that cannot reach it, and off by default because guard's port
+is the published one. `GUARD_SSH_TIMEOUT` bounds one command run,
 `GUARD_SCHEDULE_TIMEOUT` one scheduled run (30m). Alerts go to the destinations
 named on Settings → Alerts and to no environment variable.
 Every loop's cadence is a constant beside the loop — the budgets every 5m, the
 machine rules every 30s, the watched views every minute, a firing rule quiet for 6h
-between repeats. **Twenty-one `GUARD_*` variables, and that is the whole list**: the
+between repeats. **Twenty-two `GUARD_*` variables, and that is the whole list**: the
 catalogue on Settings → Configuration holds the six somebody changes, Security holds
 the ten about signing in, and the rest are the database, the key, the two tokens and
 the two escape hatches. Anything that reads like a tuning knob was deleted rather
@@ -570,11 +638,11 @@ that sets everything in its unit file behaves exactly as it did.
 Guard's configuration is one file, and the telemetry is never in it — read
 `docs/backup.md` before changing any of it. **Settings → Backup** exports
 machines, commands, machine environments, deploy groups, compose templates,
-cloud accounts, saved views, alert rules, destinations, secrets, members and
-stored settings; logs, traces,
-metrics, health history, command runs, host samples and open sessions stay
-behind, because none of them says how guard is configured and all of them are
-the part that grows.
+cloud accounts, saved views, alert rules, destinations, secrets, members,
+analytics actions and path rules, and stored settings; logs, traces,
+metrics, what analytics counted, health history, command runs, host samples and
+open sessions stay behind, because none of them says how guard is configured and
+all of them are the part that grows.
 
 - **The catalogue is `backupTables`** in `internal/telemetry/backup.go`, with
   `backupExcluded` written out beside it — so "is my telemetry in this file" has

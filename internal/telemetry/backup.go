@@ -79,6 +79,8 @@ var backupTables = []backupTable{
 	{name: "deploy_templates", group: "Deploys", label: "Compose templates"},
 	{name: "deploy_state", group: "Deploys", label: "Running versions"},
 	{name: "views", group: "Views", label: "Saved views"},
+	{name: "analytics_actions", group: "Analytics", label: "Actions"},
+	{name: "analytics_path_rules", group: "Analytics", label: "Path rules"},
 	{name: "secret_workspaces", group: "Secrets", label: "Workspaces"},
 	{name: "secret_envs", group: "Secrets", label: "Environments"},
 	{name: "secrets", group: "Secrets", label: "Secrets", sealed: []string{"value"}},
@@ -86,14 +88,20 @@ var backupTables = []backupTable{
 }
 
 // backupExcluded is everything a backup deliberately leaves behind, named so
-// the page can show it. The first three are the telemetry itself and the rest
-// is history and live state: what a machine's disk was at 9am, which command
-// ran last night, who is signed in right now. All of it is either regenerated
-// within the minute or meaningless on another box.
+// the page can show it. The first three are the telemetry itself, and the four
+// analytics tables beside them are the same thing arriving through a different
+// door — what was measured rather than how guard is configured, and the part
+// that grows with traffic. The rest is history and live state: what a machine's
+// disk was at 9am, which command ran last night, who is signed in right now,
+// all of it either regenerated within the minute or meaningless on another box.
 var backupExcluded = []string{
 	"events",
 	"event_totals",
 	"event_instances",
+	"analytics_events",
+	"analytics_rollup",
+	"analytics_seen",
+	"analytics_sources",
 	"metadata",
 	"cluster_checks",
 	"cluster_runs",
@@ -143,7 +151,7 @@ func (s *Store) BackupSummary() (model.BackupSummary, error) {
 			continue
 		}
 		var rows int
-		if err := s.db.QueryRow(`SELECT count(*) FROM "` + table.name + `"`).Scan(&rows); err != nil {
+		if err := s.rdb.QueryRow(`SELECT count(*) FROM "` + table.name + `"`).Scan(&rows); err != nil {
 			return model.BackupSummary{}, fmt.Errorf("count %s: %w", table.name, err)
 		}
 		line := model.BackupTableSummary{Name: table.name, Label: table.label, Group: table.group, Rows: rows}
@@ -153,7 +161,7 @@ func (s *Store) BackupSummary() (model.BackupSummary, error) {
 			}
 			var sealed int
 			query := fmt.Sprintf(`SELECT count(*) FROM %q WHERE %q IS NOT NULL AND length(%q) > 0`, table.name, column, column)
-			if err := s.db.QueryRow(query).Scan(&sealed); err != nil {
+			if err := s.rdb.QueryRow(query).Scan(&sealed); err != nil {
 				return model.BackupSummary{}, fmt.Errorf("count %s.%s: %w", table.name, column, err)
 			}
 			line.Sealed += sealed
@@ -219,7 +227,7 @@ func (s *Store) ExportBackup(passphrase string) (model.Backup, error) {
 		for i, column := range columns {
 			list[i] = fmt.Sprintf("%q", column)
 		}
-		rows, err := s.db.Query(fmt.Sprintf(`SELECT %s FROM %q`, strings.Join(list, ", "), table.name))
+		rows, err := s.rdb.Query(fmt.Sprintf(`SELECT %s FROM %q`, strings.Join(list, ", "), table.name))
 		if err != nil {
 			return model.Backup{}, fmt.Errorf("read %s: %w", table.name, err)
 		}

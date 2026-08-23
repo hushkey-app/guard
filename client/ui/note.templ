@@ -1,0 +1,37 @@
+package ui
+
+// Note is an explanation that is available without being in the way.
+//
+// The cluster page used to end in three alert cards of prose. Each was worth
+// reading exactly once, and after that it was three blocks of body text between
+// the operator and the machines — on the page they open to watch something go
+// wrong. An alert that is permanent is not an alert; it is furniture.
+//
+// So the prose stays, closed, next to the thing it explains rather than pooled
+// at the bottom of the page. Closed it costs one line; open it reads the same as
+// before.
+//
+// <details>, not a popover: it needs no JavaScript, it is keyboard-operable and
+// screen-reader-announced without a single ARIA attribute, it works on the cold
+// document before the wasm binary has loaded, and it survives a navigation with
+// nothing to re-hydrate. Guard's drawer is a checkbox for the same reason.
+templ Note(title string) {
+	<details class="group/note">
+		<summary
+			class="flex w-fit cursor-pointer list-none items-center gap-2 rounded-md py-1 pr-2 text-xs
+				text-muted-foreground transition-colors hover:text-foreground
+				focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+				[&::-webkit-details-marker]:hidden"
+		>
+			@Icon("info", "size-3.5 shrink-0 opacity-70")
+			<span class="font-medium">{ title }</span>
+			@Icon("chevron", "size-3 shrink-0 opacity-60 transition-transform duration-150 group-open/note:rotate-180 motion-reduce:transition-none")
+		</summary>
+		<!-- Indented under the summary and hung off a hairline, so an open note
+		     reads as belonging to the row that opened it rather than as the page
+		     resuming. -->
+		<div class="mt-2 ml-[.4rem] border-l border-border pl-4 text-xs leading-relaxed text-muted-foreground [&_code]:font-mono [&_code]:text-[.7rem] [&_code]:text-foreground [&>p+p]:mt-2">
+			{ children... }
+		</div>
+	</details>
+}

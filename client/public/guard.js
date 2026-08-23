@@ -4,7 +4,7 @@
 // The shared vocabulary lives in core.js, the panel renderers in charts.js, and
 // everything under /views in views.js. This file imports all three; none of
 // them imports this one, so the dependency runs one way.
-import { adminHeaders, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, svgNS, text, timeText } from "./core.js";
+import { adminHeaders, bytes, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, since, svgNS, text, timeText } from "./core.js";
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
 import { clusterNodes, refreshCluster, refreshMachine } from "./cluster.js";
@@ -17,12 +17,55 @@ import { refreshSecrets } from "./secrets.js";
 import { refreshConfig } from "./config.js";
 import { refreshBackup } from "./backup.js";
 import { closeDeployStreams, refreshDeploys } from "./deploys.js";
+import { refreshAnalytics } from "./analytics.js";
 import { screenCleared } from "./store.js";
 
 // Which machines the signal pages are scoped to. Shared across logs, traces and
 // metrics, and remembered: "I am looking at the two web boxes" is a stance you
 // hold while moving between pages, not a per-page setting you re-enter.
 const clusterFilter = new Set(JSON.parse(localStorage.getItem("guard.cluster") || "[]"));
+
+// The one filter nobody types: an analytics path arrives in the URL and the
+// table narrows to the spans of the browser sessions that saw it. It is what
+// makes a rate on /analytics walkable — the ids stay in the database, the link
+// carries the path, and the store does the join.
+//
+// Read from the URL on every mount rather than held as a stance the way the
+// machine chips are, because it belongs to the link somebody followed: a
+// reload, a new tab, the Back button and a pasted address all land on the same
+// table, and walking anywhere else drops it without anybody having to say so.
+let linkedPath = "";
+
+function readLinkedFilter() {
+  const params = new URLSearchParams(location.search);
+  linkedPath = params.get("rum_path") || "";
+  // The window comes with the link. A drill out of "last 30 days" that landed
+  // on this page's default hour would be an empty table saying nothing
+  // happened, which is the one answer it must not give.
+  const wanted = params.get("range");
+  if (!wanted) return;
+  for (const select of qsa('[data-filter="range"]')) {
+    if ([...select.options].some((option) => option.value === wanted)) select.value = wanted;
+  }
+}
+
+function renderLinkedFilter() {
+  for (const host of qsa("[data-linked-filter]")) {
+    host.classList.toggle("hidden", !linkedPath);
+    host.classList.toggle("flex", Boolean(linkedPath));
+    if (!linkedPath) {
+      host.replaceChildren();
+      continue;
+    }
+    const label = el("span", `text-xs font-medium ${muted}`, "From analytics");
+    const chip = el("button", "cn-badge inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap border-primary/40 bg-primary/15 text-primary");
+    chip.type = "button";
+    chip.dataset.linkedClear = "true";
+    chip.title = `Only the spans of browser sessions that saw ${linkedPath}. Press to drop the filter.`;
+    chip.append(text(`sessions that saw ${linkedPath}`), el("span", "opacity-60", "✕"));
+    host.replaceChildren(label, chip);
+  }
+}
 
 async function renderClusterFilter() {
   const hosts = qsa("[data-cluster-filter]");
@@ -221,6 +264,7 @@ function filterParams(signal, paginate = false) {
   for (const name of ["service", "severity", "name"]) if (value(name)) params.set(name, value(name));
   if (value("query")) params.set("q", value("query"));
   if (clusterFilter.size) params.set("nodes", [...clusterFilter].join(","));
+  if (linkedPath) params.set("rum_path", linkedPath);
   const range = value("range");
   const durations = { "15m": 15 * 60e3, "1h": 3600e3, "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 86400e3 };
   if (durations[range]) params.set("from", new Date(Date.now() - durations[range]).toISOString());
@@ -492,7 +536,7 @@ async function loadSettings() {
   const form = qs("[data-settings-form]"); if (!form) return;
 	if (form.dataset.loaded === "true") return;
   const settings = await request("/api/settings");
-  for (const key of ["database_path", "retention_hours", "max_events"]) qs(`[data-setting="${key}"]`, form).value = settings[key] ?? "";
+  for (const key of ["database_path", "retention_hours", "max_events", "analytics_rollup_days", "analytics_seen_days"]) qs(`[data-setting="${key}"]`, form).value = settings[key] ?? "";
   qs('[data-setting="token"]', form).value = sessionStorage.getItem("guard.token") || "";
 	form.dataset.loaded = "true";
 }
@@ -500,7 +544,13 @@ async function loadSettings() {
 async function saveSettings(form) {
   const status = qs("[data-settings-status]", form); status.textContent = "Saving…";
   try {
-    const value = { retention_hours: Number(qs('[data-setting="retention_hours"]', form).value), max_events: Number(qs('[data-setting="max_events"]', form).value) };
+    // Every number the form holds goes on every save: the store reads a zero as
+    // "leave it alone", so a partial body would look like a save that worked.
+    const number_ = (key) => Number(qs(`[data-setting="${key}"]`, form).value);
+    const value = {
+      retention_hours: number_("retention_hours"), max_events: number_("max_events"),
+      analytics_rollup_days: number_("analytics_rollup_days"), analytics_seen_days: number_("analytics_seen_days"),
+    };
     await request("/api/settings", { method: "PUT", headers: adminHeaders(), body: JSON.stringify(value) }); status.textContent = "Saved and cleanup applied."; await refreshSummary();
   } catch (error) { status.textContent = error.message; }
 }
@@ -550,7 +600,14 @@ async function refreshPage({ facets = false } = {}) {
   // this page must not do. So: on a mount and after a change, never on the
   // tick.
   if (facets && qs("[data-secret-envs]")) work.push(refreshSecrets());
-  if (facets) work.push(refreshFacets(), renderClusterFilter());
+  // Analytics is a rollup keyed by whole UTC days, read over a window of at
+  // least one of them: a three-second tick would redraw the same numbers a
+  // thousand times an hour. A mount and a press, like the pages behind an API.
+  if (facets && qs("[data-analytics-page]")) work.push(refreshAnalytics());
+  if (facets) {
+    renderLinkedFilter();
+    work.push(refreshFacets(), renderClusterFilter());
+  }
   await Promise.allSettled(work);
 }
 
@@ -574,8 +631,11 @@ async function liveTick() {
 let updateState = null;
 
 async function refreshUpdate() {
-  const card = qs("[data-update-card]");
-  if (!card) return;
+  // Either surface is reason enough to ask. The card is in the layout and the
+  // panel is on one page, and returning early when the card is missing would
+  // leave Settings -> Info permanently drawing dashes on any instance whose
+  // sidebar is not rendered.
+  if (!qs("[data-update-card]") && !qs("[data-info-version]")) return;
   try {
     updateState = await request("/api/update");
   } catch {
@@ -584,6 +644,7 @@ async function refreshUpdate() {
     return;
   }
   renderUpdate();
+  renderInfo();
 }
 
 function renderUpdate() {
@@ -624,10 +685,12 @@ function renderUpdate() {
 }
 
 async function applyUpdate() {
-  const card = qs("[data-update-card]");
-  const status = qs("[data-update-status]", card);
-  const button = qs("[data-update-apply]", card);
-  if (!updateState?.latest) return;
+  // Pressed from the sidebar card or from Settings -> Info; whichever is on
+  // screen owns the button and the line under it.
+  const onPage = Boolean(qs("[data-info-version]"));
+  const status = qs(onPage ? "[data-info-status]" : "[data-update-status]");
+  const button = qs(onPage ? "[data-info-update]" : "[data-update-apply]");
+  if (!updateState?.latest || !status || !button) return;
   button.disabled = true;
   status.textContent = "asking…";
   try {
@@ -635,7 +698,9 @@ async function applyUpdate() {
       method: "POST", headers: adminHeaders(),
       body: JSON.stringify({ version: updateState.latest }),
     });
+    status.textContent = "";
     renderUpdate();
+    renderInfo();
   } catch (failure) {
     status.textContent = failure.message;
   } finally {
@@ -643,8 +708,173 @@ async function applyUpdate() {
   }
 }
 
+// Settings -> Info. The sidebar card appears only when there is news, which is
+// right for a sidebar and useless for the page somebody opens *to check*. Same
+// state object, drawn in full: what is running, what the channel says, when
+// guard last asked, and what the version file pins.
+function renderInfo() {
+  const panel = qs("[data-info-version]");
+  if (!panel) return;
+  const state = updateState || {};
+  const dash = (value) => (value && String(value).trim()) || "—";
+
+  qs("[data-info-current]").textContent = dash(state.current);
+  const latest = qs("[data-info-latest]");
+  latest.textContent = dash(state.latest);
+  // No release yet means nowhere to point: a link to "#" that scrolls the page
+  // is worse than text.
+  if (state.url) {
+    latest.href = state.url;
+    latest.removeAttribute("aria-disabled");
+  } else {
+    latest.removeAttribute("href");
+  }
+  qs("[data-info-checked]").textContent = state.checked_at ? relativeTime(state.checked_at) : "never";
+  qs("[data-info-wanted]").textContent = dash(state.wanted);
+
+  const summary = qs("[data-info-summary]");
+  const update = qs("[data-info-update]");
+  update.hidden = true;
+  if (state.error) {
+    // Named rather than folded into "up to date": a check that could not reach
+    // GitHub knows nothing, and saying nothing is new would be a guess.
+    summary.hidden = false;
+    summary.textContent = `Could not reach the release repository — ${state.error}`;
+    return;
+  }
+  if (state.development) {
+    summary.hidden = false;
+    summary.textContent = "This is a development build, so there is nothing to compare it against.";
+    return;
+  }
+  if (!state.latest) {
+    summary.hidden = true;
+    return;
+  }
+  summary.hidden = false;
+  if (!state.available) {
+    summary.textContent = `Running the current release, ${state.latest}.`;
+    return;
+  }
+  if (state.wanted && state.wanted === state.latest) {
+    summary.textContent = `${state.latest} requested — the updater installs it within 15 minutes.`;
+    return;
+  }
+  if (!state.managed) {
+    summary.textContent = "A newer release exists, but this instance updates itself elsewhere.";
+    return;
+  }
+  summary.textContent = `${state.latest} is available.`;
+  update.hidden = false;
+}
+
+// The box guard is on. Read on mount rather than on the tick: it describes
+// hardware and a database size, neither of which moves in three seconds, and a
+// settings page that re-fetched on every pass would be spending requests to
+// redraw the same words.
+async function refreshHost() {
+  const panel = qs("[data-info-host]");
+  if (!panel) return;
+  const problem = qs("[data-info-host-error]");
+  let host;
+  try {
+    host = await request("/api/info");
+  } catch (failure) {
+    problem.hidden = false;
+    problem.textContent = failure.message;
+    return;
+  }
+  problem.hidden = true;
+
+  // Unmeasurable is a dash, never a zero — the has_* flags are the server
+  // saying which is which, and "0% of memory used" is a number somebody acts
+  // on. Off Linux most of this is legitimately empty.
+  const rows = [
+    ["Operating system", host.distro || `${host.os || "—"} ${host.arch || ""}`.trim()],
+    ["Kernel", host.kernel || "—"],
+    ["Hostname", host.hostname || "—"],
+    ["CPU", host.cpu_model ? `${host.cpu_model} · ${host.cpu_count} cores` : (host.cpu_count ? `${host.cpu_count} cores` : "—")],
+    ["Load", host.has_cpu
+      ? `${host.load_1.toFixed(2)} · ${host.load_5.toFixed(2)} · ${host.load_15.toFixed(2)}` +
+        (host.cpu_count ? ` over ${host.cpu_count}` : "")
+      : "—"],
+    ["Memory", host.has_memory
+      ? `${bytes(host.mem_used_kb * 1024)} of ${bytes(host.mem_total_kb * 1024)}` +
+        ` (${Math.round((host.mem_used_kb / host.mem_total_kb) * 100)}%)`
+      : "—"],
+    ["Disk", host.has_disk
+      ? `${bytes(host.disk_used_kb * 1024)} of ${bytes(host.disk_total_kb * 1024)}` +
+        ` (${Math.round((host.disk_used_kb / host.disk_total_kb) * 100)}%) on ${host.disk_path}`
+      : "—"],
+    ["Database", host.database_path
+      ? `${bytes(host.database_bytes)} at ${host.database_path}`
+      : "—"],
+    ["Host uptime", since(host.host_uptime_seconds)],
+    ["Guard uptime", since(host.process_uptime_seconds)],
+    ["Runtime", `${host.go_version || "—"} · ${host.goroutines} goroutines · ${bytes(host.heap_bytes)} heap`],
+    // Both explain something the page above cannot: no supervisor means the
+    // restart button is absent, and a container is why there is no
+    // /etc/guard and so no update button.
+    ["Process", [host.supervised ? "supervised" : "not supervised",
+      host.in_container ? "in a container" : null].filter(Boolean).join(" · ")],
+  ];
+
+  panel.replaceChildren(...rows.map(([label, value]) => {
+    const cell = el("div");
+    cell.append(
+      el("dt", "text-xs font-medium uppercase tracking-wider text-muted-foreground", label),
+      el("dd", "mt-1 text-sm break-words", value || "—"),
+    );
+    return cell;
+  }));
+}
+
+async function checkForUpdates() {
+  const button = qs("[data-info-check]");
+  const status = qs("[data-info-status]");
+  if (!button) return;
+  button.disabled = true;
+  status.textContent = "asking…";
+  try {
+    updateState = await request("/api/update/check", { method: "POST", headers: adminHeaders() });
+    status.textContent = "";
+    renderUpdate();
+    renderInfo();
+  } catch (failure) {
+    status.textContent = failure.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// The tabs inside components.HowTo.
+//
+// Opening and closing the dialog is a checkbox and a sibling selector, with no
+// script at all. Only this part is scripted, and only because the alternative
+// is not available: showing panel N from radio N needs a `peer-checked/N:`
+// class assembled from an index, and Tailwind emits no class it cannot find
+// written out. Delegated on document like everything else here, so it keeps
+// working after a client-side navigation replaces the outlet.
+document.addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-howto-tab]");
+  if (!tab) return;
+  const dialog = tab.closest("[data-howto]");
+  if (!dialog) return;
+  const wanted = tab.dataset.howtoTab;
+  for (const control of qsa("[data-howto-tab]", dialog)) {
+    const active = control.dataset.howtoTab === wanted;
+    control.dataset.active = String(active);
+    control.setAttribute("aria-selected", String(active));
+  }
+  for (const panel of qsa("[data-howto-panel]", dialog)) {
+    panel.hidden = panel.dataset.howtoPanel !== wanted;
+  }
+});
+
 document.addEventListener("click", (event) => {
   if (event.target.closest("[data-update-apply]")) applyUpdate();
+  if (event.target.closest("[data-info-check]")) checkForUpdates();
+  if (event.target.closest("[data-info-update]")) applyUpdate();
 });
 
 // On a mount, and then rarely: the answer changes when somebody publishes a
@@ -657,6 +887,9 @@ globalThis.guardPageMount = (page) => {
   // AOT navigations start a fresh page-specific load here.
   refreshUpdate();
   renderGeneration++;
+  // Before anything asks for rows: the URL is what says which sessions this
+  // page is about, and the first request must already know.
+  readLinkedFilter();
   if (page === initializedPage && initialRefresh) {
     const pending = initialRefresh;
     initialRefresh = null;
@@ -667,9 +900,10 @@ globalThis.guardPageMount = (page) => {
     // and stayed there. So the page's own pass runs here as well; the store
     // shares in-flight loads by key, so this is not a second round of
     // requests, and everything it does put in the store is already drawn.
-    return Promise.allSettled([pending, refreshPage({ facets: true })]);
+    return Promise.allSettled([pending, refreshPage({ facets: true }), refreshHost()]);
   }
   initializedPage = page;
+  if (page === "info") return refreshHost();
   if (page === "views") return mountViews();
   return refreshPage({ facets: true });
 };
@@ -705,6 +939,20 @@ document.addEventListener("click", (event) => {
     // different rows, and page four of the old set means nothing in the new.
     for (const signal of signalPages.keys()) signalPages.set(signal, 0);
     renderClusterFilter();
+    refreshPage();
+    return;
+  }
+  if (event.target.closest("[data-linked-clear]")) {
+    linkedPath = "";
+    // The URL is what put it there, so the URL is what has to stop saying it:
+    // dropping the chip and leaving the address alone would bring the filter
+    // back on the next reload, and the Back button would still owe somebody
+    // the filtered view they walked in on — which replaceState leaves intact.
+    const here = new URL(location.href);
+    here.searchParams.delete("rum_path");
+    history.replaceState(history.state, "", here.pathname + here.search);
+    for (const signal of signalPages.keys()) signalPages.set(signal, 0);
+    renderLinkedFilter();
     refreshPage();
     return;
   }
@@ -752,5 +1000,9 @@ document.addEventListener("submit", (event) => {
 
 updateLiveControl();
 initializedPage = location.pathname === "/" ? "home" : location.pathname.split("/").filter(Boolean)[0];
+// A cold load of a drill link — a new tab, a reload, an address somebody was
+// sent — starts here rather than at the mount, so the eager pass below asks for
+// the sessions the URL names instead of the whole table and then narrowing.
+readLinkedFilter();
 initialRefresh = refreshPage({ facets: true });
 liveTimer = setTimeout(liveTick, 3000);

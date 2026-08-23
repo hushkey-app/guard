@@ -1,0 +1,396 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/hushkey-app/guard/client/ui"
+)
+
+// AnalyticsStat is the strip's tile, cloned once per figure by
+// client/public/analytics.js.
+//
+// The slots it fills:
+//
+//	data-stat-label   what is being counted
+//	data-stat-value   the figure, or a dash where the window cannot answer
+//	data-stat-delta   the change against the previous window of equal length
+//	data-stat-note    the figure that change is measured from
+//
+// ui.Stat is this shape already and is deliberately not reused: it renders at
+// the server from strings, and every number here arrives from a fetch after the
+// page is on screen — and then again, in place, on every window change.
+templ AnalyticsStat() {
+	<template data-analytics-stat-template>
+		@card.Card(card.Props{Size: card.SizeSm}) {
+			@card.Content() {
+				<p data-stat-label class="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground"></p>
+				<p data-stat-value class="mt-2 text-3xl font-semibold tabular-nums tracking-tight">—</p>
+				<!-- One line under the number, and it is empty until there is a
+				     previous window to compare against: a strip that reserved
+				     room for a delta it never has is four tiles of blank space. -->
+				<p class="mt-2 flex flex-wrap items-baseline gap-2 text-xs">
+					<span data-stat-delta class="font-medium tabular-nums"></span>
+					<span data-stat-note class="text-muted-foreground"></span>
+				</p>
+			}
+		}
+	</template>
+}
+
+// AnalyticsGrid is the grid's chrome: a sortable header cell, one path row, and
+// one action cell. All three are cloned by client/public/analytics.js, which is
+// the only thing that knows how many columns there are.
+//
+// The column count is data — the pinned actions — so the track list is an
+// inline style set per grid rather than a class. `grid-cols-${n}` assembled
+// from a variable is a class Tailwind never emits, and the failure is silent:
+// the rows collapse into a single column and nothing says why.
+//
+// The slots:
+//
+//	data-analytics-head-template  a column heading: data-head-label, data-head-arrow
+//	data-analytics-row-template   one path: data-row-path, data-row-views, data-row-sessions
+//	data-analytics-cell-template  one action on one path: data-cell-count, data-cell-rate
+templ AnalyticsGrid() {
+	<template data-analytics-head-template>
+		<!-- A button, because the whole heading is the target: a caret somebody
+		     has to hit is a sort nobody uses. -->
+		<button type="button" class="flex min-w-0 items-center gap-1 py-2 text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground transition-colors hover:text-foreground">
+			<span data-head-label class="truncate"></span>
+			<span data-head-arrow class="text-[0.65rem] leading-none"></span>
+		</button>
+	</template>
+	<!-- The whole row is the disclosure, chevron included: a 14-pixel arrow is a
+	     small thing to ask somebody to hit on a page of forty rows, and it is
+	     the first thing a narrow column pushes out of reach. A button rather
+	     than a div with a listener, so it is reachable from a keyboard and says
+	     what it does through aria-expanded. -->
+	<template data-analytics-row-template>
+		<button type="button" data-analytics-row aria-expanded="false" class="grid w-full items-center gap-3 border-t border-border/60 py-2 text-left text-sm transition-colors hover:bg-muted/40">
+			<span class="flex min-w-0 items-center gap-1.5">
+				<svg data-row-chevron class="size-3.5 shrink-0 text-muted-foreground transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="m6 9 6 6 6-6"></path>
+				</svg>
+				<span data-row-path class="truncate font-mono text-xs"></span>
+			</span>
+			<span data-row-views class="text-right tabular-nums"></span>
+			<span data-row-sessions class="text-right tabular-nums text-muted-foreground"></span>
+		</button>
+	</template>
+	<!-- Two lines, and the count is sessions rather than events so both halves
+	     are the same kind of thing: 96 over 38.4% of the sessions that saw the
+	     page adds up on the row it is read on. How often the action happened is
+	     on the cell's title, where it cannot be mistaken for the numerator. -->
+	<template data-analytics-cell-template>
+		<span class="text-right">
+			<span data-cell-count class="block tabular-nums"></span>
+			<span data-cell-rate class="block text-xs tabular-nums text-muted-foreground"></span>
+		</span>
+	</template>
+}
+
+// AnalyticsFold is what a path row opens onto: the days behind its figures,
+// every action that happened on it — pinned or not — and where its sessions
+// came from.
+//
+// The three halves answer the questions a row cannot. The chart says whether
+// the numbers on the line are a trend or one afternoon; the action list is the
+// discovery half, because an action nobody has pinned is still counted and this
+// is the only place it can be seen. Pinning one from here is how a column is
+// created, which is why the button is beside the figure rather than on a
+// settings page. The sources are the other direction — the grid says what
+// happened on the page, and this says what brought people to it.
+//
+// The slots:
+//
+//	data-analytics-fold-template    the panel: data-fold-chart, data-fold-legend, data-fold-actions, data-fold-sources, data-fold-traces
+//	data-analytics-action-template  one action: data-action-name, data-action-count, data-action-rate, data-action-pin
+//	data-analytics-source-template  one campaign or referring host: data-source-name, data-source-detail, data-source-count, data-source-share
+templ AnalyticsFold() {
+	<template data-analytics-fold-template>
+		<div data-analytics-fold class="border-t border-border/60 bg-muted/20 px-4 py-4">
+			<div class="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+				<div class="min-w-0">
+					<p class="text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">Page views and sessions</p>
+					<!-- A fixed height, because the chart is drawn into an empty
+					     box after the row is already open: a host that sized
+					     itself to its contents would open at nothing and jump
+					     the rest of the page down when the read landed. -->
+					<div data-fold-chart class="mt-2 h-44"></div>
+					<div data-fold-legend class="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground empty:hidden"></div>
+					<!-- Under the chart rather than beside the actions, because
+					     it lands from the same read the chart does and the two
+					     of them arrive together. -->
+					<p class="mt-5 text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">Where they came from</p>
+					<div data-fold-sources class="mt-2 space-y-0.5"></div>
+				</div>
+				<div class="min-w-0">
+					<p class="text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">Actions on this path</p>
+					<div data-fold-actions class="mt-2 space-y-0.5"></div>
+				</div>
+			</div>
+			<!-- The walk out of the numbers and into what produced them. It is
+			     a plain link with the path and the window in it, because the
+			     sessions it means are worked out at the far end: a URL naming
+			     two hundred ids is one nobody can read, share or shorten, and
+			     the set it named would be stale by the time it was opened. -->
+			<div class="mt-4 flex justify-end border-t border-border/60 pt-3">
+				<a data-fold-traces href="/traces" class="text-xs font-medium text-primary underline-offset-4 hover:underline">
+					Open these sessions in traces →
+				</a>
+			</div>
+		</div>
+	</template>
+	<template data-analytics-source-template>
+		<div class="flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/40">
+			<span class="flex min-w-0 flex-1 items-baseline gap-2">
+				<span data-source-name class="truncate"></span>
+				<span data-source-detail class="truncate text-xs text-muted-foreground empty:hidden"></span>
+			</span>
+			<span data-source-count class="tabular-nums"></span>
+			<span data-source-share class="w-14 text-right text-xs tabular-nums text-muted-foreground"></span>
+		</div>
+	</template>
+	<template data-analytics-action-template>
+		<div class="flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/40">
+			<span data-action-name class="min-w-0 flex-1 truncate font-mono text-xs"></span>
+			<span data-action-count class="tabular-nums"></span>
+			<span data-action-rate class="w-14 text-right text-xs tabular-nums text-muted-foreground"></span>
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Class:      "shrink-0",
+				Attributes: templ.Attributes{"data-action-pin": true},
+			}) {
+				Pin
+			}
+		</div>
+	</template>
+}
+
+// AnalyticsControls is the two decisions the grid is made of: which actions are
+// columns, and what counts as one path.
+//
+// Both sit behind a control rather than on the page. An action is pinned once
+// and read for months, a path rule is written the week a route is instrumented,
+// and the grid is what somebody opened this page for — an editor above it is an
+// editor standing in front of the thing it edits.
+//
+// A checkbox and a sibling selector, like MachineDialog: guard serves no
+// interactive shadcn bundle, so anything else here is a modal hand-built out of
+// divs. It costs no JavaScript and has nothing to re-hydrate after a navigation.
+//
+// The slots client/public/analytics.js fills:
+//
+//	data-analytics-actions            the two groups: pinned, then discovered
+//	data-analytics-action-row-template one action: name, events, last seen, the four buttons
+//	data-analytics-rules              the rule rows, in the order they are tried
+//	data-analytics-rule-template      one rule: data-rule-field="pattern" / "replacement"
+//	data-analytics-preview            what those rules would do to the paths that arrived
+//	data-analytics-preview-template   one of them: data-rule-path, data-rule-result
+templ AnalyticsControls() {
+	@analyticsDialog("analytics-actions", "Actions",
+		"Every name the tracker has sent. A pinned one is a column on the grid, in the order they are drawn; the rest are counted just the same and show when a path is opened.") {
+		<div data-analytics-actions class="space-y-5">
+			@ui.Empty("Loading actions…")
+		</div>
+		@ui.Note("Pinning is about the grid. Deleting is not.") {
+			<p>
+				A column is a decision about what is drawn, never about what is collected:
+				unpinning one leaves every event where it was, and the action still appears
+				under the path it happened on.
+			</p>
+			<p>
+				Deleting is the other kind. It removes the name and everything counted under
+				it — the rollup, the sessions that did it and the raw events — and no rule can
+				bring those days back. The page views on those paths stay, because they are a
+				different action, and the next beacon carrying the name discovers it again:
+				this is a purge, not a mute.
+			</p>
+		}
+	}
+	<!-- Four buttons and two figures. The last-seen line is under the name
+	     rather than in a column of its own, because the question it answers —
+	     "is this name still being sent" — is asked about one row at a time. -->
+	<template data-analytics-action-row-template>
+		<div data-analytics-action class="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
+			<span class="flex min-w-0 flex-1 flex-col">
+				<span data-action-row-name class="truncate font-mono text-xs"></span>
+				<span data-action-row-seen class="truncate text-[.65rem] text-muted-foreground"></span>
+			</span>
+			<span data-action-row-events class="shrink-0 text-xs tabular-nums text-muted-foreground"></span>
+			<span data-action-move class="flex shrink-0 items-center gap-1">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeIconXs,
+					Attributes: templ.Attributes{"data-action-up": true, "aria-label": "Move this column left"},
+				}) {
+					↑
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeIconXs,
+					Attributes: templ.Attributes{"data-action-down": true, "aria-label": "Move this column right"},
+				}) {
+					↓
+				}
+			</span>
+			@button.Button(button.Props{
+				Variant:    button.VariantOutline,
+				Size:       button.SizeSm,
+				Class:      "shrink-0",
+				Attributes: templ.Attributes{"data-action-toggle": true},
+			}) {
+				Pin
+			}
+			@button.Button(button.Props{
+				Variant:    button.VariantGhost,
+				Size:       button.SizeSm,
+				Class:      "shrink-0 text-destructive",
+				Attributes: templ.Attributes{"data-action-delete": true},
+			}) {
+				Delete
+			}
+		</div>
+	</template>
+	@analyticsDialog("analytics-rules", "Path rules",
+		"How a URL with an id in it becomes the page it is. Ordered, and the first match wins.") {
+		<div class="space-y-3">
+			<div data-analytics-rules class="space-y-2"></div>
+			<div class="flex flex-wrap items-center gap-2">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-rule-add": true},
+				}) {
+					Add a rule
+				}
+				@button.Button(button.Props{
+					Size:       button.SizeSm,
+					Attributes: templ.Attributes{"data-rules-save": true},
+				}) {
+					Save
+				}
+				<span data-rules-status class="text-xs text-muted-foreground"></span>
+			</div>
+			<p data-rules-error class="text-xs text-destructive empty:hidden"></p>
+		</div>
+		<!-- The preview is the reason this dialog is worth opening: a rule that
+		     collapses nothing looks exactly like one that works until it is run
+		     against the paths that actually arrived. -->
+		<div class="space-y-2">
+			<div class="flex flex-wrap items-baseline justify-between gap-3">
+				<h3 class="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">What it would do</h3>
+				<span data-rules-summary class="text-xs text-muted-foreground"></span>
+			</div>
+			<div data-analytics-preview class="max-h-64 space-y-0.5 overflow-y-auto rounded-lg border border-border/60 p-2"></div>
+		</div>
+		@ui.Note("A rule shapes what is counted, and only from now on") {
+			<p>
+				Rules are applied at ingest, so the days already rolled up keep the paths they
+				were counted under. That is the honest half of the trade: the alternative is a
+				rollup whose rows change meaning under a report somebody already sent.
+			</p>
+			<p>
+				A pattern is a glob rather than a regular expression, because the thing being
+				written is a URL shape: <code>*</code> stops at a <code>/</code>, so
+				<code>/users/*</code> is one user and a second level is a second <code>*</code>.
+				The replacement is a literal — putting the id back would be a rule that
+				collapses nothing.
+			</p>
+		}
+	}
+	<!-- Two boxes and an arrow, in the order they are read: what arrives on the
+	     left, the row it is counted under on the right. -->
+	<template data-analytics-rule-template>
+		<div data-analytics-rule class="flex flex-wrap items-center gap-2">
+			<input data-rule-field="pattern" placeholder="/users/*" autocomplete="off" spellcheck="false" class="cn-input h-9 min-w-0 flex-1 font-mono text-xs"/>
+			<span class="shrink-0 text-xs text-muted-foreground" aria-hidden="true">→</span>
+			<input data-rule-field="replacement" placeholder="/users/:id" autocomplete="off" spellcheck="false" class="cn-input h-9 min-w-0 flex-1 font-mono text-xs"/>
+			<span class="flex shrink-0 items-center gap-1">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeIconXs,
+					Attributes: templ.Attributes{"data-rule-up": true, "aria-label": "Try this rule earlier"},
+				}) {
+					↑
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeIconXs,
+					Attributes: templ.Attributes{"data-rule-down": true, "aria-label": "Try this rule later"},
+				}) {
+					↓
+				}
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Size:       button.SizeSm,
+					Class:      "text-destructive",
+					Attributes: templ.Attributes{"data-rule-remove": true},
+				}) {
+					Remove
+				}
+			</span>
+		</div>
+	</template>
+	<template data-analytics-preview-template>
+		<div class="flex items-center gap-2 px-1 py-0.5 text-xs">
+			<span data-rule-path class="min-w-0 flex-1 truncate font-mono"></span>
+			<span data-rule-arrow class="shrink-0 text-muted-foreground" aria-hidden="true">→</span>
+			<span data-rule-result class="min-w-0 flex-1 truncate font-mono"></span>
+		</div>
+	</template>
+}
+
+// AnalyticsControlOpen is the label that opens one of them. Separate from the
+// dialog so the page can put the control beside the grid it changes while the
+// dialogs sit at the end of the document, out of the reading order.
+templ AnalyticsControlOpen(target, label string) {
+	<label
+		for={ target }
+		class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+	>
+		{ label }
+	</label>
+}
+
+// analyticsDialog is the chrome both controls wear: a checkbox, a backdrop that
+// closes it, and a scrolling body. The header is where the sentence explaining
+// what the dialog decides goes, because the alternative is a paragraph above
+// the first control that pushes the controls out of sight.
+templ analyticsDialog(id, title, lede string) {
+	<!-- The wrapper is load-bearing, and this page is the first thing in guard
+	     with two of these on it: `peer-checked:` compiles to a general sibling
+	     selector, so with nothing to scope it to, opening either checkbox opens
+	     every panel declared after it — both dialogs at once, the second one on
+	     top of the first. -->
+	<div>
+		<input id={ id } type="checkbox" class="peer sr-only"/>
+		<div class="fixed inset-0 z-50 hidden place-items-center overflow-y-auto p-4 peer-checked:grid">
+			<label for={ id } aria-label="Close" class="absolute inset-0 bg-black/70"></label>
+			<div
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby={ id + "-title" }
+				class="relative z-10 w-full max-w-3xl rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+			>
+				<div class="flex items-start justify-between gap-4 border-b border-border p-5">
+					<div>
+						<h2 id={ id + "-title" } class="text-lg font-semibold tracking-tight">{ title }</h2>
+						<p class="mt-1 text-sm text-muted-foreground">{ lede }</p>
+					</div>
+					<label
+						for={ id }
+						aria-label="Close"
+						class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+					>
+						@ui.Icon("close", "size-4")
+					</label>
+				</div>
+				<div class="max-h-[70dvh] space-y-6 overflow-y-auto p-5">
+					{ children... }
+				</div>
+			</div>
+		</div>
+	</div>
+}

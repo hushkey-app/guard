@@ -243,7 +243,7 @@ function foreignRow(category, rule) {
     : "shrink-0 text-[.65rem] text-muted-foreground", rule.firing ? "firing" : "ok");
   const link = el("a", "shrink-0 text-[.65rem] underline underline-offset-2 hover:text-foreground",
     category === "Jobs" ? "Settings → Cluster" : "Open the view");
-  link.href = category === "Jobs" ? "/settings/cluster" : "/views";
+  link.href = category === "Jobs" ? "/cluster" : "/views";
   row.append(where, state, link);
   return row;
 }

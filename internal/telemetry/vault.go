@@ -239,7 +239,7 @@ func seedWorkspace(db *sql.DB, name string) (int64, error) {
 // answered in one query because a count per workspace done from the browser
 // would be one request per application.
 func (s *Store) Workspaces() ([]model.Workspace, error) {
-	rows, err := s.db.Query(`SELECT w.id, w.name, w.note, w.created_ns,
+	rows, err := s.rdb.Query(`SELECT w.id, w.name, w.note, w.created_ns,
 (SELECT count(*) FROM secret_envs WHERE workspace_id = w.id),
 (SELECT count(*) FROM secrets WHERE env_id IN (SELECT id FROM secret_envs WHERE workspace_id = w.id)),
 (SELECT count(*) FROM secret_keys WHERE revoked_ns = 0
@@ -345,7 +345,7 @@ func workspaceError(err error, name string) error {
 // everything the page's left column shows, in one query, because a count per
 // environment done from the browser would be one request per environment.
 func (s *Store) Envs(workspaceID int64) ([]model.Env, error) {
-	rows, err := s.db.Query(`SELECT e.id, e.workspace_id, w.name, e.name, e.note, e.created_ns,
+	rows, err := s.rdb.Query(`SELECT e.id, e.workspace_id, w.name, e.name, e.note, e.created_ns,
 (SELECT count(*) FROM secrets WHERE env_id = e.id),
 (SELECT count(*) FROM secret_keys WHERE env_id = e.id AND revoked_ns = 0),
 COALESCE((SELECT max(updated_ns) FROM secrets WHERE env_id = e.id), 0)
@@ -374,7 +374,7 @@ WHERE e.workspace_id = ? ORDER BY e.name COLLATE NOCASE`, workspaceID)
 // Env reads one stage by id, whichever workspace it is in.
 func (s *Store) Env(id int64) (model.Env, error) {
 	var workspace int64
-	if err := s.db.QueryRow(`SELECT workspace_id FROM secret_envs WHERE id = ?`, id).Scan(&workspace); err != nil {
+	if err := s.rdb.QueryRow(`SELECT workspace_id FROM secret_envs WHERE id = ?`, id).Scan(&workspace); err != nil {
 		return model.Env{}, err
 	}
 	envs, err := s.Envs(workspace)
@@ -453,7 +453,7 @@ func envError(err error, name string) error {
 // comes back marked rather than as an empty string — an application handed ""
 // for a database password fails somewhere far away from the reason.
 func (s *Store) Secrets(envID int64) ([]model.Secret, error) {
-	rows, err := s.db.Query(`SELECT id, env_id, key, COALESCE(value, x''), note, created_ns, updated_ns
+	rows, err := s.rdb.Query(`SELECT id, env_id, key, COALESCE(value, x''), note, created_ns, updated_ns
 FROM secrets WHERE env_id = ? ORDER BY key COLLATE NOCASE`, envID)
 	if err != nil {
 		return nil, err
@@ -517,7 +517,7 @@ func (s *Store) Secret(envID int64, key string) (model.Secret, error) {
 	var secret model.Secret
 	var sealed []byte
 	var created, updated int64
-	err := s.db.QueryRow(`SELECT id, env_id, key, COALESCE(value, x''), note, created_ns, updated_ns
+	err := s.rdb.QueryRow(`SELECT id, env_id, key, COALESCE(value, x''), note, created_ns, updated_ns
 FROM secrets WHERE env_id = ? AND key = ?`, envID, key).
 		Scan(&secret.ID, &secret.EnvID, &secret.Key, &sealed, &secret.Note, &created, &updated)
 	if err != nil {
@@ -626,7 +626,7 @@ const tokenPrefix = "gsk_"
 
 // APIKeys lists the tokens, with the environment each belongs to.
 func (s *Store) APIKeys() ([]model.APIKey, error) {
-	rows, err := s.db.Query(`SELECT k.id, k.env_id, e.name, w.name, k.name, k.prefix,
+	rows, err := s.rdb.Query(`SELECT k.id, k.env_id, e.name, w.name, k.name, k.prefix,
 k.created_ns, k.expires_ns, k.last_used_ns, k.revoked_ns
 FROM secret_keys k
 JOIN secret_envs e ON e.id = k.env_id

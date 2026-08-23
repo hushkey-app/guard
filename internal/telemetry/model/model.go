@@ -56,11 +56,19 @@ type Filter struct {
 	// A list of ids rather than a list of services, so that the filter follows
 	// the cluster as its membership changes. Pin a new service to a machine and
 	// a saved "node 3" filter includes it without being edited.
-	Nodes  string    `query:"nodes"`
-	From   time.Time `query:"from"`
-	To     time.Time `query:"to"`
-	Limit  int       `query:"limit"`
-	Offset int       `query:"offset"`
+	Nodes string `query:"nodes"`
+	// RUMPath narrows to the browser sessions that saw one analytics path —
+	// the walk from a row on /analytics into the spans those visits produced,
+	// which is the whole reason the session id is a join key.
+	//
+	// A path rather than the session ids themselves: the ids belong to the
+	// database, a link carrying two hundred of them is one nobody can share or
+	// read, and the set they name changes as the window moves.
+	RUMPath string    `query:"rum_path"`
+	From    time.Time `query:"from"`
+	To      time.Time `query:"to"`
+	Limit   int       `query:"limit"`
+	Offset  int       `query:"offset"`
 }
 
 type Instance struct {
@@ -92,10 +100,26 @@ type Summary struct {
 	Recent    []Event    `json:"recent"`
 }
 
+// The analytics windows are days rather than hours, and there are two of them,
+// because the tables they sweep are asked different questions. The rollup
+// answers "versus last month", so it is kept in months; `analytics_seen` only
+// makes a day's session count exact while that day is still being written to,
+// and it is the one analytics table that grows with traffic rather than with
+// content — so it goes first, and after it has gone the counts stand and cannot
+// be recomputed. The ceiling is ten years, which is a refusal rather than a
+// recommendation: a number nobody typed on purpose.
+const (
+	DefaultAnalyticsRollupDays = 90
+	DefaultAnalyticsSeenDays   = 7
+	MaxAnalyticsDays           = 3650
+)
+
 type Settings struct {
-	DatabasePath   string `json:"database_path"`
-	RetentionHours int    `json:"retention_hours"`
-	MaxEvents      int    `json:"max_events"`
+	DatabasePath        string `json:"database_path"`
+	RetentionHours      int    `json:"retention_hours"`
+	MaxEvents           int    `json:"max_events"`
+	AnalyticsRollupDays int    `json:"analytics_rollup_days"`
+	AnalyticsSeenDays   int    `json:"analytics_seen_days"`
 }
 
 type Facets struct {

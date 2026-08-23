@@ -19,16 +19,29 @@ views source can post spans claiming to be your `api` service, and every panel,
 saved view and uptime number on the dashboard is now something a stranger can
 write to.
 
-`/v1/rum/traces` and `/v1/rum/logs` are the browser's door:
+`/v1/rum/traces`, `/v1/rum/logs` and `/v1/rum/events` are the browser's door:
 
-| | `/v1/traces` | `/v1/rum/traces` |
-|---|---|---|
-| auth | `GUARD_OTEL_SECRET` or `GUARD_TOKEN` | none — it is public by nature |
-| identity | from the payload | **assigned by guard**, payload ignored |
-| body | 16 MB | 256 KB |
-| rate | unlimited | 120 a minute per address |
-| enabled | always | only when `GUARD_RUM_ORIGINS` is set |
-| signals | logs, traces, metrics | traces, logs |
+| | `/v1/traces` | `/v1/rum/traces` | `/v1/rum/events` |
+|---|---|---|---|
+| auth | `GUARD_OTEL_SECRET` or `GUARD_TOKEN` | none — it is public by nature | none — it is public by nature |
+| identity | from the payload | **assigned by guard**, payload ignored | no service at all: a path and an action |
+| body | 16 MB | 256 KB | the same 256 KB |
+| rate | unlimited | 120 a minute per address | the same budget, one limiter |
+| enabled | always | only when `GUARD_RUM_ORIGINS` is set | the same switch |
+| payload | OTLP | OTLP | guard's own JSON, one-letter keys |
+| signals | logs, traces, metrics | traces, logs | what a person did |
+
+`/v1/rum/events` is analytics — page views and the actions somebody pressed,
+counted per URL. It is guard's own JSON rather than OTLP because the tracker
+that posts it has a two-kilobyte budget and the OTLP JS exporter is tens of
+kilobytes for a payload that is a name and a path. `docs/analytics.md` is the
+whole of it.
+
+`GET /v1/rum/track.js` is that tracker, served from the same binary and mounted
+on the same switch. It is the one path here that is not CORS-gated — a script
+tag never is — so the script is public and the door it posts to is what is
+guarded. It is cached for a day and carries no version in its URL, because a
+version there is a number every page embedding it has to be edited to change.
 
 ## Deployment: relay, don't expose
 
@@ -39,7 +52,8 @@ bridge that and only one of them is good.
 own origin; that handler forwards to guard inside the VPC.
 
 ```
-browser ──► https://app.example.com/api/telemetry ──► http://guard.internal:4318/v1/rum/traces
+browser ──► https://app.example.com/api/telemetry        ──► http://guard.internal:4318/v1/rum/traces
+browser ──► https://app.example.com/api/telemetry/events ──► http://guard.internal:4318/v1/rum/events
 ```
 
 Nothing new is exposed, the relay is somewhere you already have rate limiting
@@ -48,20 +62,34 @@ and a session, and guard needs no CORS at all — a server-to-server post sends 
 
 ```go
 // In your app, next to your other handlers.
-http.HandleFunc("POST /api/telemetry", func(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
-	proxy, _ := http.NewRequest(http.MethodPost, "http://guard.internal:4318/v1/rum/traces", r.Body)
-	proxy.Header.Set("Content-Type", r.Header.Get("Content-Type"))
-	// So guard's rate limit counts visitors, not your relay.
-	proxy.Header.Set("X-Forwarded-For", clientIP(r))
-	response, err := http.DefaultClient.Do(proxy)
-	if err != nil {
-		w.WriteHeader(http.StatusBadGateway)
-		return
+func relay(target string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+		proxy, _ := http.NewRequest(http.MethodPost, target, r.Body)
+		proxy.Header.Set("Content-Type", r.Header.Get("Content-Type"))
+		// So guard's rate limit counts visitors, not your relay.
+		proxy.Header.Set("X-Forwarded-For", clientIP(r))
+		response, err := http.DefaultClient.Do(proxy)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer response.Body.Close()
+		w.WriteHeader(response.StatusCode)
 	}
-	defer response.Body.Close()
-	w.WriteHeader(response.StatusCode)
-})
+}
+
+http.HandleFunc("POST /api/telemetry", relay("http://guard.internal:4318/v1/rum/traces"))
+http.HandleFunc("POST /api/telemetry/events", relay("http://guard.internal:4318/v1/rum/events"))
+```
+
+The analytics tracker is pointed at that second path with one attribute, and
+serving the script from your own origin too is what gets it past a blocklist —
+every list blocks a path called `analytics` or `track`:
+
+```html
+<script defer src="https://app.example.com/track.js"
+        data-endpoint="/api/telemetry/events"></script>
 ```
 
 **Or expose only the RUM paths** through an ingress, if you would rather not

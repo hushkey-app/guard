@@ -21,19 +21,29 @@ import (
 // machine's own row afterwards. It is not what you are thinking about while
 // typing a name and a URL, and a form that asks for a root password before it
 // has ever reached the box is a form people abandon.
+// ClusterForm is two steps driven by two radios and sibling selectors — no
+// JavaScript, and nothing for guard.js to know about: every [data-node] input
+// is in the DOM on both steps, so the submit handler reads the same form it
+// always did. The required fields are on step one, which is why hiding step two
+// cannot leave the browser trying to focus an invalid field it is not showing.
 templ ClusterForm() {
 	@card.Card() {
-		@card.Header() {
-			@card.Title() {
-				Add a machine
-			}
-			@card.Description() {
-				Guard fetches the health address on a timer and records whether it answered.
-			}
-		}
-		@card.Content() {
-			<form data-cluster-form class="space-y-4">
-				<div class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]">
+		@card.Content(card.ContentProps{Class: "pt-6"}) {
+			<form data-cluster-form class="space-y-5">
+				<input id="machine-step-1" type="radio" name="machine-step" checked class="peer/one sr-only"/>
+				<input id="machine-step-2" type="radio" name="machine-step" class="peer/two sr-only"/>
+				<!-- The steps name themselves. Two of seven fields are optional
+				     and they are all on step two, so the split is the sentence:
+				     this is what guard needs to watch it, that is what it needs
+				     to log in. -->
+				<div class="flex items-center gap-2 text-xs">
+					<label for="machine-step-1" class="cursor-pointer rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground peer-checked/one:bg-sidebar-accent peer-checked/one:text-foreground">1 · Where it answers</label>
+					@ui.Icon("chevron", "size-3 -rotate-90 opacity-40")
+					<label for="machine-step-2" class="cursor-pointer rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground peer-checked/two:bg-sidebar-accent peer-checked/two:text-foreground">2 · How to log in <span class="opacity-60">(optional)</span></label>
+				</div>
+				<div class="hidden peer-checked/one:block">
+					<p class="mb-4 text-sm text-muted-foreground">Guard fetches the health address on a timer and records whether it answered.</p>
+					<div class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]">
 					@field.Field() {
 						@field.Label(field.LabelProps{For: "node-name"}) {
 							Name
@@ -78,13 +88,21 @@ templ ClusterForm() {
 							Attributes:  templ.Attributes{"data-node": "health", "spellcheck": "false", "autocomplete": "off"},
 						})
 					}
+					</div>
+					<div class="mt-4 flex justify-end">
+						<label for="machine-step-2" class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-input px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent">
+							Next
+							@ui.Icon("chevron", "size-3.5 -rotate-90 opacity-70")
+						</label>
+					</div>
 				</div>
-				<!-- The way in, here rather than hidden behind the row: it is the
-				     second thing anybody sets up, and a login that has to be
-				     found before it can be typed is a login nobody types.
-				     Optional — a machine watched through a load balancer is
-				     never logged in to. -->
-				<div class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]">
+				<!-- Optional, and last: a machine watched through a load balancer
+				     is never logged in to. Kept in the form rather than behind
+				     the row, because a login that has to be found before it can
+				     be typed is a login nobody types. -->
+				<div class="hidden peer-checked/two:block">
+					<p class="mb-4 text-sm text-muted-foreground">Leave these empty to watch the machine without logging in to it.</p>
+					<div class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]">
 					@field.Field() {
 						@field.Label(field.LabelProps{For: "node-interval"}) {
 							Every
@@ -123,12 +141,20 @@ templ ClusterForm() {
 							Attributes:  templ.Attributes{"data-node": "password", "autocomplete": "new-password"},
 						})
 					}
+					</div>
+					<div class="mt-4 flex justify-start">
+						<label for="machine-step-1" class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
+							@ui.Icon("chevron", "size-3.5 rotate-90 opacity-70")
+							Back
+						</label>
+					</div>
 				</div>
-				<!-- The button goes last and to the right, where a form ends.
-				     Wedged into the field grid it competed with the inputs for
-				     width and pushed the address boxes down to nothing. -->
+				<!-- The submit is outside both steps: adding a machine is legal
+				     from step one, because everything step two asks for is
+				     optional and a form that hides its own submit button behind
+				     a step is a form people think is unfinished. -->
 				<div class="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-					<p class="max-w-xl text-xs text-muted-foreground">
+					<p class="max-w-md text-xs text-muted-foreground">
 						The health path hangs off the address — guard fetches it from the server, so it can be a name
 						only the server resolves. A login, if you give one, has to connect before the machine is added.
 					</p>
@@ -147,18 +173,13 @@ templ ClusterForm() {
 // nodes, so nothing here can be rendered ahead of knowing what they are.
 templ ClusterList() {
 	@card.Card(card.Props{Class: "gap-0 py-0"}) {
-		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border p-5">
-			<div>
-				<h2 class="font-medium">Watched machines</h2>
-				<p data-cluster-summary class="mt-0.5 text-xs text-muted-foreground">Loading…</p>
-			</div>
-			@button.Button(button.Props{
-				Variant:    button.VariantOutline,
-				Size:       button.SizeSm,
-				Attributes: templ.Attributes{"data-cluster-check": true},
-			}) {
-				Check now
-			}
+		<!-- No summary and no "Check now" here: ClusterOps carries both at the
+		     top of the page, and cluster.js writes every element matching those
+		     attributes — two of each would be two counts saying the same thing
+		     and two buttons doing the same work. -->
+		<div class="border-b border-border p-5">
+			<h2 class="font-medium">Watched machines</h2>
+			<p class="mt-0.5 text-xs text-muted-foreground">Edit an address, rotate a login, or lock a machine's commands.</p>
 		</div>
 		<div data-cluster-rows class="divide-y divide-border"></div>
 		<div data-cluster-empty class="p-8">
@@ -662,7 +683,7 @@ templ Topology() {
 				Machines watched from the outside, with what runs on them
 			}
 			@card.Action() {
-				@button.Button(button.Props{Href: "/settings/cluster", Variant: button.VariantGhost, Size: button.SizeSm}) {
+				@button.Button(button.Props{Href: "/cluster", Variant: button.VariantGhost, Size: button.SizeSm}) {
 					Manage →
 				}
 			}
@@ -767,7 +788,7 @@ templ ClusterOps() {
 		<div data-cluster-cards class="space-y-8"></div>
 		<datalist id="cluster-groups"></datalist>
 		<div data-cluster-cards-empty hidden>
-			@ui.Empty("No machines watched yet. Declare one under Settings → Cluster and it appears here.")
+			@ui.Empty("No machines watched yet. Add one below and it appears here.")
 		</div>
 	</div>
 }
@@ -895,8 +916,8 @@ templ ClusterOpsCard() {
 					</div>
 					<div data-card-actions class="space-y-1.5"></div>
 					<p data-card-actions-empty hidden class="text-xs text-muted-foreground">
-						Nothing saved for this machine — commands are kept under
-						<a href="/settings/cluster" class="underline underline-offset-2 hover:text-foreground">Settings → Cluster</a>.
+						Nothing saved for this machine — commands are kept with the machine on
+						<a href="/cluster" class="underline underline-offset-2 hover:text-foreground">Cluster</a>.
 					</p>
 					<div data-node-output hidden class="space-y-1">
 						<p data-node-output-head class="font-mono text-[.65rem] text-muted-foreground"></p>
@@ -1045,7 +1066,7 @@ templ ClusterCard() {
 				Machines watched from the outside
 			}
 			@card.Action() {
-				@button.Button(button.Props{Href: "/settings/cluster", Variant: button.VariantGhost, Size: button.SizeSm}) {
+				@button.Button(button.Props{Href: "/cluster", Variant: button.VariantGhost, Size: button.SizeSm}) {
 					Manage →
 				}
 			}
@@ -1058,7 +1079,7 @@ templ ClusterCard() {
 				<div data-cluster-rows class="divide-y divide-border"></div>
 			</div>
 			<div data-cluster-empty>
-				@ui.Empty("No machines watched yet — add one in settings.")
+				@ui.Empty("No machines watched yet — add one on the cluster page.")
 			</div>
 		}
 	}
@@ -1069,37 +1090,47 @@ templ ClusterCard() {
 // Only on /cluster/{id}: the list has no room for it, and a command box beside
 // twenty machines is a box you can aim at the wrong one.
 //
-// **Run** runs the line as typed — `POST /api/cluster/exec`, admin, refused on a
+// **Run** runs what is typed — `POST /api/cluster/exec`, admin, refused on a
 // locked machine, and logged into the same history the stored commands write to.
 // The stored commands are still the vetted list: what is scheduled, what has a
 // staleness budget, what a card offers as a button. This is the thing you reach
 // for instead of opening a terminal, which is what people were doing anyway.
 //
-// The output is a plain `<pre>`, so it selects and copies like a terminal does,
-// and there is a Copy button for the whole of it — the reason to run `docker ps`
-// from here is usually to paste a line of it somewhere else.
+// It is built to be used like a terminal rather than like a form, because the
+// form version was one line, one output, and a pane that was replaced on every
+// run — so reading what you did two commands ago meant remembering it:
+//
+//   - **The pane is a transcript.** Every run appends: the command on a prompt
+//     line, then its output, then how it ended. Nothing is thrown away until
+//     Clear, and it scrolls to the bottom the way a terminal does.
+//   - **Up and Down walk the history**, seeded from what this machine has
+//     actually run rather than from this tab — so a command from last week, or
+//     from somebody else's browser, is one keypress away.
+//   - **A textarea, not an input.** Paste four lines and four lines run, one
+//     after another. Enter runs, Shift+Enter is a newline, and the box grows to
+//     what is in it.
+//   - **`cd` works.** Each exec is its own SSH session, so a directory would
+//     normally last exactly one line — `cd ..`, `ls`, and the same listing
+//     again, which reads as the terminal ignoring you. The browser carries the
+//     directory instead: it is put back in front of the next command and read
+//     back from the machine afterwards, so the prompt and the box agree with
+//     where you actually are.
+//   - **No confirmation.** A dialog in front of every command is in front of
+//     `ls` as often as anything else, which is how a confirmation stops being
+//     read. What guards this is the endpoint being admin, a locked machine
+//     refusing it, and every line landing in the run log.
+//
+// The transcript is a `<pre>`, so it selects and copies like a terminal does,
+// and Copy takes the whole of it — the reason to run `docker ps` from here is
+// usually to paste a line of it somewhere else.
 templ MachineTerminal() {
 	<section class="space-y-3 rounded-xl border border-border bg-card p-4">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<h2 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Command line</h2>
 			<span data-machine-hint class="text-[.65rem] text-muted-foreground empty:hidden"></span>
 		</div>
-		<div class="flex items-stretch gap-2">
-			<input
-				data-machine-command
-				spellcheck="false"
-				autocomplete="off"
-				autocapitalize="off"
-				placeholder="docker ps"
-				class="cn-input h-9 min-w-0 flex-1 font-mono text-xs"
-			/>
-			@button.Button(button.Props{Size: button.SizeSm, Class: "h-9 shrink-0", Attributes: templ.Attributes{"data-machine-run": true}}) {
-				Run
-			}
-		</div>
-		<!-- The terminal. Taller than the pane on a card, because this page is
-		     where somebody reads output rather than glances at it, and scrolled to
-		     the bottom on every write like a terminal is. -->
+		<!-- The transcript. Taller than the pane on a card, because this page is
+		     where somebody reads output rather than glances at it. -->
 		<div class="space-y-1">
 			<div class="flex flex-wrap items-center justify-between gap-2">
 				<p data-machine-output-head class="truncate font-mono text-[.65rem] text-muted-foreground"></p>
@@ -1132,5 +1163,26 @@ templ MachineTerminal() {
 			</div>
 			<pre data-machine-output class="max-h-[28rem] min-h-[10rem] select-text overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">Nothing has run from this page yet.</pre>
 		</div>
+		<!-- The prompt sits under the transcript, where a terminal's is. -->
+		<div class="flex items-start gap-2">
+			<span aria-hidden="true" class="select-none pt-2 font-mono text-xs text-primary">$</span>
+			<textarea
+				data-machine-command
+				rows="1"
+				spellcheck="false"
+				autocomplete="off"
+				autocapitalize="off"
+				autocorrect="off"
+				placeholder="docker ps"
+				class="cn-input max-h-40 min-h-9 min-w-0 flex-1 resize-none overflow-y-auto py-2 font-mono text-xs leading-relaxed"
+			></textarea>
+			@button.Button(button.Props{Size: button.SizeSm, Class: "h-9 shrink-0", Attributes: templ.Attributes{"data-machine-run": true}}) {
+				Run
+			}
+		</div>
+		<p class="text-[.65rem] leading-relaxed text-muted-foreground">
+			Enter runs · Shift+Enter for a new line · ↑ ↓ for what ran before.
+			Each command is its own session; the directory you are in is carried between them, and the prompt says which it is.
+		</p>
 	</section>
 }

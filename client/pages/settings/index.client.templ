@@ -72,6 +72,42 @@ templ Page() {
 										Oldest events are removed after this limit.
 									}
 								}
+								@field.Field() {
+									@field.Label(field.LabelProps{For: "setting-analytics-rollup-days"}) {
+										Analytics retention
+									}
+									<div class="flex items-stretch">
+										@input.Input(input.Props{
+											ID:         "setting-analytics-rollup-days",
+											Type:       "number",
+											Required:   true,
+											Class:      "rounded-r-none",
+											Attributes: templ.Attributes{"data-setting": "analytics_rollup_days", "min": "1", "max": "3650"},
+										})
+										<span class="grid place-items-center rounded-r-lg border border-l-0 border-input px-3 text-sm text-muted-foreground">days</span>
+									</div>
+									@field.Description() {
+										Daily analytics counts older than this are removed. The raw events behind them follow the retention above.
+									}
+								}
+								@field.Field() {
+									@field.Label(field.LabelProps{For: "setting-analytics-seen-days"}) {
+										Session memory
+									}
+									<div class="flex items-stretch">
+										@input.Input(input.Props{
+											ID:         "setting-analytics-seen-days",
+											Type:       "number",
+											Required:   true,
+											Class:      "rounded-r-none",
+											Attributes: templ.Attributes{"data-setting": "analytics_seen_days", "min": "1", "max": "3650"},
+										})
+										<span class="grid place-items-center rounded-r-lg border border-l-0 border-input px-3 text-sm text-muted-foreground">days</span>
+									</div>
+									@field.Description() {
+										How long a session is remembered, so a repeat visit is not counted twice. Never longer than analytics retention — the counts already made stand.
+									}
+								}
 							</div>
 							@field.Field() {
 								@field.Label(field.LabelProps{For: "setting-token"}) {

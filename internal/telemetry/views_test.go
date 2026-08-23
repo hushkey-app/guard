@@ -685,3 +685,74 @@ func TestFieldCatalogOffersIndexedAttributes(t *testing.T) {
 		t.Error("no columns offered")
 	}
 }
+
+// The session id is the join key between /analytics and /traces, and it is a
+// join key only if following it costs a column read rather than a scan over
+// every span a browser ever sent. So it is one entry in indexedAttributes and
+// nothing else: the migration writes the generated column and its index, the
+// compiler picks the column up in place of the extract, and both the spelling
+// guard's tracker publishes and the semconv one an SDK may use land there.
+func TestBrowserSessionIsAnIndexedJoinKey(t *testing.T) {
+	store, _ := seed(t)
+	const id = "2c24b98db8144459dacc35c33576bb94"
+	now := time.Now().UTC()
+	if err := store.Add(
+		Event{Signal: "traces", Service: "browser", Name: "documentLoad", Timestamp: now,
+			Attributes: map[string]any{"rum.session_id": id, "telemetry.source": "browser"}},
+		Event{Signal: "traces", Service: "browser", Name: "HTTP GET", Timestamp: now,
+			Attributes: map[string]any{"session.id": id, "telemetry.source": "browser"}},
+		Event{Signal: "traces", Service: "browser", Name: "HTTP GET", Timestamp: now,
+			Attributes: map[string]any{"rum.session_id": "9f1c0e5a5f5c4a1c8f0d2b7e6a3c4d5e"}},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	frame := run(t, store, "bar", ViewQuery{Signal: "traces", Range: "24h", GroupBy: "attr:rum.session_id", Agg: "count"})
+	counts := map[string]float64{}
+	for _, row := range frame.Rows {
+		counts[row[0].(string)] = row[1].(float64)
+	}
+	if counts[id] != 2 {
+		t.Errorf("the session's spans = %v, want 2 — the two spellings are one session: %v", counts[id], frame.Rows)
+	}
+	if counts["9f1c0e5a5f5c4a1c8f0d2b7e6a3c4d5e"] != 1 {
+		t.Errorf("the other session's spans = %v, want 1: %v", counts["9f1c0e5a5f5c4a1c8f0d2b7e6a3c4d5e"], frame.Rows)
+	}
+
+	// Filtering to one session is what the link off a path row does, and it is
+	// the query that has to stay cheap.
+	frame = run(t, store, "bar", ViewQuery{Signal: "traces", Range: "24h", GroupBy: "attr:rum.session_id", Agg: "count",
+		Filters: []model.Condition{{Field: "attr:rum.session_id", Op: "eq", Value: id}}})
+	if len(frame.Rows) != 1 || frame.Rows[0][1].(float64) != 2 {
+		t.Fatalf("filtered rows = %v, want one session with 2 spans", frame.Rows)
+	}
+
+	column, indexed := attributeColumn("rum.session_id")
+	if !indexed {
+		t.Fatal("rum.session_id has no generated column")
+	}
+	var count int
+	if err := store.rdb.QueryRow(`SELECT COUNT(*) FROM pragma_index_list('events') WHERE name = ?`,
+		"idx_events_"+column).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Errorf("the session column has no index — grouping by it is a full scan")
+	}
+
+	fields, err := store.FieldCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	offered := map[string]bool{}
+	for _, field := range fields.Attributes {
+		offered[field.Ref] = field.Indexed
+		// One session, one field. Two would let the builder ask half of it.
+		if field.Ref == "attr:session.id" {
+			t.Error("session.id was offered beside rum.session_id")
+		}
+	}
+	if !offered["attr:rum.session_id"] {
+		t.Error("rum.session_id must be offered as indexed")
+	}
+}

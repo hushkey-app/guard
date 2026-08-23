@@ -1,0 +1,108 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/hushkey-app/guard/client/ui"
+)
+
+// HowTo is a "how do I actually do this" dialog: a button, and behind it a set
+// of tabbed steps.
+//
+// It exists because the alternative kept happening — instructions inlined on
+// the page they describe. They are read once, by the person setting the thing
+// up, and then sit above the data forever, pushing it down and making a working
+// page look like a getting-started guide. Behind a button they are still one
+// press away on the day somebody needs them, including the day they need them
+// again.
+//
+// **It is deliberately generic.** Guard has three or four of these coming —
+// analytics, browser telemetry, the vault's keys, a collector's configuration —
+// and each one written by hand would be four dialogs that drift in shape. This
+// takes a title and a list of tabs and nothing else about what is in them:
+//
+//	@components.HowTo("analytics-install", "Send data to Analytics", "How to use", tabs)
+//
+// The overlay is a checkbox and a sibling selector, like every other overlay
+// here, so opening and closing it needs no JavaScript and nothing to re-bind
+// after a client-side navigation. Only the tab switching is scripted, in
+// `guard.js`, by delegation on `document` — a per-tab CSS variant would have to
+// be a class assembled from an index, and Tailwind never emits one of those.
+type HowToTab struct {
+	// Label is the tab. Keep it to a word or two: this is a row of buttons, not
+	// a table of contents.
+	Label string
+	// Body is the step. Anything — prose, a code block, a note.
+	Body templ.Component
+}
+
+// HowTo draws the trigger and the dialog. id has to be unique on the page; it
+// is what the label points its `for` at.
+templ HowTo(id, title, trigger string, tabs []HowToTab) {
+	if len(tabs) > 0 {
+		<span class="inline-flex">
+			<input type="checkbox" id={ id } class="peer sr-only"/>
+			<label
+				for={ id }
+				class="cn-button-outline inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium hover:bg-muted"
+			>
+				@ui.Icon("info", "size-3.5")
+				{ trigger }
+			</label>
+			<!-- The overlay. `hidden` until the checkbox is checked, which is the
+			     one thing a sibling selector can do and the reason this needs no
+			     script: a dialog that had to be re-opened by JavaScript after a
+			     navigation is a dialog that silently stops working. -->
+			<div class="fixed inset-0 z-50 hidden place-items-center bg-black/60 p-4 peer-checked:grid">
+				<!-- The backdrop closes it. A label over the whole viewport, under
+				     the panel, so a click anywhere outside lands here. -->
+				<label for={ id } class="absolute inset-0 cursor-default" aria-label="Close"></label>
+				<div
+					data-howto={ id }
+					class="relative flex max-h-[85vh] w-full max-w-2xl flex-col gap-4 rounded-xl border border-border bg-card p-5 text-left shadow-lg"
+				>
+					<div class="flex items-start justify-between gap-4">
+						<h2 class="text-base font-semibold tracking-tight">{ title }</h2>
+						<label
+							for={ id }
+							class="-mr-1 -mt-1 cursor-pointer rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+							aria-label="Close"
+						>
+							✕
+						</label>
+					</div>
+					<!-- The tab row. Buttons rather than labels, because the panel
+					     they reveal is chosen in script; a label would need a radio
+					     per tab and a CSS variant per index. -->
+					<div role="tablist" class="flex flex-wrap gap-1 border-b border-border pb-2">
+						for index, tab := range tabs {
+							@button.Button(button.Props{
+								Variant: button.VariantGhost,
+								Size:    button.SizeSm,
+								Class:   "h-7 px-2.5 text-xs data-[active=true]:bg-muted data-[active=true]:text-foreground",
+								Attributes: templ.Attributes{
+									"type":            "button",
+									"role":            "tab",
+									"data-howto-tab":  index,
+									"data-active":     index == 0,
+									"aria-selected":   index == 0,
+								},
+							}) {
+								{ tab.Label }
+							}
+						}
+					</div>
+					for index, tab := range tabs {
+						<div
+							role="tabpanel"
+							data-howto-panel={ index }
+							hidden?={ index != 0 }
+							class="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 text-sm leading-relaxed text-muted-foreground"
+						>
+							@tab.Body
+						</div>
+					}
+				</div>
+			</div>
+		</span>
+	}
+}

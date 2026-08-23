@@ -1052,6 +1052,10 @@ func TemplateDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "<div class=\"flex flex-wrap items-center justify-between gap-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 			templ_7745c5c3_Var41 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -1064,7 +1068,7 @@ func TemplateDialog() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "docker-compose.yml")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "docker-compose.yml")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1074,33 +1078,62 @@ func TemplateDialog() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, " ")
+			templ_7745c5c3_Var42 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+				if !templ_7745c5c3_IsBuffer {
+					defer func() {
+						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err == nil {
+							templ_7745c5c3_Err = templ_7745c5c3_BufErr
+						}
+					}()
+				}
+				ctx = templ.InitializeContext(ctx)
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "Format")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				return nil
+			})
+			templ_7745c5c3_Err = button.Button(button.Props{
+				Variant: button.VariantOutline,
+				Size:    button.SizeSm,
+				Attributes: templ.Attributes{
+					"data-template-format": true,
+					"type":                 "button",
+					"title":                "Tabs to two spaces, trailing whitespace off, no double blank lines. Nothing is reordered and no comment is dropped.",
+				},
+			}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var42), templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</div>   <div data-code-editor class=\"text-xs\"><pre data-code-paint aria-hidden=\"true\"><code data-code-ink></code></pre>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			templ_7745c5c3_Err = textarea.Textarea(textarea.Props{
 				ID:         "template-compose",
 				Rows:       12,
-				Class:      "font-mono text-xs",
-				Attributes: templ.Attributes{"data-template": "compose_yaml", "spellcheck": "false"},
+				Attributes: templ.Attributes{"data-template": "compose_yaml", "spellcheck": "false", "autocomplete": "off", "autocapitalize": "off", "autocorrect": "off"},
 			}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, " <p class=\"text-xs text-muted-foreground\"><code class=\"font-mono\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</div><p class=\"text-xs text-muted-foreground\"><code class=\"font-mono\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var42 string
-			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs("${TAG}")
+			var templ_7745c5c3_Var43 string
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs("${TAG}")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/deploys.templ`, Line: 300, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/deploys.templ`, Line: 318, Col: 39}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</code> comes from the <code class=\"font-mono\">.env</code> guard writes beside it.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</code> comes from the <code class=\"font-mono\">.env</code> guard writes beside it. <span class=\"text-muted-foreground/70\">Tab indents, <kbd class=\"font-mono\">⌘</kbd>/<kbd class=\"font-mono\">Ctrl</kbd>+<kbd class=\"font-mono\">/</kbd> comments the selection.</span></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1110,37 +1143,7 @@ func TemplateDialog() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<div class=\"space-y-3 rounded-lg border border-border p-4\"><div class=\"flex flex-wrap items-center justify-between gap-2\"><div><h3 class=\"text-sm font-medium\">Variables <span class=\"font-normal text-muted-foreground\">— optional</span></h3><p class=\"text-xs text-muted-foreground\">Anything the compose file needs besides <code class=\"font-mono\">TAG</code>.</p></div><div class=\"flex items-center gap-2\"><select data-template-env class=\"cn-native-select h-8 text-xs\"></select>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var43 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "Add variable")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantOutline,
-			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-template-add-var": true, "type": "button"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var43), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div></div><div data-template-vars class=\"space-y-2\"></div><p class=\"text-xs text-muted-foreground\"><b>vault</b> reads from the environment above at deploy time and writes it into the machine's 0600 <code class=\"font-mono\">.env</code> — still plaintext on that box.</p></div><p data-template-dialog-error class=\"text-sm text-destructive empty:hidden\"></p><div class=\"flex flex-wrap items-center justify-end gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<div class=\"space-y-3 rounded-lg border border-border p-4\"><div class=\"flex flex-wrap items-center justify-between gap-2\"><div><h3 class=\"text-sm font-medium\">Variables <span class=\"font-normal text-muted-foreground\">— optional</span></h3><p class=\"text-xs text-muted-foreground\">Anything the compose file needs besides <code class=\"font-mono\">TAG</code>.</p></div><div class=\"flex items-center gap-2\"><select data-template-env class=\"cn-native-select h-8 text-xs\"></select>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1156,7 +1159,7 @@ func TemplateDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "Cancel")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "Add variable")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1165,9 +1168,12 @@ func TemplateDialog() templ.Component {
 		templ_7745c5c3_Err = button.Button(button.Props{
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
-			Type:       button.TypeSubmit,
-			Attributes: templ.Attributes{"value": "cancel"},
+			Attributes: templ.Attributes{"data-template-add-var": true, "type": "button"},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var44), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "</div></div><div data-template-vars class=\"space-y-2\"></div><p class=\"text-xs text-muted-foreground\"><b>vault</b> reads from the environment above at deploy time and writes it into the machine's 0600 <code class=\"font-mono\">.env</code> — still plaintext on that box.</p></div><p data-template-dialog-error class=\"text-sm text-destructive empty:hidden\"></p><div class=\"flex flex-wrap items-center justify-end gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1183,7 +1189,34 @@ func TemplateDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "Save version")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "Cancel")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Type:       button.TypeSubmit,
+			Attributes: templ.Attributes{"value": "cancel"},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var45), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var46 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "Save version")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1193,11 +1226,11 @@ func TemplateDialog() templ.Component {
 			Size:       button.SizeSm,
 			Type:       button.TypeButton,
 			Attributes: templ.Attributes{"data-template-save": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var45), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var46), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</div></form></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</div></form></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1223,16 +1256,16 @@ func GroupDialog() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var46 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var46 == nil {
-			templ_7745c5c3_Var46 = templ.NopComponent
+		templ_7745c5c3_Var47 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var47 == nil {
+			templ_7745c5c3_Var47 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<dialog data-group-dialog class=\"w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60\"><form method=\"dialog\" class=\"max-h-[85vh] space-y-5 overflow-auto p-6\"><div class=\"space-y-1.5\"><h2 data-group-dialog-title class=\"text-lg font-semibold tracking-tight\">Add group</h2><p class=\"text-sm text-muted-foreground\">Machines come from the cluster. Editing a group changes nothing that already happened.</p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<dialog data-group-dialog class=\"w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60\"><form method=\"dialog\" class=\"max-h-[85vh] space-y-5 overflow-auto p-6\"><div class=\"space-y-1.5\"><h2 data-group-dialog-title class=\"text-lg font-semibold tracking-tight\">Add group</h2><p class=\"text-sm text-muted-foreground\">Machines come from the cluster. Editing a group changes nothing that already happened.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var47 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var48 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1244,7 +1277,7 @@ func GroupDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Var48 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var49 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -1256,17 +1289,17 @@ func GroupDialog() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "Name")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "Name")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = field.Label(field.LabelProps{For: "group-name"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var48), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = field.Label(field.LabelProps{For: "group-name"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var49), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1280,11 +1313,11 @@ func GroupDialog() templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var47), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var48), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var49 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var50 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -1296,7 +1329,7 @@ func GroupDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Var50 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var51 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -1308,54 +1341,27 @@ func GroupDialog() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "Tell")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "Tell")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = field.Label(field.LabelProps{For: "group-webhook"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var50), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = field.Label(field.LabelProps{For: "group-webhook"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, " <select id=\"group-webhook\" data-group-webhook class=\"cn-native-select h-9 w-full\"></select><p data-group-webhook-note class=\"text-xs text-muted-foreground\"></p>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var49), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<div class=\"space-y-2\"><h3 class=\"text-sm font-medium\">Machines</h3><div data-group-machines class=\"max-h-64 space-y-1 overflow-auto rounded-lg border border-border p-3\"></div></div><p data-group-dialog-error class=\"text-sm text-destructive empty:hidden\"></p><div class=\"flex flex-wrap items-center justify-end gap-2\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var51 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "Cancel")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, " <select id=\"group-webhook\" data-group-webhook class=\"cn-native-select h-9 w-full\"></select><p data-group-webhook-note class=\"text-xs text-muted-foreground\"></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantOutline,
-			Size:       button.SizeSm,
-			Type:       button.TypeSubmit,
-			Attributes: templ.Attributes{"value": "cancel"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = field.Field().Render(templ.WithChildren(ctx, templ_7745c5c3_Var50), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<div class=\"space-y-2\"><h3 class=\"text-sm font-medium\">Machines</h3><div data-group-machines class=\"max-h-64 space-y-1 overflow-auto rounded-lg border border-border p-3\"></div></div><p data-group-dialog-error class=\"text-sm text-destructive empty:hidden\"></p><div class=\"flex flex-wrap items-center justify-end gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1371,7 +1377,34 @@ func GroupDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "Save group")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "Cancel")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Type:       button.TypeSubmit,
+			Attributes: templ.Attributes{"value": "cancel"},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var52), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var53 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "Save group")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1381,11 +1414,11 @@ func GroupDialog() templ.Component {
 			Size:       button.SizeSm,
 			Type:       button.TypeButton,
 			Attributes: templ.Attributes{"data-group-save": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var52), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var53), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</div></form></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</div></form></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1411,12 +1444,12 @@ func DeployTemplatesMarkup() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var53 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var53 == nil {
-			templ_7745c5c3_Var53 = templ.NopComponent
+		templ_7745c5c3_Var54 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var54 == nil {
+			templ_7745c5c3_Var54 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<template data-tpl=\"deploy-group\"><div class=\"space-y-3 p-4\"><div class=\"flex flex-wrap items-start justify-between gap-3\"><div class=\"min-w-0 space-y-1\"><div class=\"flex flex-wrap items-center gap-2\"><button type=\"button\" data-fold class=\"text-sm font-semibold tracking-tight hover:underline\"></button> <span data-count class=\"cn-badge cn-badge-variant-secondary\"></span> <span data-busy class=\"cn-badge cn-badge-variant-default\" hidden>deploying</span></div><p data-running class=\"font-mono text-xs text-muted-foreground\"></p></div><div class=\"flex shrink-0 flex-wrap items-center gap-2\"><button type=\"button\" data-deploy class=\"cn-button cn-button-size-sm cn-button-variant-default\">Deploy</button> <button type=\"button\" data-edit class=\"cn-button cn-button-size-sm cn-button-variant-outline\">Edit</button> <button type=\"button\" data-remove class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Remove</button></div></div><div data-body class=\"space-y-2 border-t border-border pt-3\" hidden></div></div></template><template data-tpl=\"deploy-member\"><div class=\"flex flex-wrap items-center justify-between gap-2 text-sm\"><div class=\"flex min-w-0 items-center gap-2\"><span data-name class=\"truncate font-medium\"></span> <span data-warn class=\"cn-badge cn-badge-variant-secondary\" hidden></span></div><div class=\"flex shrink-0 items-center gap-3 font-mono text-xs\"><span data-tag class=\"text-muted-foreground\"></span><!-- Over the login guard already proved. The alternative is\n\t\t\t\t     somebody pasting a curl-to-shell into a root session with no\n\t\t\t\t     record that it happened. --><button type=\"button\" data-prepare class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Install docker</button> <button type=\"button\" data-rollback class=\"cn-button cn-button-size-sm cn-button-variant-ghost\" hidden>Roll back</button></div></div></template><template data-tpl=\"deploy-template-row\"><div class=\"flex flex-wrap items-center justify-between gap-3 p-4\"><div class=\"min-w-0 space-y-1\"><div class=\"flex flex-wrap items-center gap-2\"><span data-name class=\"text-sm font-semibold tracking-tight\"></span> <span data-version class=\"cn-badge cn-badge-variant-secondary\"></span></div><p data-detail class=\"truncate font-mono text-xs text-muted-foreground\"></p></div><div class=\"flex shrink-0 flex-wrap items-center gap-2\"><button type=\"button\" data-edit class=\"cn-button cn-button-size-sm cn-button-variant-outline\">Edit</button> <button type=\"button\" data-remove class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Remove</button></div></div></template><template data-tpl=\"deploy-run\"><div class=\"space-y-3 rounded-lg border border-border p-4\"><div class=\"flex flex-wrap items-start justify-between gap-3\"><div class=\"min-w-0 space-y-1\"><div class=\"flex flex-wrap items-center gap-2\"><span data-group class=\"text-sm font-semibold tracking-tight\"></span> <span data-status class=\"cn-badge\"></span> <span data-mode class=\"cn-badge cn-badge-variant-secondary\"></span></div><p data-detail class=\"font-mono text-xs text-muted-foreground\"></p></div><div class=\"flex shrink-0 items-center gap-2\"><p data-tally class=\"text-xs text-muted-foreground\"></p><!-- Only while it is going. It stops guard advancing and\n\t\t\t\t\t     waiting; it undoes nothing, and the confirm says so. --><button type=\"button\" data-cancel class=\"cn-button cn-button-size-sm cn-button-variant-outline\" hidden>Stop</button><!-- On a run that is over and did not come back healthy. It\n\t\t\t\t\t     starts a new run rather than resurrecting this one: the\n\t\t\t\t\t     old row is a record of what happened. --><button type=\"button\" data-retry-run class=\"cn-button cn-button-size-sm cn-button-variant-outline\" hidden>Retry</button></div></div><div data-instances class=\"space-y-1.5\"></div><div data-answers class=\"flex flex-wrap items-center gap-2 border-t border-border pt-3\" hidden><p data-answer-note class=\"w-full text-xs text-destructive\"></p><button type=\"button\" data-retry class=\"cn-button cn-button-size-sm cn-button-variant-default\">Retry</button> <button type=\"button\" data-skip class=\"cn-button cn-button-size-sm cn-button-variant-outline\">Skip and continue</button> <button type=\"button\" data-stop class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Stop the run</button> <button type=\"button\" data-run-rollback class=\"cn-button cn-button-size-sm cn-button-variant-outline\" hidden>Roll back this machine</button></div></div></template><template data-tpl=\"deploy-instance\"><div class=\"space-y-1\"><div class=\"flex flex-wrap items-center justify-between gap-2 text-xs\"><span data-name class=\"font-medium\"></span><div class=\"flex items-center gap-2\"><span data-state class=\"font-mono text-muted-foreground\"></span><!-- The machine's own words, one press away. The row says the\n\t\t\t\t\t     last line because that is usually the whole answer; this is\n\t\t\t\t\t     the rest of what docker printed, which is the difference\n\t\t\t\t\t     between \"exited 127\" and knowing why. --><button type=\"button\" data-log class=\"cn-button cn-button-size-sm cn-button-variant-ghost h-6 px-2 text-xs\" hidden>Log</button></div></div><div class=\"h-1.5 overflow-hidden rounded-full bg-muted\"><div data-bar class=\"h-full rounded-full transition-all\"></div></div><p data-note class=\"font-mono text-xs text-muted-foreground empty:hidden\"></p><pre data-output class=\"max-h-64 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap select-text\" hidden></pre></div></template><template data-tpl=\"deploy-var\"><div class=\"grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,7rem)_minmax(0,1fr)_auto]\"><input data-key class=\"cn-input h-8 font-mono text-xs\" placeholder=\"REDIS_URL\" autocomplete=\"off\" spellcheck=\"false\"> <select data-source class=\"cn-native-select h-8 text-xs\"><option value=\"static\">value</option> <option value=\"vault\">vault</option></select> <input data-value class=\"cn-input h-8 font-mono text-xs\" placeholder=\"value\" autocomplete=\"off\" spellcheck=\"false\"> <button type=\"button\" data-remove class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Remove</button></div></template><template data-tpl=\"deploy-machine-choice\"><label class=\"flex cursor-pointer items-center gap-2 text-sm\"><input type=\"checkbox\" data-pick> <span data-name class=\"font-medium\"></span> <span data-note class=\"text-xs text-muted-foreground\"></span></label></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<template data-tpl=\"deploy-group\"><div class=\"space-y-3 p-4\"><div class=\"flex flex-wrap items-start justify-between gap-3\"><div class=\"min-w-0 space-y-1\"><div class=\"flex flex-wrap items-center gap-2\"><button type=\"button\" data-fold class=\"text-sm font-semibold tracking-tight hover:underline\"></button> <span data-count class=\"cn-badge cn-badge-variant-secondary\"></span> <span data-busy class=\"cn-badge cn-badge-variant-default\" hidden>deploying</span></div><p data-running class=\"font-mono text-xs text-muted-foreground\"></p></div><div class=\"flex shrink-0 flex-wrap items-center gap-2\"><button type=\"button\" data-deploy class=\"cn-button cn-button-size-sm cn-button-variant-default\">Deploy</button> <button type=\"button\" data-edit class=\"cn-button cn-button-size-sm cn-button-variant-outline\">Edit</button> <button type=\"button\" data-remove class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Remove</button></div></div><div data-body class=\"space-y-2 border-t border-border pt-3\" hidden></div></div></template><template data-tpl=\"deploy-member\"><div class=\"flex flex-wrap items-center justify-between gap-2 text-sm\"><div class=\"flex min-w-0 items-center gap-2\"><span data-name class=\"truncate font-medium\"></span> <span data-warn class=\"cn-badge cn-badge-variant-secondary\" hidden></span></div><div class=\"flex shrink-0 items-center gap-3 font-mono text-xs\"><span data-tag class=\"text-muted-foreground\"></span><!-- Over the login guard already proved. The alternative is\n\t\t\t\t     somebody pasting a curl-to-shell into a root session with no\n\t\t\t\t     record that it happened. --><button type=\"button\" data-prepare class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Install docker</button> <button type=\"button\" data-rollback class=\"cn-button cn-button-size-sm cn-button-variant-ghost\" hidden>Roll back</button></div></div></template><template data-tpl=\"deploy-template-row\"><div class=\"flex flex-wrap items-center justify-between gap-3 p-4\"><div class=\"min-w-0 space-y-1\"><div class=\"flex flex-wrap items-center gap-2\"><span data-name class=\"text-sm font-semibold tracking-tight\"></span> <span data-version class=\"cn-badge cn-badge-variant-secondary\"></span></div><p data-detail class=\"truncate font-mono text-xs text-muted-foreground\"></p></div><div class=\"flex shrink-0 flex-wrap items-center gap-2\"><button type=\"button\" data-edit class=\"cn-button cn-button-size-sm cn-button-variant-outline\">Edit</button> <button type=\"button\" data-remove class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Remove</button></div></div></template><template data-tpl=\"deploy-run\"><div class=\"space-y-3 rounded-lg border border-border p-4\"><div class=\"flex flex-wrap items-start justify-between gap-3\"><div class=\"min-w-0 space-y-1\"><div class=\"flex flex-wrap items-center gap-2\"><span data-group class=\"text-sm font-semibold tracking-tight\"></span> <span data-status class=\"cn-badge\"></span> <span data-mode class=\"cn-badge cn-badge-variant-secondary\"></span></div><p data-detail class=\"font-mono text-xs text-muted-foreground\"></p></div><div class=\"flex shrink-0 items-center gap-2\"><p data-tally class=\"text-xs text-muted-foreground\"></p><!-- Only while it is going. It stops guard advancing and\n\t\t\t\t\t     waiting; it undoes nothing, and the confirm says so. --><button type=\"button\" data-cancel class=\"cn-button cn-button-size-sm cn-button-variant-outline\" hidden>Stop</button><!-- On a run that is over and did not come back healthy. It\n\t\t\t\t\t     starts a new run rather than resurrecting this one: the\n\t\t\t\t\t     old row is a record of what happened. --><button type=\"button\" data-retry-run class=\"cn-button cn-button-size-sm cn-button-variant-outline\" hidden>Retry</button></div></div><div data-instances class=\"space-y-1.5\"></div><div data-answers class=\"flex flex-wrap items-center gap-2 border-t border-border pt-3\" hidden><p data-answer-note class=\"w-full text-xs text-destructive\"></p><button type=\"button\" data-retry class=\"cn-button cn-button-size-sm cn-button-variant-default\">Retry</button> <button type=\"button\" data-skip class=\"cn-button cn-button-size-sm cn-button-variant-outline\">Skip and continue</button> <button type=\"button\" data-stop class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Stop the run</button> <button type=\"button\" data-run-rollback class=\"cn-button cn-button-size-sm cn-button-variant-outline\" hidden>Roll back this machine</button></div></div></template><template data-tpl=\"deploy-instance\"><div class=\"space-y-1\"><div class=\"flex flex-wrap items-center justify-between gap-2 text-xs\"><span data-name class=\"font-medium\"></span><div class=\"flex items-center gap-2\"><span data-state class=\"font-mono text-muted-foreground\"></span><!-- The machine's own words, one press away. The row says the\n\t\t\t\t\t     last line because that is usually the whole answer; this is\n\t\t\t\t\t     the rest of what docker printed, which is the difference\n\t\t\t\t\t     between \"exited 127\" and knowing why. --><button type=\"button\" data-log class=\"cn-button cn-button-size-sm cn-button-variant-ghost h-6 px-2 text-xs\" hidden>Log</button></div></div><div class=\"h-1.5 overflow-hidden rounded-full bg-muted\"><div data-bar class=\"h-full rounded-full transition-all\"></div></div><p data-note class=\"font-mono text-xs text-muted-foreground empty:hidden\"></p><pre data-output class=\"max-h-64 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap select-text\" hidden></pre></div></template><template data-tpl=\"deploy-var\"><div class=\"grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,7rem)_minmax(0,1fr)_auto]\"><input data-key class=\"cn-input h-8 font-mono text-xs\" placeholder=\"REDIS_URL\" autocomplete=\"off\" spellcheck=\"false\"> <select data-source class=\"cn-native-select h-8 text-xs\"><option value=\"static\">value</option> <option value=\"vault\">vault</option></select> <input data-value class=\"cn-input h-8 font-mono text-xs\" placeholder=\"value\" autocomplete=\"off\" spellcheck=\"false\"> <button type=\"button\" data-remove class=\"cn-button cn-button-size-sm cn-button-variant-ghost\">Remove</button></div></template><template data-tpl=\"deploy-machine-choice\"><label class=\"flex cursor-pointer items-center gap-2 text-sm\"><input type=\"checkbox\" data-pick> <span data-name class=\"font-medium\"></span> <span data-note class=\"text-xs text-muted-foreground\"></span></label></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

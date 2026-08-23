@@ -5,7 +5,7 @@
 // overview shows the same rows with the controls hidden by CSS, because a
 // second near-identical template drifts the first time a column is added.
 
-import { adminHeaders, el, number, qs, qsa, relativeTime, request, text } from "./core.js";
+import { adminHeaders, el, number, qs, qsa, relativeTime, request, setOutput, text } from "./core.js";
 import { ensure as swr, forget, set as remember } from "./store.js";
 // The cloud half of a machine — the provider strip, the link, the snapshots.
 // It imports `ask` back from here, which is a cycle ES modules are fine with
@@ -270,6 +270,22 @@ function renderStat() {
   }
 }
 
+// The machines dialog is a checkbox, so "is it open" is one property read.
+// A page with no dialog — anything that shows the rows directly — has no
+// checkbox, and then the rows ARE the page and always render.
+const MACHINES_PANEL = "machine-dialog";
+
+function machinesPanelOpen() {
+  const toggle = document.getElementById(MACHINES_PANEL);
+  return !toggle || toggle.checked;
+}
+
+// Opening it cannot wait for the next tick: the panel would come up holding
+// whatever the last render left, or nothing at all on a first open.
+document.addEventListener("change", (event) => {
+  if (event.target && event.target.id === MACHINES_PANEL && event.target.checked) render();
+});
+
 function render() {
   // The dashboard refreshes every three seconds, and rebuilding a row while
   // somebody is typing into it would replace the box mid-word. So a redraw
@@ -281,8 +297,15 @@ function render() {
   // only thing missing was the redraw that would have shown it.
   if (typing()) return;
   if (dirty.size) return;
-  for (const host of qsa("[data-cluster-rows]")) {
-    host.replaceChildren(...nodes.map(row).filter(Boolean));
+  // The editable rows live in a dialog that is shut almost all the time. Each
+  // one is a large subtree, this runs every three seconds, and a row built into
+  // a display:none panel is work that can only ever cost — the grouped cards
+  // are what this page is for. Opening the dialog renders immediately, so
+  // nothing on screen is ever stale.
+  if (machinesPanelOpen()) {
+    for (const host of qsa("[data-cluster-rows]")) {
+      host.replaceChildren(...nodes.map(row).filter(Boolean));
+    }
   }
   for (const node of qsa("[data-cluster-empty]")) node.hidden = nodes.length > 0;
   renderCards();
@@ -464,7 +487,7 @@ function detail(item, node) {
     pane.hidden = !output;
     if (output) {
       qs("[data-node-output-head]", pane).textContent = output.head;
-      qs("[data-node-output-body]", pane).textContent = output.body;
+      setOutput(qs("[data-node-output-body]", pane), output.body);
     }
   }
 }
@@ -896,7 +919,7 @@ function cardFor(template, node) {
   pane.hidden = !output;
   if (output) {
     qs("[data-node-output-head]", pane).textContent = output.head;
-    qs("[data-node-output-body]", pane).textContent = output.body;
+    setOutput(qs("[data-node-output-body]", pane), output.body);
   }
   return item;
 }
@@ -1307,7 +1330,7 @@ function show(panel, id, head, body) {
   if (!pane) return;
   pane.hidden = false;
   qs("[data-node-output-head]", pane).textContent = head;
-  qs("[data-node-output-body]", pane).textContent = body;
+  setOutput(qs("[data-node-output-body]", pane), body);
 }
 
 // Whatever a panel has to say goes on its own output pane rather than the
@@ -1902,8 +1925,21 @@ function drawMachine(host, node, cached) {
         ? "This machine has no stored SSH login."
         : "Runs as the user in this machine's SSH address. Every run is logged.";
   }
+  const refused = !!node.locked || !node.has_password || !node.ssh_address;
   for (const control of qsa("[data-machine-run]")) {
-    control.disabled = !!node.locked || !node.has_password || !node.ssh_address;
+    // Recorded on the element, because setRunning re-enables the button when a
+    // block finishes and must not hand a locked machine a working Run button.
+    control.dataset.refused = refused ? "1" : "0";
+    control.disabled = refused;
+  }
+  // The arrow keys are only worth pressing if there is something behind them,
+  // and the useful history belongs to the machine rather than to this tab.
+  // Once per drawn machine: it is a request, and the list only grows by what
+  // this page itself runs, which it appends as it goes.
+  if (historyFor !== node.id) {
+    historyFor = node.id;
+    cwd = "";
+    loadCommandHistory(node);
   }
   // The card's own output pane is redundant here — this page has a terminal — and
   // two panes showing different things is worse than one.
@@ -1911,64 +1947,340 @@ function drawMachine(host, node, cached) {
   if (pane) pane.remove();
 }
 
-function terminal(head, body) {
-  const line = qs("[data-machine-output-head]");
-  const pane = qs("[data-machine-output]");
-  if (!pane) return;
-  if (line) line.textContent = head;
-  pane.textContent = body;
-  // Scrolled to the bottom on every write, because that is what a terminal does
-  // and the interesting end of a command's output is the end.
-  pane.scrollTop = pane.scrollHeight;
+// ---------------------------------------------------------------------------
+// The command line on /cluster/{id}.
+//
+// It was a form: one input, one output pane, replaced on every run. That is
+// fine for `docker ps` and useless for the thing people actually do, which is
+// run four commands and compare what the second said with what the fourth did.
+// So the pane is a transcript, the box takes several lines, and the arrow keys
+// walk what this machine has run before.
+// ---------------------------------------------------------------------------
+
+// What the machine has been asked to do, oldest first. Seeded from the server
+// rather than from this tab, because the useful history is "what has been run
+// on this box" — last week, from somebody else's browser — and a per-tab list
+// is empty exactly when you reload to try again.
+let commandHistory = [];
+let historyFor = 0;      // Which machine the list belongs to, so a second page does not inherit it.
+
+// Where you are. Each exec is its own SSH session, so a `cd` on one line is
+// gone by the next — which reads as the terminal ignoring you: `cd ..`, `ls`,
+// and the same listing again. So the directory is carried here and put back in
+// front of the next command.
+//
+// It is tracked rather than assumed: every command is followed by a probe that
+// prints $PWD, so `cd`, `pushd`, a script that changes directory and a failed
+// `cd` all end up with the box agreeing with the machine. The probe is written
+// as an OSC escape, which the pane's ANSI renderer already drops — so the thing
+// that keeps this honest is invisible rather than a marker line somebody has to
+// look past.
+let cwd = "";
+const CWD_MARK = "guard-cwd;";
+let historyAt = -1;      // -1 is "not walking"; otherwise an index into the list.
+let historyDraft = "";   // What was typed before ↑ was pressed, restored on the way back down.
+
+// A transcript can be scrolled up to read; writing to it should not yank the
+// reader back down. So it follows only when it was already at the bottom, which
+// is what a terminal does.
+function atBottom(pane) {
+  return pane.scrollHeight - pane.scrollTop - pane.clientHeight < 24;
 }
 
-// Run the line as typed.
+function terminalPane() {
+  return qs("[data-machine-output]");
+}
+
+// head is the one-line status above the pane: what is running, or how the last
+// thing ended.
+function terminalHead(text) {
+  const line = qs("[data-machine-output-head]");
+  if (line) line.textContent = text;
+}
+
+// append puts one node at the end of the transcript and follows it if the
+// reader was at the bottom.
+function terminalAppend(node) {
+  const pane = terminalPane();
+  if (!pane) return;
+  if (pane.dataset.empty !== "0") {
+    pane.textContent = "";
+    pane.dataset.empty = "0";
+  }
+  const follow = atBottom(pane);
+  pane.append(node);
+  // A transcript nobody trims is a tab that gets slower every command. Six
+  // hundred blocks is far more than anybody scrolls back through and far less
+  // than a page notices.
+  while (pane.childElementCount > 600) pane.removeChild(pane.firstElementChild);
+  if (follow) pane.scrollTop = pane.scrollHeight;
+}
+
+function terminalClear(message) {
+  const pane = terminalPane();
+  if (!pane) return;
+  pane.textContent = message;
+  pane.dataset.empty = "1";
+  terminalHead("");
+}
+
+// echo writes the prompt line for a command, the way a terminal shows what you
+// typed before it shows what happened.
+function terminalEcho(command) {
+  const line = el("div", "mt-2 first:mt-0");
+  // The directory in the prompt, the way a shell puts it there: it is how you
+  // see that a `cd` took, without running `pwd` to check.
+  if (cwd) line.append(el("span", "select-none text-muted-foreground", `${cwd} `));
+  line.append(el("span", "select-none text-primary", "$ "), el("span", "text-foreground", command));
+  terminalAppend(line);
+}
+
+// result writes what came back: the output through the ANSI renderer, then a
+// line saying how it ended.
 //
-// One request: POST /api/cluster/exec, which is the one endpoint in guard that
+// The output is `text-foreground` and the status is the dim one, which is the
+// way round it should always have been — what the machine said is the thing you
+// came for, and it was being drawn in the colour used for captions.
+//
+// A command that printed nothing says so. `ls` in an empty directory, `cd`, a
+// successful `systemctl restart` — all of them return nothing at all, and a
+// transcript that shows a prompt, then a status, and no sign that the gap is
+// deliberate reads exactly like a terminal that is swallowing output.
+//
+// No duration. It was on every line and nobody was reading it: what a command
+// took matters when something is slow, and then it is in the run history with
+// everything else. A number repeated after every line is noise the eye has to
+// step over to find the output.
+function terminalResult(result) {
+  if (result.output && result.output.trim() !== "") {
+    const block = el("div", "text-foreground");
+    setOutput(block, result.output);
+    terminalAppend(block);
+  } else if (!result.error) {
+    terminalAppend(el("div", "text-[.65rem] italic text-muted-foreground", "(no output)"));
+  }
+  const failed = Boolean(result.error) || result.exit_code !== 0;
+  const ending = result.error
+    ? `failed — ${result.error}`
+    : result.exit_code === 0
+      ? "ok"
+      : `exit ${result.exit_code}`;
+  terminalAppend(el("div", `text-[.65rem] ${failed ? "text-destructive" : "text-muted-foreground"}`, ending));
+  terminalHead(ending);
+}
+
+function terminalNote(text, tone = "text-muted-foreground") {
+  terminalAppend(el("div", `text-[.65rem] ${tone}`, text));
+}
+
+// The lines to run, in order. Blank lines are skipped and a `#` comment is
+// skipped too — pasting a block copied from a runbook should not fail on its
+// own comments.
+function commandLines(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+}
+
+// Run what is in the box, one line at a time.
+//
+// One request per line: POST /api/cluster/exec, the one endpoint in guard that
 // takes a command rather than an action id. It is admin, refused on a locked
-// machine, and logged into the same history the stored commands write to — so this
-// is a faster door beside the vetted list rather than a way around it.
+// machine, and every line is its own logged row — which is also why a `cd` on
+// one line does not carry to the next, and why the hint under the box says so.
+//
+// It stops at the first line that fails, because a paste of four commands is
+// usually four steps of one thing, and running step three against a failed step
+// two is how a bad morning gets worse.
 async function runCommand(node) {
   const input = qs("[data-machine-command]");
-  const command = input.value.trim();
-  if (!command) {
-    terminal("Nothing to run", "Type a command.");
+  const lines = commandLines(input.value);
+  if (!lines.length) {
+    terminalHead("Nothing to run");
     input.focus();
     return;
   }
-  const yes = await ask({
-    title: `Run this on ${node.name}?`,
-    body: "It runs on the machine now, as the user in its SSH address, and the run is logged.",
-    detail: command,
-    confirm: "Run it",
-  });
-  if (!yes) return;
-  terminal(`${command} — running…`, "");
-  const result = await request("/api/cluster/exec", {
-    method: "POST",
-    headers: adminHeaders(),
-    body: JSON.stringify({ node_id: node.id, command }),
-  });
-  const took = `${number.format(Math.round(result.duration_ms))} ms`;
-  const ending = result.error
-    ? `failed · ${result.error}`
-    : result.exit_code === 0 ? `ok · ${took}` : `exit ${result.exit_code} · ${took}`;
-  terminal(`${command} — ${ending}`, result.output || "(no output)");
-  // The line stays in the box: the next command is usually a variation of the
-  // last one, and retyping it is the thing a terminal never makes you do.
-  input.select();
+  // No confirmation. A dialog in front of every command is the least
+  // terminal-like thing a terminal can have, and it was in front of `ls` as
+  // often as anything else — which is how a confirmation stops being read.
+  // What actually guards this is unchanged and is not a dialog: the endpoint is
+  // admin, a locked machine refuses it, and every line lands in the run log
+  // with who and when.
+
+  input.value = "";
+  resizeCommandBox();
+  historyAt = -1;
+  historyDraft = "";
+  setRunning(true);
+  try {
+    for (const [index, command] of lines.entries()) {
+      rememberCommand(command);
+      terminalEcho(command);
+      terminalHead(`${command} — running…`);
+      let result;
+      try {
+        result = await request("/api/cluster/exec", {
+          method: "POST",
+          headers: adminHeaders(),
+          body: JSON.stringify({ node_id: node.id, command: withDirectory(command) }),
+        });
+      } catch (failure) {
+        // A refusal — locked, no login, no permission — is the end of the
+        // block, and it is the machine's answer rather than a line's output.
+        terminalNote(failure.message, "text-destructive");
+        terminalHead(failure.message);
+        return;
+      }
+      readDirectory(result);
+      terminalResult(result);
+      const failed = Boolean(result.error) || result.exit_code !== 0;
+      if (failed && index < lines.length - 1) {
+        terminalNote(`stopped — ${lines.length - index - 1} command${lines.length - index - 1 === 1 ? "" : "s"} not run`, "text-destructive");
+        return;
+      }
+    }
+  } finally {
+    setRunning(false);
+    input.focus();
+  }
+}
+
+// withDirectory puts the command back where you left off and asks where it
+// ended up.
+//
+// Three parts, and the order is the whole of it: step into the remembered
+// directory (quietly — a directory that has been deleted since must not stop
+// the command), run the line, then keep its exit status while printing $PWD.
+// Without that last `exit`, every command would report the status of the probe
+// and nothing could ever fail.
+//
+// The first command of a session has no directory to restore, so it is sent as
+// typed plus the probe. That keeps the ordinary one-line case readable in the
+// run log, which is where somebody reads it back months later.
+function withDirectory(command) {
+  const probe = `__guard_status=$?; printf '\\033]${CWD_MARK}%s\\007' "$PWD"; exit $__guard_status`;
+  const step = cwd ? `cd ${shellQuote(cwd)} 2>/dev/null\n` : "";
+  return `${step}${command}\n${probe}`;
+}
+
+// One single-quoted shell word, the same rule internal/deploy uses: everything
+// is literal inside single quotes, and the only thing that can end them is a
+// single quote, which is closed, escaped and reopened.
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'\\''`)}'`;
+}
+
+// readDirectory takes the answer out of the output, and takes it *out* — the
+// probe is removed from the string rather than left for the renderer to drop.
+//
+// Both would look the same on screen and only one of them can tell whether the
+// command printed anything: a command with no output still comes back carrying
+// the probe, so "did this print something" answered against the raw string is
+// always yes, and `ls` in an empty directory loses its "(no output)" line and
+// gains an empty block instead.
+function readDirectory(result) {
+  const pattern = new RegExp(`\\u001b\\]${CWD_MARK}([^\\u0007]*)\\u0007`);
+  const output = String(result.output || "");
+  const match = pattern.exec(output);
+  if (match && match[1]) cwd = match[1];
+  if (match) result.output = output.replace(pattern, "");
+}
+
+// The button says what it is doing, and a second Enter while a block is running
+// must not start it again half way through.
+function setRunning(running) {
+  const control = qs("[data-machine-run]");
+  const input = qs("[data-machine-command]");
+  if (control) {
+    control.disabled = running || control.dataset.refused === "1";
+    control.textContent = running ? "Running…" : "Run";
+  }
+  if (input) input.readOnly = running;
+}
+
+// rememberCommand puts a command at the end of the history, without a duplicate
+// of the one before it — a terminal does not fill its history with the command
+// you pressed Up and Enter on four times.
+//
+// Not `remember`: that name is already the store's `set`, imported at the top
+// of this file, and redeclaring it is a SyntaxError that takes the whole module
+// with it — every page this file drives, not just this one.
+function rememberCommand(command) {
+  if (!command) return;
+  if (commandHistory[commandHistory.length - 1] === command) return;
+  commandHistory.push(command);
+  if (commandHistory.length > 200) commandHistory.shift();
+}
+
+// Seeded from the machine's own run log: the exec rows carry the command they
+// ran, so what somebody typed here last week is what ↑ offers today. Reversed
+// because the API answers newest first and a history is walked backwards from
+// the end.
+async function loadCommandHistory(node) {
+  try {
+    const runs = await request(`/api/cluster/runs?node=${node.id}&limit=50`, { headers: adminHeaders() });
+    const typed = runs
+      .filter((entry) => !entry.action_id && entry.command)
+      .map((entry) => entry.command)
+      .reverse();
+    commandHistory = [];
+    for (const command of typed) rememberCommand(command);
+  } catch {
+    // No history is a usable command line; a failed page is not.
+  }
+}
+
+// ↑ and ↓ walk it. The half-typed line is kept and handed back on the way past
+// the end, which is the behaviour that makes the arrows safe to press.
+function walkHistory(direction) {
+  const input = qs("[data-machine-command]");
+  if (!input || !commandHistory.length) return;
+  if (historyAt === -1) {
+    if (direction > 0) return;              // Down at the bottom does nothing.
+    historyDraft = input.value;
+    historyAt = commandHistory.length - 1;
+  } else {
+    historyAt += direction;
+  }
+  if (historyAt < 0) historyAt = 0;
+  if (historyAt >= commandHistory.length) {
+    historyAt = -1;
+    input.value = historyDraft;
+    resizeCommandBox();
+    caretToEnd(input);
+    return;
+  }
+  input.value = commandHistory[historyAt];
+  resizeCommandBox();
+  caretToEnd(input);
+}
+
+function caretToEnd(input) {
+  const at = input.value.length;
+  // After the value is painted, or the caret lands where the old text ended.
+  requestAnimationFrame(() => input.setSelectionRange(at, at));
+}
+
+// The box grows to what is in it, up to the max-height the class sets, after
+// which it scrolls. A four-line paste that shows one line is a paste you cannot
+// check before running.
+function resizeCommandBox() {
+  const input = qs("[data-machine-command]");
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = `${input.scrollHeight}px`;
 }
 
 // The pane selects and copies like a terminal, and this copies the whole of it —
 // the reason to run `docker ps` from here is usually to paste a line of it
 // somewhere else.
 async function copyOutput() {
-  const pane = qs("[data-machine-output]");
+  const pane = terminalPane();
   if (!pane || !pane.textContent.trim()) return;
   try {
     await navigator.clipboard.writeText(pane.textContent);
-    const head = qs("[data-machine-output-head]");
-    if (head) head.textContent = "Copied.";
+    terminalHead("Copied.");
   } catch {
     // The clipboard is refused on an insecure origin, which is exactly where a
     // guard on a laptop lives. Select it instead of failing silently.
@@ -1980,21 +2292,29 @@ async function copyOutput() {
   }
 }
 
+// History is appended to the transcript rather than replacing it, for the same
+// reason everything else is: looking up what ran yesterday should not cost you
+// what you ran a minute ago.
 async function machineHistory(node) {
-  terminal("History — loading…", "");
+  terminalHead("History — loading…");
   const runs = await request(`/api/cluster/runs?node=${node.id}&limit=25`, { headers: adminHeaders() });
   if (!runs.length) {
-    terminal("History", "Nothing has run on this machine yet.");
+    terminalNote("Nothing has run on this machine yet.");
+    terminalHead("History");
     return;
   }
-  const lines = runs.map((entry) => [
-    new Date(entry.ran_at).toLocaleString(),
-    entry.action_name || "(removed command)",
-    entry.trigger || "manual",
-    entry.outcome || (entry.error || entry.exit_code ? "failed" : "ok"),
-    entry.duration_ms ? `${number.format(Math.round(entry.duration_ms))} ms` : "—",
-  ].join("  ") + (entry.error ? ` · ${entry.error}` : ""));
-  terminal(`History — the last ${runs.length} run${runs.length === 1 ? "" : "s"}`, lines.join("\n"));
+  terminalNote(`— the last ${runs.length} run${runs.length === 1 ? "" : "s"} on this machine —`);
+  for (const entry of runs) {
+    const line = [
+      new Date(entry.ran_at).toLocaleString(),
+      entry.action_name || entry.command || "(removed command)",
+      entry.trigger || "manual",
+      entry.outcome || (entry.error || entry.exit_code ? "failed" : "ok"),
+      entry.duration_ms ? `${number.format(Math.round(entry.duration_ms))} ms` : "—",
+    ].join("  ") + (entry.error ? ` · ${entry.error}` : "");
+    terminalNote(line);
+  }
+  terminalHead(`History — the last ${runs.length} run${runs.length === 1 ? "" : "s"}`);
 }
 
 function machineNode() {
@@ -2008,22 +2328,42 @@ document.addEventListener("click", (event) => {
   const run = event.target.closest("[data-machine-run]");
   if (run && !run.disabled) {
     const node = machineNode();
-    if (node) runCommand(node).catch((failure) => terminal("Failed", failure.message));
+    if (node) runCommand(node).catch((failure) => { setRunning(false); terminalNote(failure.message, "text-destructive"); terminalHead("Failed"); });
     return;
   }
   if (event.target.closest("[data-machine-copy]")) { copyOutput(); return; }
   if (event.target.closest("[data-machine-history]")) {
     const node = machineNode();
-    if (node) machineHistory(node).catch((failure) => terminal("Failed", failure.message));
+    if (node) machineHistory(node).catch((failure) => { terminalNote(failure.message, "text-destructive"); terminalHead("Failed"); });
     return;
   }
-  if (event.target.closest("[data-machine-clear]")) terminal("", "Nothing has run from this page yet.");
+  if (event.target.closest("[data-machine-clear]")) terminalClear("Nothing has run from this page yet.");
 });
 
 document.addEventListener("keydown", (event) => {
-  // Enter in the command box runs it, because a command line where you have to
-  // reach for the mouse is not one.
-  if (event.key !== "Enter" || !event.target.matches("[data-machine-command]")) return;
-  const control = qs("[data-machine-run]");
-  if (control && !control.disabled) control.click();
+  if (!event.target.matches?.("[data-machine-command]")) return;
+  // Enter runs, because a command line where you have to reach for the mouse is
+  // not one. Shift+Enter is the newline, which is how a block gets typed rather
+  // than pasted.
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    const control = qs("[data-machine-run]");
+    if (control && !control.disabled) control.click();
+    return;
+  }
+  // The arrows walk the history — but only from a single-line box, because in a
+  // block somebody is editing, Up means "the line above" and taking that away
+  // would make multi-line editing impossible.
+  if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !event.target.value.includes("\n")) {
+    event.preventDefault();
+    walkHistory(event.key === "ArrowUp" ? -1 : 1);
+  }
+});
+
+// Typing is what ends a walk through the history: the next ↑ starts again from
+// the end rather than from wherever the last one left off.
+document.addEventListener("input", (event) => {
+  if (!event.target.matches?.("[data-machine-command]")) return;
+  historyAt = -1;
+  resizeCommandBox();
 });

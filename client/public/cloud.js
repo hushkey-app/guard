@@ -4,7 +4,7 @@
 // Two surfaces, the same split the rest of the cluster keeps. /cluster is
 // where a linked machine gets its provider strip — power state, plan,
 // transfer, the switch and the snapshots — because that page is where things
-// are run. /settings/cluster is where the link itself is made and where
+// are run. /cluster is where the link itself is made and where
 // instances are imported, because that page is where machines are declared.
 //
 // Everything here is fetched on a press or on a mount, never on the live
@@ -255,7 +255,7 @@ function redraw() {
   document.dispatchEvent(new CustomEvent("guard:cloud-updated"));
 }
 
-// ---- the link, on /settings/cluster ----
+// ---- the link, on /cluster ----
 
 // fillCloudDetail fills one row's cloud section. Called by cluster.js when a
 // row is opened and on every redraw of an open row.
@@ -331,7 +331,7 @@ async function loadInstances(accountID, force = false) {
   return result;
 }
 
-// ---- the import list, on /settings/cluster ----
+// ---- the import list, on /cluster ----
 
 export async function refreshImport(force = false) {
   const host = qs("[data-import-rows]");

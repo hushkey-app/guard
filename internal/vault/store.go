@@ -32,7 +32,16 @@ import (
 
 // Store is the vault's view of guard's database.
 type Store struct {
+	// db is the writer and it is one connection, rdb is the reader pool — the
+	// same split guard's own store keeps, and for the same reason. The vault
+	// shares a file with a process that runs retention sweeps and restores, so
+	// the three small writes here (last-used, the read log, its trim) are the
+	// ones most likely to meet a held write lock. `_txlock=immediate` on the
+	// writer means they wait for it rather than being refused: a deferred
+	// transaction upgrading a read lock is the one case SQLite fails without
+	// consulting `busy_timeout` at all.
 	db      *sql.DB
+	rdb     *sql.DB
 	secrets *secrets.Keeper
 }
 
@@ -63,31 +72,56 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("no GUARD_SECRET_KEY and no %s.key — the vault needs the key guard sealed these with", abs)
 		}
 	}
-	u := &url.URL{Scheme: "file", Path: abs}
-	q := u.Query()
-	q.Add("_pragma", "busy_timeout(5000)")
-	q.Add("_pragma", "journal_mode(WAL)")
-	q.Add("_pragma", "synchronous(NORMAL)")
-	u.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", vaultDSN(abs, "immediate"))
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	rdb, err := sql.Open("sqlite", vaultDSN(abs, ""))
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	rdb.SetMaxOpenConns(4)
 	var name string
-	err = db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='secret_keys'`).Scan(&name)
+	err = rdb.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='secret_keys'`).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {
 		db.Close()
+		rdb.Close()
 		return nil, ErrNoSchema
 	}
 	if err != nil {
 		db.Close()
+		rdb.Close()
 		return nil, err
 	}
-	return &Store{db: db, secrets: secrets.Open(abs)}, nil
+	return &Store{db: db, rdb: rdb, secrets: secrets.Open(abs)}, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+// vaultDSN is guard's own, minus foreign keys — this process only ever reads
+// across them. The timeout is the same ten seconds, because what it waits for
+// is the same other process.
+func vaultDSN(abs, txlock string) string {
+	u := &url.URL{Scheme: "file", Path: abs}
+	q := u.Query()
+	q.Add("_pragma", "busy_timeout(10000)")
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "synchronous(NORMAL)")
+	if txlock != "" {
+		q.Add("_txlock", txlock)
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func (s *Store) Close() error {
+	err := s.db.Close()
+	if readErr := s.rdb.Close(); err == nil {
+		err = readErr
+	}
+	return err
+}
 
 // Config is guard's stored configuration, opened.
 //
@@ -105,10 +139,10 @@ func (s *Store) Config() (map[string]string, error) {
 	// vault's whole promise is that it keeps serving while guard is somewhere
 	// else in its release cycle, which includes being one version behind.
 	var table string
-	if err := s.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='config'`).Scan(&table); err != nil {
+	if err := s.rdb.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='config'`).Scan(&table); err != nil {
 		return map[string]string{}, nil
 	}
-	rows, err := s.db.Query(`SELECT name, value FROM config`)
+	rows, err := s.rdb.Query(`SELECT name, value FROM config`)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +180,7 @@ type Holder struct {
 func (s *Store) Holder(hash []byte) (Holder, error) {
 	var holder Holder
 	var expires, revoked int64
-	err := s.db.QueryRow(`SELECT k.id, k.name, k.env_id, e.name, w.name, k.expires_ns, k.revoked_ns
+	err := s.rdb.QueryRow(`SELECT k.id, k.name, k.env_id, e.name, w.name, k.expires_ns, k.revoked_ns
 FROM secret_keys k
 JOIN secret_envs e ON e.id = k.env_id
 JOIN secret_workspaces w ON w.id = e.workspace_id
@@ -164,7 +198,7 @@ WHERE k.hash = ?`, hash).
 // Values reads one environment's secrets, decrypted, with the revision they
 // are at — the newest change in the group, which is what the ETag is.
 func (s *Store) Values(envID int64) ([]model.Secret, int64, error) {
-	rows, err := s.db.Query(`SELECT key, COALESCE(value, x''), updated_ns
+	rows, err := s.rdb.Query(`SELECT key, COALESCE(value, x''), updated_ns
 FROM secrets WHERE env_id = ? ORDER BY key COLLATE NOCASE`, envID)
 	if err != nil {
 		return nil, 0, err
@@ -199,7 +233,7 @@ FROM secrets WHERE env_id = ? ORDER BY key COLLATE NOCASE`, envID)
 // anything — what a conditional request costs when nothing has moved.
 func (s *Store) Revision(envID int64) (int64, error) {
 	var revision int64
-	err := s.db.QueryRow(`SELECT COALESCE(max(updated_ns), 0) FROM secrets WHERE env_id = ?`, envID).Scan(&revision)
+	err := s.rdb.QueryRow(`SELECT COALESCE(max(updated_ns), 0) FROM secrets WHERE env_id = ?`, envID).Scan(&revision)
 	return revision, err
 }
 
@@ -214,19 +248,19 @@ func (s *Store) EnvByName(workspace, name string) (int64, error) {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
 		var spaces int
-		if err := s.db.QueryRow(`SELECT count(*) FROM secret_workspaces`).Scan(&spaces); err != nil {
+		if err := s.rdb.QueryRow(`SELECT count(*) FROM secret_workspaces`).Scan(&spaces); err != nil {
 			return 0, err
 		}
 		if spaces > 1 {
 			return 0, errors.New("this database has several workspaces — name one with -workspace")
 		}
 		var id int64
-		err := s.db.QueryRow(`SELECT e.id FROM secret_envs e WHERE e.name = ? COLLATE NOCASE`,
+		err := s.rdb.QueryRow(`SELECT e.id FROM secret_envs e WHERE e.name = ? COLLATE NOCASE`,
 			strings.TrimSpace(name)).Scan(&id)
 		return id, err
 	}
 	var id int64
-	err := s.db.QueryRow(`SELECT e.id FROM secret_envs e JOIN secret_workspaces w ON w.id = e.workspace_id
+	err := s.rdb.QueryRow(`SELECT e.id FROM secret_envs e JOIN secret_workspaces w ON w.id = e.workspace_id
 WHERE w.name = ? COLLATE NOCASE AND e.name = ? COLLATE NOCASE`, workspace, strings.TrimSpace(name)).Scan(&id)
 	return id, err
 }

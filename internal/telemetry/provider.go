@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS provider_accounts (
 
 // ProviderAccounts lists the stored keys, without the keys.
 func (s *Store) ProviderAccounts() ([]model.ProviderAccount, error) {
-	rows, err := s.db.Query(`SELECT id, name, provider, external_id, s3_access_key,
+	rows, err := s.rdb.Query(`SELECT id, name, provider, external_id, s3_access_key,
 api_key IS NOT NULL AND length(api_key) > 0, s3_secret IS NOT NULL AND length(s3_secret) > 0
 FROM provider_accounts ORDER BY name COLLATE NOCASE, id`)
 	if err != nil {
@@ -171,7 +171,7 @@ WHERE provider_account_id = ?`, id); err != nil {
 // secret is, and only one of them returns something worth guarding.
 func (s *Store) ProviderAccount(id int64) (model.ProviderAccount, error) {
 	var account model.ProviderAccount
-	err := s.db.QueryRow(`SELECT id, name, provider, external_id, s3_access_key,
+	err := s.rdb.QueryRow(`SELECT id, name, provider, external_id, s3_access_key,
 api_key IS NOT NULL AND length(api_key) > 0, s3_secret IS NOT NULL AND length(s3_secret) > 0
 FROM provider_accounts WHERE id = ?`, id).
 		Scan(&account.ID, &account.Name, &account.Provider, &account.ExternalID,
@@ -221,7 +221,7 @@ SET s3_access_key = ?, s3_secret = ?, updated_at_ns = ? WHERE id = ?`,
 // answers an empty pair and lets the provider say what that means.
 func (s *Store) ProviderS3For(id int64) (access, secret string, err error) {
 	var sealed []byte
-	if err := s.db.QueryRow(`SELECT s3_access_key, COALESCE(s3_secret, x'')
+	if err := s.rdb.QueryRow(`SELECT s3_access_key, COALESCE(s3_secret, x'')
 FROM provider_accounts WHERE id = ?`, id).Scan(&access, &sealed); err != nil {
 		return "", "", err
 	}
@@ -240,7 +240,7 @@ FROM provider_accounts WHERE id = ?`, id).Scan(&access, &sealed); err != nil {
 // mistake, this one can, and it is named for it.
 func (s *Store) ProviderKeyFor(id int64) (string, error) {
 	var sealed []byte
-	if err := s.db.QueryRow(`SELECT COALESCE(api_key, x'') FROM provider_accounts WHERE id = ?`, id).Scan(&sealed); err != nil {
+	if err := s.rdb.QueryRow(`SELECT COALESCE(api_key, x'') FROM provider_accounts WHERE id = ?`, id).Scan(&sealed); err != nil {
 		return "", err
 	}
 	key, err := s.secrets.Open(sealed)

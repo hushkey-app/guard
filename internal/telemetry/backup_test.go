@@ -61,6 +61,18 @@ func configured(t *testing.T, store *Store) Node {
 	if _, err := store.SaveSecret(model.Secret{EnvID: envs[0].ID, Key: "DB_PASSWORD", Value: "s3cret"}); err != nil {
 		t.Fatal(err)
 	}
+	// A pinned column is a decision about a name, and a name is only pinnable
+	// once it has been seen — so the beacon comes first, and it leaves counted
+	// rows behind for the exclusion test to look for.
+	if err := store.AddAnalytics(beacon("a1b2c3d4e5f6", "/pricing", "signup_click")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PinAnalyticsActions([]string{"signup_click"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SavePathRules([]model.PathRule{{Pattern: "/orders/*", Replacement: "/orders/:id"}}); err != nil {
+		t.Fatal(err)
+	}
 	return node
 }
 
@@ -192,6 +204,24 @@ func TestBackupRoundTripCarriesTheConfiguration(t *testing.T) {
 	}
 	if len(actions) != 1 || actions[0].Command != "systemctl restart app" {
 		t.Errorf("commands are %+v", actions)
+	}
+	// The two analytics tables that end in a person's decision. The counted
+	// rows behind them are not here, so a name comes back with no events
+	// against it and that is the point: what travels is the column, not what
+	// was measured under it.
+	pinned, err := target.AnalyticsActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pinned) != 1 || pinned[0].Name != "signup_click" || !pinned[0].Pinned {
+		t.Errorf("analytics actions are %+v", pinned)
+	}
+	rules, err := target.PathRules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 1 || rules[0].Pattern != "/orders/*" || rules[0].Replacement != "/orders/:id" {
+		t.Errorf("path rules are %+v", rules)
 	}
 }
 
@@ -378,6 +408,10 @@ func TestBackupHoldsNoTelemetryAndARestoreKeepsIt(t *testing.T) {
 	if err := target.Add(Event{Signal: "logs", Service: "web", Message: "still here", Timestamp: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	at := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	if err := target.addAnalyticsAt(beacon("f6e5d4c3b2a1", "/docs", actionPageView), at); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := target.RestoreBackup(transfer(t, doc), "words"); err != nil {
 		t.Fatal(err)
 	}
@@ -387,6 +421,18 @@ func TestBackupHoldsNoTelemetryAndARestoreKeepsIt(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Message != "still here" {
 		t.Fatalf("a restore touched the telemetry: %+v", events)
+	}
+	// What was counted from a browser keeps the same promise: this instance's
+	// numbers are still its own, and the source's never arrived.
+	if _, sessions := rollupRow(t, target, epochDay(at), "/docs", actionPageView); sessions != 1 {
+		t.Errorf("a restore touched what this instance counted: /docs has %d sessions", sessions)
+	}
+	var carried int
+	if err := target.rdb.QueryRow(`SELECT COUNT(*) FROM analytics_rollup WHERE path = '/pricing'`).Scan(&carried); err != nil {
+		t.Fatal(err)
+	}
+	if carried != 0 {
+		t.Errorf("a restore carried %d counted analytics rows", carried)
 	}
 }
 

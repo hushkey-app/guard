@@ -10,23 +10,34 @@ import (
 )
 
 // NavLink styles itself from aria-current rather than from a class computed
-// here, because the sidebar lives outside #outlet: a client-side navigation
-// never re-renders it, so anything decided at render time freezes on whichever
-// page was loaded first. The client runtime maintains aria-current on every
-// same-origin link after each navigation, and the server sets the same
-// attribute for the cold load — one source of truth, no flash.
+// here. The sidebar now lives in layout.templ, inside #outlet, so it does
+// re-render on every navigation — but aria-current stays the source of truth
+// anyway: the client runtime maintains it on every same-origin link after each
+// navigation, and the server sets the same attribute for the cold load. One
+// rule, no flash, and it keeps working if the row is ever hoisted back out.
 //
 // router.Under, not ==, so /logs stays lit on /logs/42. The client applies the
 // same rule.
+//
+// The active row is marked with a rail on the left edge rather than a filled
+// block: at eight rows a filled pill is the loudest thing in the sidebar, and
+// the sidebar is not what you came to look at. The rail is drawn by a
+// pseudo-element so it does not take part in the flex row and cannot shift the
+// icon and label by a pixel when it appears.
 templ NavLink(path, label string) {
 	<a
 		href={ templ.SafeURL(path) }
 		data-nav-link="true"
 		aria-current={ Current(router.Under(ctx, path)) }
-		class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-primary aria-[current=page]:hover:bg-sidebar-accent"
+		class="group relative flex items-center gap-3 rounded-lg py-2 pl-3 pr-2.5 text-sm font-medium transition-colors
+			text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground
+			before:absolute before:left-0 before:top-1/2 before:h-0 before:w-[3px] before:-translate-y-1/2 before:rounded-r-full
+			before:bg-primary before:transition-all before:duration-150
+			aria-[current=page]:bg-sidebar-accent/70 aria-[current=page]:text-foreground
+			aria-[current=page]:before:h-5"
 	>
-		<span class="size-1.5 rounded-full bg-current opacity-70"></span>
-		{ label }
+		@Icon(NavIcon(path), "size-[1.05rem] shrink-0 opacity-70 transition-opacity group-hover:opacity-100 group-aria-[current=page]:opacity-100 group-aria-[current=page]:text-primary")
+		<span class="truncate">{ label }</span>
 	</a>
 }
 
@@ -123,6 +134,13 @@ templ FilterBar(signal string) {
 				     people get wrong. Filled by guard.js from the cluster;
 				     absent entirely when no machines are watched. -->
 				<div data-cluster-filter class="mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4"></div>
+				<!-- A filter that arrived on a link rather than being typed:
+				     /traces?rum_path=/pricing is the walk from a row on
+				     /analytics into the spans of the sessions that saw that
+				     page. It gets a chip because a filter nothing on screen
+				     mentions is a table quietly answering a different question
+				     from the one the controls describe. -->
+				<div data-linked-filter class="mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4"></div>
 				<div data-custom-range class="hidden">
 					<div class="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
 						@Field("", signal+"-from", "From") {

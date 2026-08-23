@@ -10,6 +10,7 @@ import (
 	"github.com/hushkey-app/guard/internal/cloud"
 	"github.com/hushkey-app/guard/internal/config"
 	deploy2 "github.com/hushkey-app/guard/internal/deploy"
+	"github.com/hushkey-app/guard/internal/hostinfo"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vultr"
@@ -56,6 +57,31 @@ func (c *Client) AddMember(ctx context.Context, body members.Invite) (model.Memb
 	return api.Call[model.Member](ctx, c.Transport, "POST", "/api/members", nil, body)
 }
 
+// Analytics calls GET /api/analytics.
+func (c *Client) Analytics(ctx context.Context, query contract.AnalyticsQuery) (contract.Analytics, error) {
+	return api.Call[contract.Analytics](ctx, c.Transport, "GET", "/api/analytics", query, nil)
+}
+
+// AnalyticsActions calls GET /api/analytics/actions.
+func (c *Client) AnalyticsActions(ctx context.Context) ([]model.Action, error) {
+	return api.Call[[]model.Action](ctx, c.Transport, "GET", "/api/analytics/actions", nil, nil)
+}
+
+// AnalyticsHealth calls GET /api/analytics/health.
+func (c *Client) AnalyticsHealth(ctx context.Context) (model.AnalyticsHealth, error) {
+	return api.Call[model.AnalyticsHealth](ctx, c.Transport, "GET", "/api/analytics/health", nil, nil)
+}
+
+// AnalyticsPath calls GET /api/analytics/path.
+func (c *Client) AnalyticsPath(ctx context.Context, query contract.AnalyticsPathQuery) (contract.AnalyticsPath, error) {
+	return api.Call[contract.AnalyticsPath](ctx, c.Transport, "GET", "/api/analytics/path", query, nil)
+}
+
+// AnalyticsPathRules calls GET /api/analytics/rules.
+func (c *Client) AnalyticsPathRules(ctx context.Context) ([]model.PathRule, error) {
+	return api.Call[[]model.PathRule](ctx, c.Transport, "GET", "/api/analytics/rules", nil, nil)
+}
+
 // AnswerStoppedDeploy calls POST /api/deploy/resolve.
 func (c *Client) AnswerStoppedDeploy(ctx context.Context, body deploy.Answer) (model.DeployRun, error) {
 	return api.Call[model.DeployRun](ctx, c.Transport, "POST", "/api/deploy/resolve", nil, body)
@@ -84,6 +110,11 @@ func (c *Client) CheckClusterNow(ctx context.Context) ([]model.Node, error) {
 // CheckClusterSSH calls POST /api/cluster/ssh.
 func (c *Client) CheckClusterSSH(ctx context.Context, body contract.NodeRequest) (model.Run, error) {
 	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/ssh", nil, body)
+}
+
+// CheckForUpdates calls POST /api/update/check.
+func (c *Client) CheckForUpdates(ctx context.Context) (release.State, error) {
+	return api.Call[release.State](ctx, c.Transport, "POST", "/api/update/check", nil, nil)
 }
 
 // CloudAccounts calls GET /api/cloud/accounts.
@@ -159,6 +190,12 @@ func (c *Client) CreateSecretKey(ctx context.Context, body model.APIKey) (model.
 // CreateView calls POST /api/views.
 func (c *Client) CreateView(ctx context.Context, body model.View) (model.View, error) {
 	return api.Call[model.View](ctx, c.Transport, "POST", "/api/views", nil, body)
+}
+
+// DeleteAnalyticsAction calls DELETE /api/analytics/{id}.
+func (c *Client) DeleteAnalyticsAction(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/analytics/{id}", id), nil, nil)
+	return err
 }
 
 // DeleteClusterMonitor calls DELETE /api/cluster/monitors/{id}.
@@ -324,6 +361,11 @@ func (c *Client) InjectMachineEnvironment(ctx context.Context, body env.Target) 
 	return api.Call[env.Injected](ctx, c.Transport, "POST", "/api/cluster/env/inject", nil, body)
 }
 
+// InstanceInfo calls GET /api/info.
+func (c *Client) InstanceInfo(ctx context.Context) (hostinfo.Instance, error) {
+	return api.Call[hostinfo.Instance](ctx, c.Transport, "GET", "/api/info", nil, nil)
+}
+
 // LinkMachineToCloud calls PUT /api/cluster/provider/link.
 func (c *Client) LinkMachineToCloud(ctx context.Context, body model.ProviderLink) (model.Node, error) {
 	return api.Call[model.Node](ctx, c.Transport, "PUT", "/api/cluster/provider/link", nil, body)
@@ -390,9 +432,19 @@ func (c *Client) ObjectStorageOptions(ctx context.Context, query storage.Account
 	return api.Call[cloud.StorageOptions](ctx, c.Transport, "GET", "/api/cloud/storage/options", query, nil)
 }
 
+// PinAnalyticsActions calls POST /api/analytics/actions.
+func (c *Client) PinAnalyticsActions(ctx context.Context, body contract.ActionPins) ([]model.Action, error) {
+	return api.Call[[]model.Action](ctx, c.Transport, "POST", "/api/analytics/actions", nil, body)
+}
+
 // PrepareMachineForDeploys calls POST /api/deploy/prepare.
 func (c *Client) PrepareMachineForDeploys(ctx context.Context, body deploy.Machine) (deploy2.Preparation, error) {
 	return api.Call[deploy2.Preparation](ctx, c.Transport, "POST", "/api/deploy/prepare", nil, body)
+}
+
+// PreviewAnalyticsPathRules calls POST /api/analytics/preview.
+func (c *Client) PreviewAnalyticsPathRules(ctx context.Context, body contract.PathRuleSet) ([]contract.PathPreview, error) {
+	return api.Call[[]contract.PathPreview](ctx, c.Transport, "POST", "/api/analytics/preview", nil, body)
 }
 
 // PreviewView calls POST /api/views/preview.
@@ -508,6 +560,11 @@ func (c *Client) RunClusterAction(ctx context.Context, body contract.RunRequest)
 // SampleMachine calls POST /api/cluster/stats.
 func (c *Client) SampleMachine(ctx context.Context, body contract.NodeRequest) (model.HostStats, error) {
 	return api.Call[model.HostStats](ctx, c.Transport, "POST", "/api/cluster/stats", nil, body)
+}
+
+// SaveAnalyticsPathRules calls POST /api/analytics/rules.
+func (c *Client) SaveAnalyticsPathRules(ctx context.Context, body contract.PathRuleSet) ([]model.PathRule, error) {
+	return api.Call[[]model.PathRule](ctx, c.Transport, "POST", "/api/analytics/rules", nil, body)
 }
 
 // SaveClusterActions calls PUT /api/cluster/actions.

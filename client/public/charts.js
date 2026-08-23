@@ -294,6 +294,10 @@ function renderTimeseries(host, frame, options = {}) {
 // frame does not carry the query — it is a result, not a request — so this
 // reads the view the caller is drawing.
 function measureLabel(options = {}) {
+  // A frame whose series are themselves the measure — one line of page views
+  // beside one of sessions — is not a view, has no query, and would otherwise
+  // read "events: 8" under a line counting sessions. The caller names it.
+  if (options.measure) return options.measure;
   const query = options.view?.query || {};
   const agg = query.agg || "count";
   return agg === "count" ? "events" : `${agg} ${fieldLabel(query.value)}`.trim();

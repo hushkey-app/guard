@@ -1,0 +1,30 @@
+package ui
+
+// Icon renders one entry from the registry in icons.go.
+//
+//	@ui.Icon("logs", "size-4")
+//
+// The class sizes and colours it; the icon itself is currentColor, so it
+// inherits whatever the row it sits in decided. aria-hidden because every icon
+// here sits beside its own label — an icon that is the only content of a
+// control carries the label on the control instead.
+//
+// An unknown name renders nothing. A missing icon should cost a missing icon,
+// not a broken glyph or a panic in a template.
+templ Icon(name, class string) {
+	{{ def, ok := icon(name) }}
+	if ok {
+		<svg
+			class={ class }
+			viewBox={ def.ViewBox }
+			fill={ def.Fill }
+			stroke={ def.Stroke }
+			stroke-width={ def.StrokeWidth }
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			@templ.Raw(def.Body)
+		</svg>
+	}
+}

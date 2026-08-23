@@ -109,6 +109,8 @@ css:
 		'@source "../public/config.js";' \
 		'@source "../public/backup.js";' \
 		'@source "../public/deploys.js";' \
+		'@source "../public/editor.js";' \
+		'@source "../public/analytics.js";' \
 		"@source \"$$SHADCN_TEMPL_PATH/components/**/*.templ\";" \
 		> client/styles/app.sources.css
 	.howl/tailwind/node_modules/.bin/tailwindcss -i client/styles/app.css -o client/public/app.css --minify
@@ -119,6 +121,16 @@ test: generate
 	@# than eyeballing: what it draws, when it stays quiet, and what a cold
 	@# tab starts with.
 	@node client/public/store_test.mjs
+	@# The compose editor's tokeniser and its two line transforms. A docker
+	@# compose file carries both constructs that break a naive YAML
+	@# highlighter — a value with a colon in it, and a shell script inside a
+	@# block scalar — so what it decides a line is gets asserted.
+	@node client/public/editor_test.mjs
+	@# Every client module has to link. `node --check` parses one file and
+	@# resolves no imports, so it cannot see a top-level declaration colliding
+	@# with an imported name — which is not a shadow but a SyntaxError, and
+	@# takes every page the module drives with it.
+	@node client/public/modules_test.mjs
 
 clean:
 	rm -f guard guard-vault client/public/views.wasm client/public/wasm_exec.js

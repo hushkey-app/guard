@@ -404,8 +404,37 @@ page adds is what a list has no room for.
 
 ### The command line
 
-One box, one button: **Run**. The line runs on the machine as typed, as the user in
-its SSH address, and what came back lands in the pane under it.
+A terminal, as close to one as a page over an HTTP endpoint gets: what you type
+runs on the machine as the user in its SSH address, and the pane above it is a
+transcript — the command on a prompt line, its output, then how it ended, kept
+until you press Clear.
+
+Four things make it usable rather than merely functional, and each replaced
+something that made people keep a real terminal open beside it:
+
+- **↑ and ↓ walk the history**, seeded from what this *machine* has run rather
+  than from this tab, so a command from last week or from somebody else's
+  browser is one keypress away. A half-typed line is kept and handed back on the
+  way past the end.
+- **Several lines run one after another**, stopping at the first failure and
+  saying how many it did not reach. Blank lines and `#` comments are skipped, so
+  a block pasted out of a runbook works. Enter runs, Shift+Enter is a newline.
+- **`cd` works.** Each exec is its own SSH session, so a directory would
+  otherwise last exactly one line — `cd ..`, `ls`, and the same listing again,
+  which reads as the terminal ignoring you. The browser carries the directory:
+  it is put back in front of the next command, and read back from the machine
+  afterwards through a probe printed as an OSC escape, which the pane's ANSI
+  renderer drops. So the prompt says where you are and agrees with the machine
+  even when a script or a failed `cd` moved you somewhere else. The audit row
+  records the wrapped command, which is exactly what ran.
+- **A command that printed nothing says so.** `cd`, a successful restart, `ls`
+  in an empty directory — a transcript that shows a prompt, a status and an
+  unexplained gap looks like one that is swallowing output.
+
+**There is no confirmation dialog.** There was, and it was in front of `ls` as
+often as anything else, which is how a confirmation stops being read. What
+guards this is not a dialog: the endpoint is admin, a locked machine refuses it,
+and every line lands in the log.
 
 This is the one endpoint in guard that takes a command rather than an action id
 (`POST /api/cluster/exec`), and that is a deliberate exception rather than a hole
@@ -426,8 +455,8 @@ button — and this is a narrower door beside them:
 - **a line, not a script**: 4 KB, no NUL. Anything longer is a file, and a file
   belongs on the machine.
 
-The line stays in the box after it runs and is selected, because the next command
-is usually a variation of the last one.
+The box is emptied when a block starts, because what was in it is now in the
+transcript and one press of ↑ brings it back.
 
 ### The terminal
 

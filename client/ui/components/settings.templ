@@ -41,13 +41,13 @@ templ SettingsNav(current string) {
 		<p class="mb-3 px-3 text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground">Settings</p>
 		@item.Group(item.GroupProps{Class: "gap-1", Attributes: templ.Attributes{"aria-label": "Settings sections"}}) {
 			@settingsLink("/settings", "▤", "Data storage", "Retention and cleanup", current)
-			@settingsLink("/settings/cluster", "◈", "Cluster", "Machines to watch", current)
 			@settingsLink("/settings/cloud", "▣", "Cloud accounts", "One key: registries, machines, storage", current)
 			@settingsLink("/settings/alerts", "◔", "Alerts", "Where events go, and when", current)
 			@settingsLink("/settings/members", "◉", "Members", "Who may sign in", current)
 			@settingsLink("/settings/security", "⛨", "Security", "Sign-in providers and sessions", current)
 			@settingsLink("/settings/config", "⌘", "Configuration", "Every variable Guard reads", current)
 			@settingsLink("/settings/backup", "⇅", "Backup", "Export and restore the configuration", current)
+			@settingsLink("/settings/info", "ⓘ", "Info", "What this instance is running", current)
 		}
 		<p class="mt-4 px-3 text-xs leading-relaxed text-muted-foreground">New settings pages can be added here without crowding the main navigation.</p>
 	</aside>

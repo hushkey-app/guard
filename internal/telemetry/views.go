@@ -36,9 +36,15 @@ type TraceSpan = model.TraceSpan
 // Attributes worth an index.
 //
 // Grouping by an attribute means json_extract over every candidate row, which
-// is a full scan. These five are the ones a dashboard actually groups by, so
-// they get a generated column and an index, and the compiler silently uses the
+// is a full scan. These are the ones a dashboard actually groups by, so they
+// get a generated column and an index, and the compiler silently uses the
 // column instead of the extract.
+//
+// The last one is not a shape of request but a person's visit: the session id
+// guard's tracker mints is written on the analytics rows and, by the web SDK
+// beside it, on the browser's spans. That makes it the join key — a path with
+// a bad rate on /analytics is one filter away from the traces of the sessions
+// that produced it — and a join key that costs a scan is one nobody follows.
 //
 // Each column COALESCEs the two OpenTelemetry spellings — semconv renamed
 // several of these, and exporters in the wild emit both. Merging them is
@@ -56,7 +62,13 @@ var indexedAttributes = []struct {
 	{Column: "attr_http_status", Label: "HTTP status", Canonical: "http.response.status_code", Keys: []string{"http.response.status_code", "http.status_code"}},
 	{Column: "attr_client_address", Label: "Client address", Canonical: "client.address", Keys: []string{"client.address", "net.peer.ip", "http.client_ip"}},
 	{Column: "attr_db_system", Label: "Database system", Canonical: "db.system.name", Keys: []string{"db.system.name", "db.system"}},
+	{Column: "attr_rum_session", Label: "Browser session", Canonical: rumSessionAttribute, Keys: []string{rumSessionAttribute, "session.id"}},
 }
+
+// rumSessionAttribute is spelled once because two things read it: the compiler,
+// through the list above, and the events filter that walks a path on
+// /analytics into the spans of the sessions that saw it.
+const rumSessionAttribute = "rum.session_id"
 
 // attributeColumn maps an attribute key to its generated column, if it has one.
 func attributeColumn(key string) (string, bool) {
@@ -164,7 +176,7 @@ CREATE INDEX IF NOT EXISTS idx_views_position ON views(position, id);`
 // ---------------------------------------------------------------------------
 
 func (s *Store) Views() ([]View, error) {
-	rows, err := s.db.Query(`SELECT ` + viewColumns + ` FROM views ORDER BY position, id`)
+	rows, err := s.rdb.Query(`SELECT ` + viewColumns + ` FROM views ORDER BY position, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +193,7 @@ func (s *Store) Views() ([]View, error) {
 }
 
 func (s *Store) View(id int64) (View, error) {
-	row := s.db.QueryRow(`SELECT `+viewColumns+` FROM views WHERE id = ?`, id)
+	row := s.rdb.QueryRow(`SELECT `+viewColumns+` FROM views WHERE id = ?`, id)
 	return scanView(row)
 }
 
@@ -194,7 +206,7 @@ alert_firing,alert_since_ns,alert_alerted_ns,alert_value,alert_series`
 // WatchedViews is what the view alert loop reads: the ones carrying a rule that
 // is switched on and points somewhere.
 func (s *Store) WatchedViews() ([]View, error) {
-	rows, err := s.db.Query(`SELECT ` + viewColumns + ` FROM views
+	rows, err := s.rdb.Query(`SELECT ` + viewColumns + ` FROM views
 WHERE alert_enabled = 1 AND alert_webhook_id > 0 ORDER BY position, id`)
 	if err != nil {
 		return nil, err
@@ -267,7 +279,7 @@ func (s *Store) SaveView(view View) (View, error) {
 		// reorders itself every time something is added is one nobody can learn
 		// the shape of.
 		var position int
-		if err := s.db.QueryRow(`SELECT COALESCE(MAX(position),-1)+1 FROM views`).Scan(&position); err != nil {
+		if err := s.rdb.QueryRow(`SELECT COALESCE(MAX(position),-1)+1 FROM views`).Scan(&position); err != nil {
 			return View{}, err
 		}
 		alert := alertOrZero(view)
@@ -398,7 +410,7 @@ func (s *Store) FieldCatalog() (model.Fields, error) {
 	// scalar `null`. One such row anywhere in the sample is enough to fail the
 	// whole catalogue — and the catalogue is what the builder populates every
 	// picker from, so the failure reads as "the builder does not open".
-	rows, err := s.db.Query(`SELECT DISTINCT j.key FROM (SELECT attributes_json FROM events
+	rows, err := s.rdb.Query(`SELECT DISTINCT j.key FROM (SELECT attributes_json FROM events
 WHERE json_valid(attributes_json) AND json_type(attributes_json) = 'object'
 ORDER BY id DESC LIMIT 2000) e, json_each(e.attributes_json) j
 WHERE j.key IS NOT NULL ORDER BY j.key LIMIT 300`)
@@ -660,7 +672,7 @@ func (s *Store) RunView(panel string, q ViewQuery) (Frame, error) {
 // reason.
 func (s *Store) emptyHint(q ViewQuery, now time.Time) (string, error) {
 	var stored int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&stored); err != nil {
+	if err := s.rdb.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&stored); err != nil {
 		return "", err
 	}
 	if stored == 0 {
@@ -676,7 +688,7 @@ func (s *Store) emptyHint(q ViewQuery, now time.Time) (string, error) {
 		return "", err
 	}
 	var newest sql.NullInt64
-	if err := s.db.QueryRow(`SELECT MAX(timestamp_ns) FROM events`+where, args...).Scan(&newest); err != nil {
+	if err := s.rdb.QueryRow(`SELECT MAX(timestamp_ns) FROM events`+where, args...).Scan(&newest); err != nil {
 		return "", err
 	}
 	if !newest.Valid {
@@ -794,7 +806,7 @@ WHERE v IS NOT NULL AND series IN (SELECT series FROM ranked)) WHERE `)
 		b.write(" SELECT bucket, series, " + aggSQL + " AS value FROM scoped WHERE v IS NOT NULL AND series IN (SELECT series FROM ranked) GROUP BY bucket, series ORDER BY bucket, series")
 	}
 
-	rows, err := s.db.Query(b.String(), b.args...)
+	rows, err := s.rdb.Query(b.String(), b.args...)
 	if err != nil {
 		return err
 	}
@@ -843,7 +855,7 @@ func (s *Store) distinctSeries(q ViewQuery, now time.Time) (int, error) {
 	}
 	b.write(where, args...)
 	var total int
-	return total, s.db.QueryRow(b.String(), b.args...).Scan(&total)
+	return total, s.rdb.QueryRow(b.String(), b.args...).Scan(&total)
 }
 
 func (s *Store) runCategorical(frame *Frame, q ViewQuery, now time.Time) error {
@@ -873,7 +885,7 @@ COUNT(*) OVER (PARTITION BY series) AS n FROM scoped WHERE v IS NOT NULL) WHERE 
 	b.write(orderClause(q.Order))
 	b.write(" LIMIT ?", q.Limit)
 
-	rows, err := s.db.Query(b.String(), b.args...)
+	rows, err := s.rdb.Query(b.String(), b.args...)
 	if err != nil {
 		return err
 	}
@@ -924,7 +936,7 @@ func (s *Store) bounds(q ViewQuery, now time.Time) (low, high float64, count int
 	b.write(scoped.String(), scoped.args...)
 	b.write(" SELECT MIN(v), MAX(v), COUNT(*) FROM scoped WHERE v IS NOT NULL")
 	var minimum, maximum sql.NullFloat64
-	if err := s.db.QueryRow(b.String(), b.args...).Scan(&minimum, &maximum, &count); err != nil {
+	if err := s.rdb.QueryRow(b.String(), b.args...).Scan(&minimum, &maximum, &count); err != nil {
 		return 0, 0, 0, err
 	}
 	if !minimum.Valid || count == 0 {
@@ -963,7 +975,7 @@ func (s *Store) runDistribution(frame *Frame, q ViewQuery, now time.Time) error 
 	b.write(" SELECT MIN(CAST((v - ?) / ? AS INTEGER), ?) AS b, COUNT(*) FROM scoped WHERE v IS NOT NULL GROUP BY b ORDER BY b",
 		low, width, buckets-1)
 
-	rows, err := s.db.Query(b.String(), b.args...)
+	rows, err := s.rdb.Query(b.String(), b.args...)
 	if err != nil {
 		return err
 	}
@@ -1012,7 +1024,7 @@ func (s *Store) runHeatmap(frame *Frame, q ViewQuery, now time.Time) error {
 	b.write(" SELECT bucket, MIN(CAST((v - ?) / ? AS INTEGER), ?) AS b, COUNT(*) FROM scoped WHERE v IS NOT NULL GROUP BY bucket, b ORDER BY bucket, b",
 		low, width, buckets-1)
 
-	rows, err := s.db.Query(b.String(), b.args...)
+	rows, err := s.rdb.Query(b.String(), b.args...)
 	if err != nil {
 		return err
 	}
@@ -1065,7 +1077,7 @@ func (s *Store) runScatter(frame *Frame, q ViewQuery, now time.Time) error {
 	// query from limiting to the newest matches.
 	statement := "SELECT * FROM (" + b.String() + ") WHERE x IS NOT NULL AND y IS NOT NULL"
 
-	rows, err := s.db.Query(statement, b.args...)
+	rows, err := s.rdb.Query(statement, b.args...)
 	if err != nil {
 		return err
 	}
@@ -1150,7 +1162,7 @@ GROUP BY bucket ORDER BY bucket`)
 		frame.Fields = []model.Field{{Name: "time", Type: "time"}, {Name: "min", Type: "number"}, {Name: "p25", Type: "number"}, {Name: "p75", Type: "number"}, {Name: "max", Type: "number"}}
 	}
 
-	rows, err := s.db.Query(b.String(), b.args...)
+	rows, err := s.rdb.Query(b.String(), b.args...)
 	if err != nil {
 		return err
 	}
@@ -1235,7 +1247,7 @@ COUNT(*) OVER (PARTITION BY bucket) AS n FROM scoped WHERE v IS NOT NULL) WHERE 
 		}
 		b.write(" SELECT bucket, " + aggSQL + " FROM scoped WHERE v IS NOT NULL GROUP BY bucket ORDER BY bucket")
 	}
-	rows, err := s.db.Query(b.String(), b.args...)
+	rows, err := s.rdb.Query(b.String(), b.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1279,7 +1291,7 @@ FROM scoped WHERE v IS NOT NULL) WHERE `)
 		b.write(" SELECT " + aggSQL + " FROM scoped WHERE v IS NOT NULL")
 	}
 	var value sql.NullFloat64
-	err = s.db.QueryRow(b.String(), b.args...).Scan(&value)
+	err = s.rdb.QueryRow(b.String(), b.args...).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -1337,7 +1349,7 @@ func (s *Store) pickTrace(q ViewQuery, now time.Time) (string, error) {
 		statement = `SELECT trace_id FROM events WHERE trace_id <> '' GROUP BY trace_id ORDER BY ` + order + ` LIMIT 1`
 	}
 	var traceID string
-	err = s.db.QueryRow(statement, args...).Scan(&traceID)
+	err = s.rdb.QueryRow(statement, args...).Scan(&traceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -1411,7 +1423,7 @@ func (s *Store) DrillView(panel string, q ViewQuery, selection model.Selection) 
 	filter := " WHERE " + strings.Join(clauses, " AND ")
 
 	var drill model.Drill
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`+filter, args...).Scan(&drill.Total); err != nil {
+	if err := s.rdb.QueryRow(`SELECT COUNT(*) FROM events`+filter, args...).Scan(&drill.Total); err != nil {
 		return drill, err
 	}
 	limit := selection.Limit
@@ -1429,7 +1441,7 @@ func (s *Store) DrillView(panel string, q ViewQuery, selection model.Selection) 
 		order = "(" + value.sql + ") DESC, timestamp_ns DESC"
 		args = append(args, value.args...)
 	}
-	rows, err := s.db.Query(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json
+	rows, err := s.rdb.Query(`SELECT id,signal,timestamp_ns,received_at_ns,service,instance,scope,name,severity,message,trace_id,span_id,parent_span_id,kind,duration_ms,metric_value,unit,metric_type,attributes_json
 FROM events`+filter+` ORDER BY `+order+` LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return drill, err
@@ -1452,7 +1464,7 @@ func (s *Store) Trace(traceID string) (Trace, error) {
 	if strings.TrimSpace(traceID) == "" {
 		return trace, errors.New("trace id is required")
 	}
-	rows, err := s.db.Query(`SELECT id,span_id,parent_span_id,name,service,kind,severity,timestamp_ns,duration_ms
+	rows, err := s.rdb.Query(`SELECT id,span_id,parent_span_id,name,service,kind,severity,timestamp_ns,duration_ms
 FROM events WHERE trace_id = ? AND signal = 'traces' ORDER BY timestamp_ns ASC, id ASC LIMIT 5000`, traceID)
 	if err != nil {
 		return trace, err

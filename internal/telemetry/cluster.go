@@ -364,7 +364,7 @@ func scanNode(scan func(...any) error) (Node, error) {
 // a correlated subquery that has to be re-derived every time someone adds a
 // column.
 func (s *Store) Nodes() ([]Node, error) {
-	rows, err := s.db.Query(`SELECT ` + nodeColumns + ` FROM cluster_nodes ORDER BY name`)
+	rows, err := s.rdb.Query(`SELECT ` + nodeColumns + ` FROM cluster_nodes ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +419,7 @@ func (s *Store) Nodes() ([]Node, error) {
 // times a second to ask "anything to do". This is one statement for the whole
 // cluster.
 func (s *Store) NodesForProbe() ([]Node, error) {
-	rows, err := s.db.Query(`SELECT n.id, n.name, n.url, n.enabled, n.interval_seconds,
+	rows, err := s.rdb.Query(`SELECT n.id, n.name, n.url, n.enabled, n.interval_seconds,
 COALESCE((SELECT MAX(checked_at_ns) FROM cluster_checks WHERE node_id = n.id), 0)
 FROM cluster_nodes n WHERE n.enabled = 1`)
 	if err != nil {
@@ -442,7 +442,7 @@ FROM cluster_nodes n WHERE n.enabled = 1`)
 }
 
 func (s *Store) Node(id int64) (Node, error) {
-	node, err := scanNode(s.db.QueryRow(`SELECT `+nodeColumns+` FROM cluster_nodes WHERE id = ?`, id).Scan)
+	node, err := scanNode(s.rdb.QueryRow(`SELECT `+nodeColumns+` FROM cluster_nodes WHERE id = ?`, id).Scan)
 	if err != nil {
 		return node, err
 	}
@@ -470,7 +470,7 @@ func (s *Store) attachChecks(node *Node) error {
 	var code sql.NullInt64
 	var latency sql.NullFloat64
 	var failure sql.NullString
-	err := s.db.QueryRow(`SELECT checked_at_ns, ok, status_code, latency_ms, error FROM cluster_checks
+	err := s.rdb.QueryRow(`SELECT checked_at_ns, ok, status_code, latency_ms, error FROM cluster_checks
 WHERE node_id = ? ORDER BY checked_at_ns DESC LIMIT 1`, node.ID).Scan(&checkedAt, &ok, &code, &latency, &failure)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -488,7 +488,7 @@ WHERE node_id = ? ORDER BY checked_at_ns DESC LIMIT 1`, node.ID).Scan(&checkedAt
 
 	since := time.Now().UTC().Add(-24 * time.Hour).UnixNano()
 	var total, up int
-	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(ok),0) FROM cluster_checks WHERE node_id = ? AND checked_at_ns >= ?`,
+	if err := s.rdb.QueryRow(`SELECT COUNT(*), COALESCE(SUM(ok),0) FROM cluster_checks WHERE node_id = ? AND checked_at_ns >= ?`,
 		node.ID, since).Scan(&total, &up); err != nil {
 		return err
 	}
@@ -497,7 +497,7 @@ WHERE node_id = ? ORDER BY checked_at_ns DESC LIMIT 1`, node.ID).Scan(&checkedAt
 		node.Uptime = float64(up) / float64(total) * 100
 	}
 
-	history, err := s.db.Query(`SELECT ok FROM (SELECT ok, checked_at_ns FROM cluster_checks
+	history, err := s.rdb.Query(`SELECT ok FROM (SELECT ok, checked_at_ns FROM cluster_checks
 WHERE node_id = ? ORDER BY checked_at_ns DESC LIMIT 60) ORDER BY checked_at_ns ASC`, node.ID)
 	if err != nil {
 		return err
@@ -703,7 +703,7 @@ func (s *Store) LinkNode(nodeID int64, link model.ProviderLink) (Node, error) {
 			return Node{}, err
 		}
 		var exists int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM provider_accounts WHERE id = ?`, accountID).Scan(&exists); err != nil {
+		if err := s.rdb.QueryRow(`SELECT COUNT(*) FROM provider_accounts WHERE id = ?`, accountID).Scan(&exists); err != nil {
 			return Node{}, err
 		}
 		if exists == 0 {
@@ -765,7 +765,7 @@ func (s *Store) ProviderTargetFor(nodeID int64, destructive bool) (model.Provide
 func (s *Store) NodeForInstance(accountID int64, instanceID string) (int64, string, error) {
 	var id int64
 	var name string
-	err := s.db.QueryRow(`SELECT id, name FROM cluster_nodes
+	err := s.rdb.QueryRow(`SELECT id, name FROM cluster_nodes
 WHERE provider_account_id = ? AND provider_instance_id = ?`, accountID, instanceID).Scan(&id, &name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, "", nil
@@ -794,7 +794,7 @@ VALUES(?,?,?,?) ON CONFLICT(snapshot_id) DO UPDATE SET node_id=excluded.node_id,
 
 // NodeSnapshots is the set of snapshot ids guard took of one machine.
 func (s *Store) NodeSnapshots(nodeID int64) (map[string]bool, error) {
-	rows, err := s.db.Query(`SELECT snapshot_id FROM cluster_snapshots WHERE node_id = ?`, nodeID)
+	rows, err := s.rdb.Query(`SELECT snapshot_id FROM cluster_snapshots WHERE node_id = ?`, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -897,7 +897,7 @@ type SSHLogin struct {
 func (s *Store) SSHLoginFor(nodeID int64) (SSHLogin, error) {
 	var address, fingerprint string
 	var sealed []byte
-	err := s.db.QueryRow(`SELECT ssh_address, COALESCE(ssh_password, x''), ssh_fingerprint FROM cluster_nodes WHERE id = ?`, nodeID).
+	err := s.rdb.QueryRow(`SELECT ssh_address, COALESCE(ssh_password, x''), ssh_fingerprint FROM cluster_nodes WHERE id = ?`, nodeID).
 		Scan(&address, &sealed, &fingerprint)
 	if err != nil {
 		return SSHLogin{}, err
@@ -944,7 +944,7 @@ func (s *Store) actionsByNode(nodeID int64) (map[int64][]model.NodeAction, error
 		args = append(args, nodeID)
 	}
 	query += ` ORDER BY position, id`
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.rdb.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1082,7 +1082,7 @@ VALUES(?,?,?,?,?,?,?,?,?)`,
 // right node would be trusting the caller to say which machine a command runs
 // on.
 func (s *Store) Action(id int64) (model.NodeAction, error) {
-	return scanAction(s.db.QueryRow(`SELECT `+actionColumns+` FROM cluster_actions WHERE id = ?`, id))
+	return scanAction(s.rdb.QueryRow(`SELECT `+actionColumns+` FROM cluster_actions WHERE id = ?`, id))
 }
 
 // ScheduledActions is what the scheduler reads: every action carrying a
@@ -1093,7 +1093,7 @@ func (s *Store) Action(id int64) (model.NodeAction, error) {
 // backup job opening SSH sessions into it. It is the same switch that stops
 // the health checks, which is the point — one pause, one meaning.
 func (s *Store) ScheduledActions() ([]model.NodeAction, error) {
-	rows, err := s.db.Query(`SELECT a.id,a.node_id,a.name,a.command,a.schedule,a.stale_after_s,
+	rows, err := s.rdb.Query(`SELECT a.id,a.node_id,a.name,a.command,a.schedule,a.stale_after_s,
 a.webhook_id,a.last_run_ns,a.last_exit,a.last_error,a.last_ok_ns,a.alerted_ns,a.created_ns,a.schedule_from_ns
 FROM cluster_actions a JOIN cluster_nodes n ON n.id = a.node_id
 WHERE a.schedule <> '' AND n.enabled = 1 ORDER BY a.node_id, a.position`)
@@ -1121,7 +1121,7 @@ WHERE a.schedule <> '' AND n.enabled = 1 ORDER BY a.node_id, a.position`)
 // check that only runs as part of the job it checks never fires on the day the
 // job does not.
 func (s *Store) WatchedActions() ([]model.NodeAction, error) {
-	rows, err := s.db.Query(`SELECT ` + actionColumns + ` FROM cluster_actions WHERE stale_after_s > 0 ORDER BY node_id, position`)
+	rows, err := s.rdb.Query(`SELECT ` + actionColumns + ` FROM cluster_actions WHERE stale_after_s > 0 ORDER BY node_id, position`)
 	if err != nil {
 		return nil, err
 	}
@@ -1290,7 +1290,7 @@ FROM cluster_runs r LEFT JOIN cluster_actions a ON a.id = r.action_id WHERE `
 	}
 	query += ` ORDER BY r.ran_at_ns DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.rdb.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1378,7 +1378,7 @@ func (s *Store) copyName(name string) string {
 	candidate := name + " copy"
 	for suffix := 2; suffix < 100; suffix++ {
 		var taken int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM cluster_nodes WHERE name = ?`, candidate).Scan(&taken); err != nil || taken == 0 {
+		if err := s.rdb.QueryRow(`SELECT COUNT(*) FROM cluster_nodes WHERE name = ?`, candidate).Scan(&taken); err != nil || taken == 0 {
 			return candidate
 		}
 		candidate = fmt.Sprintf("%s copy %d", name, suffix)
@@ -1469,7 +1469,7 @@ ON CONFLICT(service,instance) DO UPDATE SET node_id = excluded.node_id`, service
 
 // assignments is every hand-made placement, keyed the way instances are.
 func (s *Store) assignments() (map[string]int64, error) {
-	rows, err := s.db.Query(`SELECT service, instance, node_id FROM cluster_assignments`)
+	rows, err := s.rdb.Query(`SELECT service, instance, node_id FROM cluster_assignments`)
 	if err != nil {
 		return nil, err
 	}
@@ -1494,7 +1494,7 @@ const iconRetry = 24 * time.Hour
 // IconStale reports whether it is worth asking this node for its icon.
 func (s *Store) IconStale(nodeID int64) (bool, error) {
 	var fetched int64
-	err := s.db.QueryRow(`SELECT icon_fetched_ns FROM cluster_nodes WHERE id = ?`, nodeID).Scan(&fetched)
+	err := s.rdb.QueryRow(`SELECT icon_fetched_ns FROM cluster_nodes WHERE id = ?`, nodeID).Scan(&fetched)
 	if err != nil {
 		return false, err
 	}
@@ -1514,7 +1514,7 @@ func (s *Store) SaveIcon(nodeID int64, icon []byte, contentType string) error {
 func (s *Store) Icon(nodeID int64) ([]byte, string, error) {
 	var icon []byte
 	var contentType string
-	err := s.db.QueryRow(`SELECT icon, icon_type FROM cluster_nodes WHERE id = ?`, nodeID).Scan(&icon, &contentType)
+	err := s.rdb.QueryRow(`SELECT icon, icon_type FROM cluster_nodes WHERE id = ?`, nodeID).Scan(&icon, &contentType)
 	if err != nil {
 		return nil, "", err
 	}

@@ -15,9 +15,10 @@
 //   - **Rollback is the deploy dialog with a tag filled in.** There is no
 //     rollback path in this file that does anything the ordinary press does not
 //     — which is why it can be trusted on the day it is used.
-import { adminHeaders, el, muted, qs, qsa, relativeTime, request } from "./core.js";
+import { adminHeaders, el, muted, qs, qsa, relativeTime, request, setOutput } from "./core.js";
 import { ensure, set as publish } from "./store.js";
 import { ask, clusterNodes } from "./cluster.js";
+import { attachEditor } from "./editor.js";
 
 let groups = [];
 let templates = [];
@@ -230,8 +231,8 @@ function memberRow(group, member) {
   // What the machine is saying, live. The same pane a deploy's log uses: the
   // interesting minute of an install is the middle of it, not the end.
   if (report && (report.output || report.error)) {
-    const pane = el("pre", "mt-1 max-h-48 w-full overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap select-text",
-      report.error ? `${report.output || ""}\n${report.error}` : report.output);
+    const pane = el("pre", "mt-1 max-h-48 w-full overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap select-text");
+    setOutput(pane, report.error ? `${report.output || ""}\n${report.error}` : report.output);
     row.appendChild(pane);
   }
 
@@ -574,7 +575,9 @@ function instanceRow(instance) {
     const settle = () => {
       const open = logsOpen.has(key);
       pane.hidden = !open;
-      pane.textContent = open ? instance.output : "";
+      // Through the ANSI renderer: `docker compose` and most application
+      // loggers colour their output, and printed raw it is escape codes.
+      if (open) setOutput(pane, instance.output); else pane.replaceChildren();
       button.textContent = open ? "Hide log" : "Log";
     };
     button.onclick = () => {
@@ -702,25 +705,55 @@ function fillVersions() {
   picker.onchange = summarise;
 }
 
+// A registry's URN as a prefix to compare against: no scheme, no trailing
+// slash, lower case. Providers are not consistent about the first two, and a
+// registry hostname is case-insensitive, so comparing the raw string is how a
+// registry that is plainly right reads as "no registry owns that image".
+function urnPrefix(urn) {
+  return String(urn || "").replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/\/+$/, "").toLowerCase();
+}
+
 // The tags come from the registry the image belongs to, matched by the prefix
 // the registry itself reports — so a template's image string is enough, and no
 // account id has to be stored beside it.
+//
+// Two things this has to get exactly right, because both are silent when wrong:
+// the registry is addressed by **id**, which is what the provider resolves a
+// registry by, and the repository is the **full name the registry knows**
+// (`hushkey/pack`) rather than the part after the URN. That is what
+// /registries sends from its own drill, and the tags endpoint documents it.
 async function loadTags(force = false) {
   const dialog = qs("[data-deploy-dialog]");
   const list = qs("[data-deploy-tag-list]", dialog);
   list.replaceChildren(new Option("looking for tags…", ""));
   try {
     if (force || !registries.length) registries = await request("/api/registries", { headers: adminHeaders() });
-    const image = pending.template.image || "";
+    const image = (pending.template.image || "").toLowerCase();
+    // Everything after the host is what the registry calls the repository.
+    const repo = image.split("/").slice(1).join("/");
+    const host = image.split("/")[0];
     let found = null;
+    const seen = [];
     for (const account of registries || []) {
       for (const registry of account.registries || []) {
-        if (registry.urn && image.startsWith(registry.urn + "/")) {
-          found = { account: account.account.id, registry: registry.name, repo: image.slice(registry.urn.length + 1) };
-        }
+        const prefix = urnPrefix(registry.urn);
+        if (prefix) seen.push(prefix);
+        const owns = prefix
+          ? image.startsWith(prefix + "/")
+          // A registry that reports no URN at all is still findable: an image
+          // is host/registry/repo, so the segment after the host is its name.
+          : Boolean(host) && image.split("/")[1] === String(registry.name || "").toLowerCase();
+        if (owns) found = { account: account.account.id, registry: registry.id, repo };
       }
     }
-    if (!found) { list.replaceChildren(new Option("no registry here owns that image — type the tag", "")); return; }
+    if (!found) {
+      // Naming both sides, because the two strings being compared are the whole
+      // of the problem and neither is on screen anywhere else.
+      list.replaceChildren(new Option(
+        `no registry here owns ${pending.template.image || "that image"}` +
+        (seen.length ? ` (they hold ${seen.join(", ")})` : "") + " — type the tag", ""));
+      return;
+    }
     const tags = await request(`/api/registries/tags?account=${found.account}` +
       `&registry=${encodeURIComponent(found.registry)}&repo=${encodeURIComponent(found.repo)}`,
       { headers: adminHeaders() });
@@ -886,6 +919,16 @@ async function openTemplate(template) {
   qs('[data-template="name"]', dialog).oninput = describe;
   qs('[data-template="compose_yaml"]', dialog).oninput = describe;
   describe();
+
+  // The dialog's markup outlives every opening, so this attaches once and
+  // repaints on the rest — `value()` above wrote `.value` directly, which
+  // fires no input event and would otherwise leave the last template's
+  // highlighting under the new one's text.
+  const editor = attachEditor(qs('[data-template="compose_yaml"]', dialog));
+  if (editor) {
+    editor.refresh();
+    qs("[data-template-format]", dialog).onclick = () => editor.format();
+  }
 
   const vars = qs("[data-template-vars]", dialog);
   vars.replaceChildren();
