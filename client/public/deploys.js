@@ -18,6 +18,7 @@
 import { adminHeaders, el, muted, qs, qsa, relativeTime, request, setOutput } from "./core.js";
 import { ensure, set as publish } from "./store.js";
 import { ask, clusterNodes } from "./cluster.js";
+import { attachEditor } from "./editor.js";
 
 let groups = [];
 let templates = [];
@@ -918,6 +919,16 @@ async function openTemplate(template) {
   qs('[data-template="name"]', dialog).oninput = describe;
   qs('[data-template="compose_yaml"]', dialog).oninput = describe;
   describe();
+
+  // The dialog's markup outlives every opening, so this attaches once and
+  // repaints on the rest — `value()` above wrote `.value` directly, which
+  // fires no input event and would otherwise leave the last template's
+  // highlighting under the new one's text.
+  const editor = attachEditor(qs('[data-template="compose_yaml"]', dialog));
+  if (editor) {
+    editor.refresh();
+    qs("[data-template-format]", dialog).onclick = () => editor.format();
+  }
 
   const vars = qs("[data-template-vars]", dialog);
   vars.replaceChildren();

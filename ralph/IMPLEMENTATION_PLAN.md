@@ -210,7 +210,7 @@ fails silently.
     only the attributes that differ from the default.
   - Verify: `go build ./...`
 
-- [ ] **D2 — the sidebar**
+- [x] **D2 — the sidebar**
   - Depends: D1
   - Files: `client/ui/nav.go`
   - Do: `/analytics` appended to the `Signals` group in `navOrder`, and
@@ -218,7 +218,7 @@ fails silently.
     from the route table, so nothing else is edited.
   - Verify: `make test`
 
-- [ ] **D3 — the page skeleton**
+- [x] **D3 — the page skeleton**
   - Depends: D2
   - Files: `client/pages/analytics/index.client.templ`
   - Do: the route and its three states — analytics off (`GUARD_RUM_ORIGINS`
@@ -229,7 +229,7 @@ fails silently.
     `core/app`.
   - Verify: `go run github.com/mirairoad/howl-go/core/cmd/howl check && make test`
 
-- [ ] **D4 — the renderer's wiring**
+- [x] **D4 — the renderer's wiring**
   - Depends: D3
   - Files: `client/public/analytics.js`, `Makefile` (one `@source` line),
     `client/public/modules_test.mjs` if it enumerates modules
@@ -243,7 +243,7 @@ fails silently.
   - Note: `make css` needs Node and network. If it cannot run, mark this `[!]`
     and say so — do not guess at `client/public/app.css`.
 
-- [ ] **D5 — the strip**
+- [x] **D5 — the strip**
   - Depends: D4
   - Files: `client/public/analytics.js`, `client/ui/components/` (a template if the chrome is shared)
   - Do: sessions, page views, views per session, actions per session, each
@@ -252,7 +252,7 @@ fails silently.
     stays where Tailwind looks.
   - Verify: `make css && make test`
 
-- [ ] **D6 — the grid**
+- [x] **D6 — the grid**
   - Depends: D5
   - Files: `client/public/analytics.js`, `client/ui/components/`
   - Do: **the feature.** One row per path in fixed columns: path, views,
@@ -262,7 +262,7 @@ fails silently.
     Tailwind, so anything computed goes in an inline style.
   - Verify: `make css && make test`
 
-- [ ] **D7 — the fold**
+- [x] **D7 — the fold**
   - Depends: D6
   - Files: `client/public/analytics.js`, `client/ui/components/`
   - Do: a path row opens onto its sparkline (an existing renderer in
@@ -271,7 +271,7 @@ fails silently.
     open is what is remembered — the same rule `/cluster` keeps.
   - Verify: `make css && make test`
 
-- [ ] **D8 — the controls**
+- [x] **D8 — the controls**
   - Depends: D7
   - Files: `client/public/analytics.js`, `client/pages/analytics/index.client.templ`
   - Do: the Actions list (pin, reorder, delete with a confirm that says the
@@ -280,7 +280,7 @@ fails silently.
 
 ## Phase E — the joins
 
-- [ ] **E1 — sources**
+- [x] **E1 — sources**
   - Depends: D8
   - Files: `internal/telemetry/analytics.go`, `internal/ingest/analytics.go`,
     `server/apis/analytics/`, `client/public/analytics.js`
@@ -290,7 +290,7 @@ fails silently.
     dropped. Not a props system.
   - Verify: `make css && make test`
 
-- [ ] **E2 — the session id becomes a join key**
+- [x] **E2 — the session id becomes a join key**
   - Depends: E1
   - Files: `internal/telemetry/views.go`, `internal/ingest/analytics.go`,
     `internal/telemetry/views_test.go`
@@ -300,14 +300,14 @@ fails silently.
     nothing else — if it turns out to need more, stop and record why.
   - Verify: `make test`
 
-- [ ] **E3 — the drill**
+- [x] **E3 — the drill**
   - Depends: E2
   - Files: `client/public/analytics.js`
   - Do: the link from an opened path row into `/traces` filtered to that
     path's sessions.
   - Verify: `make css && make test`
 
-- [ ] **E4 — backup**
+- [x] **E4 — backup**
   - Depends: E3
   - Files: `internal/telemetry/backup.go`, `internal/telemetry/backup_test.go`
   - Do: `analytics_actions` and `analytics_path_rules` into `backupTables` —
@@ -316,7 +316,7 @@ fails silently.
     beside them, for the same reason logs are excluded.
   - Verify: `go test ./internal/telemetry/`
 
-- [ ] **E5 — retention on the storage page**
+- [x] **E5 — retention on the storage page**
   - Depends: E4
   - Files: `client/public/config.js` or the storage settings page, `server/apis/settings/`
   - Do: the two analytics retention numbers from A7 typed on
@@ -324,7 +324,7 @@ fails silently.
     when saved, not at the next start.
   - Verify: `make css && make test`
 
-- [ ] **E6 — the document of record**
+- [x] **E6 — the document of record**
   - Depends: E5
   - Files: `docs/analytics.md`, `CLAUDE.md`, `docs/browser-telemetry.md`
   - Do: write `docs/analytics.md` in the voice of the other docs — what the
@@ -339,7 +339,7 @@ fails silently.
     path.
   - Verify: `make test`
 
-- [ ] **E7 — the benchmark**
+- [x] **E7 — the benchmark**
   - Depends: E6
   - Files: `internal/ingest/analytics_bench_test.go`
   - Do: a benchmark beside `internal/ingest/benchmark_test.go` measuring

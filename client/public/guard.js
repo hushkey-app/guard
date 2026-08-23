@@ -847,6 +847,30 @@ async function checkForUpdates() {
   }
 }
 
+// The tabs inside components.HowTo.
+//
+// Opening and closing the dialog is a checkbox and a sibling selector, with no
+// script at all. Only this part is scripted, and only because the alternative
+// is not available: showing panel N from radio N needs a `peer-checked/N:`
+// class assembled from an index, and Tailwind emits no class it cannot find
+// written out. Delegated on document like everything else here, so it keeps
+// working after a client-side navigation replaces the outlet.
+document.addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-howto-tab]");
+  if (!tab) return;
+  const dialog = tab.closest("[data-howto]");
+  if (!dialog) return;
+  const wanted = tab.dataset.howtoTab;
+  for (const control of qsa("[data-howto-tab]", dialog)) {
+    const active = control.dataset.howtoTab === wanted;
+    control.dataset.active = String(active);
+    control.setAttribute("aria-selected", String(active));
+  }
+  for (const panel of qsa("[data-howto-panel]", dialog)) {
+    panel.hidden = panel.dataset.howtoPanel !== wanted;
+  }
+});
+
 document.addEventListener("click", (event) => {
   if (event.target.closest("[data-update-apply]")) applyUpdate();
   if (event.target.closest("[data-info-check]")) checkForUpdates();

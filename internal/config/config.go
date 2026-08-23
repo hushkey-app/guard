@@ -115,6 +115,15 @@ type Entry struct {
 	Help    string
 	Kind    Kind
 	Default string
+	// Example is what a filled-in value looks like, shown under the box.
+	//
+	// It is not a default and must never be treated as one — nothing is stored
+	// or applied from it. It exists because `Help` can say "comma-separated
+	// origins" and somebody will still type one origin and wonder whether a
+	// second is allowed, or type them with spaces and no comma, or wrap them in
+	// brackets. A line showing two of them answers all three without being
+	// read as a sentence.
+	Example string
 	// Vault marks a value the second binary reads. It is applied there too, so
 	// the form is not quietly lying about half its rows.
 	Vault bool
@@ -172,7 +181,9 @@ var Entries = []Entry{
 	},
 	{
 		Name: "GUARD_RUM_ORIGINS", Group: GroupAccess, Label: "Browser origins", Kind: KindList,
-		Help: "Comma-separated origins allowed to post browser telemetry. Empty turns the browser intake off entirely.",
+		Help: "Comma-separated origins allowed to post browser telemetry. Empty turns the browser intake off entirely. " +
+			"An origin is scheme, host and port — no path, no trailing slash, and https://example.com does not cover www.",
+		Example: "https://example.com, https://www.example.com, https://app.example.com:8443",
 	},
 	{
 		Name: "GUARD_SSH_TIMEOUT", Group: GroupCluster, Label: "Command timeout", Kind: KindDuration, Default: "2m",
@@ -383,6 +394,8 @@ type Value struct {
 	Help    string `json:"help,omitempty"`
 	Kind    Kind   `json:"kind"`
 	Default string `json:"default,omitempty"`
+	// Example is a filled-in value for the page to show. Never applied.
+	Example string `json:"example,omitempty"`
 	// Value is what the next start will use. Empty for a hidden entry, which
 	// reports only that something is set.
 	Value string `json:"value,omitempty"`
@@ -433,7 +446,7 @@ func (s *Set) State() (State, error) {
 	for _, entry := range Entries {
 		value := Value{
 			Name: entry.Name, Group: entry.Group, Label: entry.Label, Help: entry.Help,
-			Kind: entry.Kind, Default: entry.Default,
+			Kind: entry.Kind, Default: entry.Default, Example: entry.Example,
 			Vault: entry.Vault, Secret: entry.Secret, Generatable: entry.Generate,
 		}
 		next := entry.Default

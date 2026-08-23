@@ -44,8 +44,13 @@ function renderBands(health) {
 // naming the wrong host is one that gets pasted and then silently posts
 // nowhere.
 function renderSnippet() {
-  const slot = qs("[data-analytics-script]");
-  if (slot) slot.textContent = `<script defer src="${location.origin}/v1/rum/track.js"></script>`;
+  const tag = `<script defer src="${location.origin}/v1/rum/track.js"><\/script>`;
+  // Two places now: the card, where it is copied from, and the How to use
+  // dialog, where it is read. Both, because a dialog showing the wrong host is
+  // worse than one showing none — and it is one string either way.
+  for (const slot of qsa("[data-analytics-script], [data-analytics-script-copy]")) {
+    slot.textContent = tag;
+  }
 }
 
 async function copySnippet(button) {

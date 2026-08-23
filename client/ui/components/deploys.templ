@@ -287,17 +287,36 @@ templ TemplateDialog() {
 				}
 			</div>
 			@field.Field() {
-				@field.Label(field.LabelProps{For: "template-compose"}) {
-					docker-compose.yml
-				}
-				@textarea.Textarea(textarea.Props{
-					ID:         "template-compose",
-					Rows:       12,
-					Class:      "font-mono text-xs",
-					Attributes: templ.Attributes{"data-template": "compose_yaml", "spellcheck": "false"},
-				})
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					@field.Label(field.LabelProps{For: "template-compose"}) {
+						docker-compose.yml
+					}
+					@button.Button(button.Props{
+						Variant: button.VariantOutline,
+						Size:    button.SizeSm,
+						Attributes: templ.Attributes{
+							"data-template-format": true,
+							"type":                 "button",
+							"title":                "Tabs to two spaces, trailing whitespace off, no double blank lines. Nothing is reordered and no comment is dropped.",
+						},
+					}) {
+						Format
+					}
+				</div>
+				// The highlighting is a <pre> behind a transparent textarea — see
+				// client/public/editor.js for why it stays a textarea, and app.css
+				// for the metrics the two have to agree on.
+				<div data-code-editor class="text-xs">
+					<pre data-code-paint aria-hidden="true"><code data-code-ink></code></pre>
+					@textarea.Textarea(textarea.Props{
+						ID:         "template-compose",
+						Rows:       12,
+						Attributes: templ.Attributes{"data-template": "compose_yaml", "spellcheck": "false", "autocomplete": "off", "autocapitalize": "off", "autocorrect": "off"},
+					})
+				</div>
 				<p class="text-xs text-muted-foreground">
 					<code class="font-mono">{ "${TAG}" }</code> comes from the <code class="font-mono">.env</code> guard writes beside it.
+					<span class="text-muted-foreground/70">Tab indents, <kbd class="font-mono">⌘</kbd>/<kbd class="font-mono">Ctrl</kbd>+<kbd class="font-mono">/</kbd> comments the selection.</span>
 				</p>
 			}
 			<div class="space-y-3 rounded-lg border border-border p-4">

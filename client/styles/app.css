@@ -211,3 +211,88 @@ dialog {
 [data-builder-shell].open [data-builder-panel] {
   transform: none;
 }
+
+/* The compose editor on /deploys. It is a <textarea> with a <pre> painted
+ * behind it — client/public/editor.js explains why it stays a textarea — and
+ * the highlight only lines up with the caret if both boxes agree on every
+ * metric that can move a glyph. So the font, size, line height, padding, tab
+ * size and wrapping are set here on the pair, rather than left to `cn-textarea`
+ * on one of them and the browser's <pre> defaults on the other.
+ *
+ * `white-space: pre` on both, not `pre-wrap`: a wrapped line reflows, and two
+ * elements of slightly different content width (the textarea loses some to its
+ * scrollbar) then wrap in different places. Indented YAML is also just easier
+ * to read unwrapped. */
+[data-code-editor] {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--input) 30%, transparent);
+  transition: border-color .15s, box-shadow .15s;
+}
+
+/* The ring moves to the wrapper, because the box somebody is focusing is the
+ * editor rather than the transparent layer inside it. */
+[data-code-editor]:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+[data-code-editor] > pre,
+[data-code-editor] > textarea {
+  margin: 0;
+  padding: .75rem;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  line-height: 1.25rem;
+  font-variant-ligatures: none;
+  letter-spacing: normal;
+  tab-size: 2;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+[data-code-editor] > pre {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--foreground);
+}
+
+/* `field-sizing: content` from cn-textarea is undone on purpose: an editor
+ * that grows without limit turns the dialog into the scroll container, and
+ * then the file you are editing is somewhere off screen while its own
+ * scrollbar sits unused. */
+[data-code-editor] > textarea {
+  position: relative;
+  field-sizing: fixed;
+  min-height: 18rem;
+  max-height: 60vh;
+  overflow: auto;
+  resize: vertical;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--foreground);
+  box-shadow: none;
+  outline: none;
+}
+
+[data-code-editor] > textarea::selection {
+  background: color-mix(in oklab, var(--primary) 35%, transparent);
+}
+
+/* One hue per kind of thing, and `${TAG}` is the loud one: it is the only
+ * token in a guard compose file the deploy actually substitutes, and a
+ * template that never mentions it is refused by the server. */
+[data-code-editor] .tok-key     { color: oklch(.82 .10 300); }
+[data-code-editor] .tok-string  { color: oklch(.78 .13 160); }
+[data-code-editor] .tok-number  { color: oklch(.82 .13 78); }
+[data-code-editor] .tok-const   { color: oklch(.76 .14 30); }
+[data-code-editor] .tok-anchor  { color: oklch(.74 .12 250); }
+[data-code-editor] .tok-punct   { color: oklch(.60 0 0); }
+[data-code-editor] .tok-var     { color: oklch(.80 .14 200); font-weight: 500; }
+[data-code-editor] .tok-comment { color: oklch(.56 .02 300); font-style: italic; }

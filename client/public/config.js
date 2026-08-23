@@ -52,6 +52,17 @@ function buildRow(value) {
   const help = qs("[data-config-help]", row);
   if (value.help) help.textContent = value.help;
   else help.remove();
+  // An example is a shape, not a default: nothing is stored or applied from it,
+  // and it is never put in the box. "Comma-separated origins" is a sentence
+  // somebody reads and then types one origin anyway; two of them written out
+  // answers the question the sentence leaves open.
+  const example = qs("[data-config-example]", row);
+  if (value.example) {
+    qs("[data-config-example-value]", example).textContent = value.example;
+    example.hidden = false;
+  } else {
+    example.remove();
+  }
   const input = qs("[data-config-input]", row);
   const textarea = qs("[data-config-textarea]", row);
   // One row, two inputs, one of them removed — a PEM key in a single-line input

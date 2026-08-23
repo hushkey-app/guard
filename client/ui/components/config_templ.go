@@ -300,7 +300,7 @@ func configRow() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div><textarea data-config-textarea hidden rows=\"6\" class=\"cn-input min-h-[8rem] w-full font-mono text-xs\" autocomplete=\"off\" spellcheck=\"false\"></textarea><p data-config-help class=\"text-xs text-muted-foreground\"></p></div></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div><textarea data-config-textarea hidden rows=\"6\" class=\"cn-input min-h-[8rem] w-full font-mono text-xs\" autocomplete=\"off\" spellcheck=\"false\"></textarea><!-- What a filled-in value looks like, under the box where it is read\n\t\t\t     as a shape rather than as a sentence. Removed by config.js on the\n\t\t\t     rows that have none, so it never leaves an empty line. --><p data-config-example hidden class=\"font-mono text-[11px] text-muted-foreground\"><span class=\"not-italic text-muted-foreground/70\">e.g.</span> <span data-config-example-value></span></p><p data-config-help class=\"text-xs text-muted-foreground\"></p></div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

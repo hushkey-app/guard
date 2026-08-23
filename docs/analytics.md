@@ -21,6 +21,25 @@ the hard way:
   `analytics` or `track`. The direct URL works and is the thing that quietly
   stops working for a third of your visitors.
 
+## How to use
+
+The instructions live behind a **How to use** button rather than on the page:
+four tabs — the tag, tracking actions, origins, and the relay — in
+`components.HowTo`, a reusable dialog any page can fill with its own tabs.
+
+They were inlined on `/analytics` before, which meant four paragraphs and two
+notes above a page that has data on it a minute later: read once by whoever set
+it up, in the way forever after. The button appears on the install card *and* on
+the live page, because the question does not stop being asked once the first
+beacon lands — the second one is "how do I track a button", and by then the
+install card is gone.
+
+The dialog opens and closes with a checkbox and a sibling selector, so it needs
+no JavaScript and nothing to re-bind after a navigation. Only switching tabs is
+scripted, delegated on `document` in `guard.js`: showing panel N from radio N
+would need a `peer-checked/N:` class built from an index, and Tailwind emits no
+class it cannot find written out.
+
 ## Turning it on
 
 There is no `GUARD_ANALYTICS_*` variable, and there will not be one. Analytics

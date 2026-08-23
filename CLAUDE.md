@@ -52,6 +52,7 @@ client/public/secrets.js      the secrets page: environments, pairs, keys, .env 
 client/public/config.js       both settings forms: the catalogue, filtered per page
 client/public/backup.js       the backup page: the sections, the download, the restore
 client/public/deploys.js      the deploys page: groups, templates, runs, the press
+client/public/editor.js       the compose box: YAML highlighting behind a textarea, ⌘/ comments
 client/styles/app.css         stylesheet source — compiles to client/public/app.css
 ```
 
