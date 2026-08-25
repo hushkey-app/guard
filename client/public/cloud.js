@@ -228,8 +228,7 @@ export function fillCloudCard(item, node) {
 
 function fillSnapshots(item, node) {
   const host = qs("[data-cloud-snapshots]", item);
-  const template = qs("[data-cloud-snapshot-template]");
-  if (!host || !template) return;
+  if (!host) return;
   const entry = snapshots.get(node.id);
   if (!entry) {
     host.replaceChildren(el("p", `text-xs ${muted}`, "Reading snapshots…"));
@@ -246,7 +245,7 @@ function fillSnapshots(item, node) {
     return;
   }
   host.replaceChildren(...rows.map((row) => {
-    const chip = template.content.firstElementChild.cloneNode(true);
+    const chip = el("div");
     chip.dataset.snapshot = row.snapshot.id;
     // Guard's own snapshots of this machine first and plainly; the rest of
     // the account is listed dimmer, because it is still restorable and
@@ -254,19 +253,41 @@ function fillSnapshots(item, node) {
     chip.className = row.ours
       ? "flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2"
       : "flex items-center gap-3 rounded-lg bg-muted/20 px-3 py-2 opacity-70";
-    qs("[data-snapshot-name]", chip).textContent = row.snapshot.description || row.snapshot.id;
+    const copy = el("div", "min-w-0 flex-1");
+    copy.append(el("p", "truncate text-xs font-medium", row.name || row.snapshot.description || row.snapshot.id));
     const parts = [row.ours ? "this machine" : "elsewhere in the account"];
     if (row.snapshot.created) parts.push(relativeTime(row.snapshot.created));
     if (row.snapshot.size_bytes) parts.push(bytes(row.snapshot.size_bytes));
-    if (row.snapshot.status && row.snapshot.status !== "complete") parts.push(row.snapshot.status);
-    qs("[data-snapshot-meta]", chip).textContent = parts.join(" · ");
-    if (row.snapshot.status && row.snapshot.status !== "complete") {
-      const restore = qs("[data-snapshot-restore]", chip);
+    const status = row.status || row.snapshot.status;
+    if (status) parts.push(status);
+    if (row.error) parts.push(row.error);
+    copy.append(el("p", `truncate text-[.68rem] ${status === "failed" ? "text-destructive" : muted}`, parts.join(" · ")));
+    chip.append(copy);
+
+    const rename = el("button", "cn-button cn-button-variant-ghost cn-button-size-sm shrink-0", row.ours ? "Rename" : "Name & link");
+    rename.type = "button";
+    rename.dataset.snapshotRename = "";
+    rename.title = row.ours ? "Rename this snapshot" : "Assign this snapshot to this machine";
+    chip.append(rename);
+
+    const restore = el("button", "cn-button cn-button-variant-outline cn-button-size-sm shrink-0", "Restore");
+    restore.type = "button";
+    restore.dataset.snapshotRestore = "";
+    chip.append(restore);
+    const remove = el("button", "cn-button cn-button-variant-ghost cn-button-size-sm shrink-0 text-destructive", "Delete");
+    remove.type = "button";
+    remove.dataset.snapshotDelete = "";
+    chip.append(remove);
+    if (status && status !== "complete") {
       restore.disabled = true;
-      restore.title = "This image is still being written";
+      restore.title = status === "failed" ? "This snapshot failed" : "This image is still being written";
     }
     return chip;
   }));
+
+  if (rows.some((row) => (row.status || row.snapshot.status) === "pending")) {
+    setTimeout(() => loadSnapshots(node.id, true).catch(() => {}), 5000);
+  }
 }
 
 async function loadFacts(nodeID, force = false) {
@@ -719,6 +740,8 @@ document.addEventListener("click", (event) => {
   if (remove2) { deleteSnapshot(nodeID, remove2.closest("[data-snapshot]").dataset.snapshot, card); return; }
   const restore = event.target.closest("[data-snapshot-restore]");
   if (restore) { restoreSnapshot(nodeID, restore.closest("[data-snapshot]").dataset.snapshot, card); }
+  const rename = event.target.closest("[data-snapshot-rename]");
+  if (rename) { nameSnapshot(nodeID, rename.closest("[data-snapshot]").dataset.snapshot, card); }
 });
 
 function nameOf(card) {
@@ -770,18 +793,38 @@ async function settlePower(nodeID, action) {
 
 async function takeSnapshot(nodeID, card) {
   const name = nameOf(card);
+  const defaultLabel = `${name}_${new Date().toLocaleDateString("en-GB").replaceAll("/", "-")}`;
+  const label = window.prompt("Snapshot label", defaultLabel)?.trim();
+  if (!label) return;
   if (!await ask({
-    title: `Snapshot ${name}?`,
-    body: "The provider images the machine's disk. It takes minutes for a real machine, storage is billed while it exists, and the machine keeps running throughout.",
+    title: `Create ${label}?`,
+    body: "The provider images the machine's disk with this label. It takes minutes for a real machine, storage is billed while it exists, and the machine keeps running throughout.",
     confirm: "Take the snapshot",
   })) return;
   try {
     await request("/api/cluster/provider/snapshots", {
       method: "POST", headers: adminHeaders(),
-      body: JSON.stringify({ node_id: nodeID, description: `${name} — guard` }),
+      body: JSON.stringify({ node_id: nodeID, description: label }),
     });
     cardError(card, "");
     openSnapshots.add(nodeID);
+    await loadSnapshots(nodeID, true);
+  } catch (failure) {
+    cardError(card, failure.message);
+  }
+}
+
+async function nameSnapshot(nodeID, snapshotID, card) {
+  const row = snapshots.get(nodeID)?.rows?.find((candidate) => candidate.snapshot.id === snapshotID);
+  const suggested = row?.name || row?.snapshot?.description || `${nameOf(card)}_${new Date().toLocaleDateString("en-GB").replaceAll("/", "-")}`;
+  const name = window.prompt("Snapshot name", suggested)?.trim();
+  if (!name) return;
+  try {
+    await request("/api/cluster/provider/snapshots", {
+      method: "PATCH", headers: adminHeaders(),
+      body: JSON.stringify({ node_id: nodeID, snapshot_id: snapshotID, name }),
+    });
+    cardError(card, "");
     await loadSnapshots(nodeID, true);
   } catch (failure) {
     cardError(card, failure.message);

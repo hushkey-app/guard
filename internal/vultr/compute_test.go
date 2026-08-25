@@ -83,6 +83,13 @@ func fakeCompute(t *testing.T) (*Client, map[string]int, map[string]any) {
 			"id": "s-fresh", "description": body["description"], "status": "pending",
 		}})
 	})
+	mux.HandleFunc("PATCH /v2/snapshots/s-old", func(w http.ResponseWriter, r *http.Request) {
+		calls["snapshot-update"]++
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		bodies["snapshot-update"] = body
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /v2/instances/i-1/restore", func(w http.ResponseWriter, r *http.Request) {
 		calls["restore"]++
 		var body map[string]any
@@ -173,7 +180,7 @@ func TestPowerIsAClosedList(t *testing.T) {
 }
 
 func TestSnapshotsAreNewestFirstAndCreateCarriesTheInstance(t *testing.T) {
-	client, _, bodies := fakeCompute(t)
+	client, calls, bodies := fakeCompute(t)
 	ctx := context.Background()
 	list, err := client.Snapshots(ctx, "key")
 	if err != nil {
@@ -195,6 +202,16 @@ func TestSnapshotsAreNewestFirstAndCreateCarriesTheInstance(t *testing.T) {
 	body, _ := bodies["snapshot-create"].(map[string]any)
 	if body["instance_id"] != "i-1" || body["description"] != "before the deploy" {
 		t.Fatalf("create sent %#v", body)
+	}
+	if err := client.UpdateSnapshot(ctx, "key", "s-old", "vps-1_25-08-2026"); err != nil {
+		t.Fatal(err)
+	}
+	if calls["snapshot-update"] != 1 {
+		t.Fatal("snapshot update did not reach the provider")
+	}
+	updated, _ := bodies["snapshot-update"].(map[string]any)
+	if updated["description"] != "vps-1_25-08-2026" {
+		t.Fatalf("update sent %#v", updated)
 	}
 }
 

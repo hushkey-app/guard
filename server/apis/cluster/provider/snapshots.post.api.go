@@ -3,6 +3,7 @@ package provider
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/hushkey-app/guard/internal/vultr"
 	"github.com/hushkey-app/guard/server/apis/cloud"
@@ -48,7 +49,11 @@ var TakeSnapshot = api.Define(api.Spec[api.None, SnapshotRequest, vultr.Snapshot
 		}
 		description := strings.TrimSpace(r.Body.Description)
 		if description == "" {
-			description = "guard"
+			node, nodeErr := store.Get().Node(link.NodeID)
+			if nodeErr != nil {
+				return vultr.Snapshot{}, nodeErr
+			}
+			description = node.Name + "_" + time.Now().Format("02-01-2006")
 		}
 		snapshot, err := cloud.Client.CreateSnapshot(r.Context(), key, link.InstanceID, description)
 		if err != nil {
@@ -63,6 +68,7 @@ var TakeSnapshot = api.Define(api.Spec[api.None, SnapshotRequest, vultr.Snapshot
 		if err := store.Get().RecordSnapshot(link.NodeID, snapshot.ID, description); err != nil {
 			return snapshot, nil //nolint:nilerr
 		}
+		_ = store.Get().SetSnapshotStatus(link.NodeID, snapshot.ID, "pending", "")
 		return snapshot, nil
 	},
 })

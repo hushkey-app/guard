@@ -58,14 +58,57 @@ CREATE TABLE IF NOT EXISTS cluster_assignments (
   PRIMARY KEY(service, instance)
 );
 CREATE TABLE IF NOT EXISTS cluster_snapshots (
-  snapshot_id TEXT PRIMARY KEY,
   node_id INTEGER NOT NULL REFERENCES cluster_nodes(id) ON DELETE CASCADE,
+  snapshot_id TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  created_at_ns INTEGER NOT NULL
+  created_at_ns INTEGER NOT NULL,
+  PRIMARY KEY(node_id, snapshot_id)
 );
 CREATE INDEX IF NOT EXISTS idx_cluster_snapshots_node ON cluster_snapshots(node_id);`
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate cluster: %w", err)
+	}
+	// The original Vultr-only table treated a provider snapshot id as globally
+	// unique. Numeric Hetzner ids (and future provider/account namespaces) do
+	// not have that property, so ownership is part of the key.
+	var snapshotIDPK, snapshotNodePK int
+	pkRows, err := db.Query(`SELECT name, pk FROM pragma_table_info('cluster_snapshots')`)
+	if err != nil {
+		return fmt.Errorf("read snapshot key: %w", err)
+	}
+	for pkRows.Next() {
+		var name string
+		var pk int
+		if err := pkRows.Scan(&name, &pk); err != nil {
+			pkRows.Close()
+			return err
+		}
+		if name == "snapshot_id" {
+			snapshotIDPK = pk
+		}
+		if name == "node_id" {
+			snapshotNodePK = pk
+		}
+	}
+	if err := pkRows.Close(); err != nil {
+		return err
+	}
+	if snapshotIDPK == 1 && snapshotNodePK == 0 {
+		if _, err := db.Exec(`DROP INDEX IF EXISTS idx_cluster_snapshots_node;
+ALTER TABLE cluster_snapshots RENAME TO cluster_snapshots_vultr;
+CREATE TABLE cluster_snapshots (
+  node_id INTEGER NOT NULL REFERENCES cluster_nodes(id) ON DELETE CASCADE,
+  snapshot_id TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  created_at_ns INTEGER NOT NULL,
+  PRIMARY KEY(node_id, snapshot_id)
+);
+INSERT INTO cluster_snapshots (node_id,snapshot_id,description,created_at_ns)
+SELECT node_id,snapshot_id,description,created_at_ns FROM cluster_snapshots_vultr;
+DROP TABLE cluster_snapshots_vultr;
+CREATE INDEX idx_cluster_snapshots_node ON cluster_snapshots(node_id);`); err != nil {
+			return fmt.Errorf("widen snapshot key: %w", err)
+		}
 	}
 
 	// The favicon, added after the table existed. Stored rather than linked:
@@ -151,6 +194,37 @@ CREATE INDEX IF NOT EXISTS idx_cluster_snapshots_node ON cluster_snapshots(node_
 	if !existing["domain"] {
 		if err := backfillNodeParts(db); err != nil {
 			return err
+		}
+	}
+
+	// Snapshot records are provider-neutral. Older databases only kept the
+	// Vultr id/name association; lifecycle columns make the same record usable
+	// for providers whose snapshot API is asynchronous or less descriptive.
+	snapshotColumns := map[string]bool{}
+	snapshotRows, err := db.Query(`SELECT name FROM pragma_table_xinfo('cluster_snapshots')`)
+	if err != nil {
+		return fmt.Errorf("read snapshot columns: %w", err)
+	}
+	for snapshotRows.Next() {
+		var name string
+		if err := snapshotRows.Scan(&name); err != nil {
+			snapshotRows.Close()
+			return err
+		}
+		snapshotColumns[name] = true
+	}
+	if err := snapshotRows.Close(); err != nil {
+		return err
+	}
+	for column, definition := range map[string]string{
+		"status":        "TEXT NOT NULL DEFAULT 'pending'",
+		"last_error":    "TEXT NOT NULL DEFAULT ''",
+		"updated_at_ns": "INTEGER NOT NULL DEFAULT 0",
+	} {
+		if !snapshotColumns[column] {
+			if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE cluster_snapshots ADD COLUMN %s %s`, column, definition)); err != nil {
+				return fmt.Errorf("add snapshot %s: %w", column, err)
+			}
 		}
 	}
 
@@ -787,32 +861,56 @@ func (s *Store) RecordSnapshot(nodeID int64, snapshotID, description string) err
 		return errors.New("a snapshot id is required")
 	}
 	_, err := s.db.Exec(`INSERT INTO cluster_snapshots (snapshot_id,node_id,description,created_at_ns)
-VALUES(?,?,?,?) ON CONFLICT(snapshot_id) DO UPDATE SET node_id=excluded.node_id,description=excluded.description`,
+VALUES(?,?,?,?) ON CONFLICT(node_id,snapshot_id) DO UPDATE SET description=excluded.description`,
 		snapshotID, nodeID, strings.TrimSpace(description), time.Now().UTC().UnixNano())
 	return err
 }
 
-// NodeSnapshots is the set of snapshot ids guard took of one machine.
-func (s *Store) NodeSnapshots(nodeID int64) (map[string]bool, error) {
-	rows, err := s.rdb.Query(`SELECT snapshot_id FROM cluster_snapshots WHERE node_id = ?`, nodeID)
+// SnapshotRecord is Guard's durable name and machine association for an
+// image. Provider state remains live; this row survives specifically so an
+// older account-wide snapshot can be claimed and named after the fact.
+type SnapshotRecord struct {
+	Description string
+	Status      string
+	LastError   string
+	Created     time.Time
+}
+
+func (s *Store) NodeSnapshots(nodeID int64) (map[string]SnapshotRecord, error) {
+	rows, err := s.rdb.Query(`SELECT snapshot_id, description, status, last_error, created_at_ns FROM cluster_snapshots WHERE node_id = ?`, nodeID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]bool{}
+	out := map[string]SnapshotRecord{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var id, description, status, lastError string
+		var createdAtNS int64
+		if err := rows.Scan(&id, &description, &status, &lastError, &createdAtNS); err != nil {
 			return nil, err
 		}
-		out[id] = true
+		out[id] = SnapshotRecord{
+			Description: description,
+			Status:      status,
+			LastError:   lastError,
+			Created:     time.Unix(0, createdAtNS).UTC(),
+		}
 	}
 	return out, rows.Err()
 }
 
+// SetSnapshotStatus records Guard's provider-neutral view of an asynchronous
+// snapshot job. A provider adapter may update it from native state; providers
+// without such an API can update it from their operation result instead.
+func (s *Store) SetSnapshotStatus(nodeID int64, snapshotID, status, lastError string) error {
+	_, err := s.db.Exec(`UPDATE cluster_snapshots SET status = ?, last_error = ?, updated_at_ns = ? WHERE node_id = ? AND snapshot_id = ?`,
+		strings.TrimSpace(status), strings.TrimSpace(lastError), time.Now().UTC().UnixNano(), nodeID, strings.TrimSpace(snapshotID))
+	return err
+}
+
 // ForgetSnapshot drops one association, after the image behind it is gone.
-func (s *Store) ForgetSnapshot(snapshotID string) error {
-	_, err := s.db.Exec(`DELETE FROM cluster_snapshots WHERE snapshot_id = ?`, snapshotID)
+func (s *Store) ForgetSnapshot(nodeID int64, snapshotID string) error {
+	_, err := s.db.Exec(`DELETE FROM cluster_snapshots WHERE node_id = ? AND snapshot_id = ?`, nodeID, snapshotID)
 	return err
 }
 

@@ -94,6 +94,7 @@ func FsApiRoutes() []api.Route {
 		api.At("POST", "/api/cluster/provider/restore", e9.Restore),
 		api.At("DELETE", "/api/cluster/provider/snapshots", e9.DeleteSnapshot),
 		api.At("GET", "/api/cluster/provider/snapshots", e9.Snapshots),
+		api.At("PATCH", "/api/cluster/provider/snapshots", e9.UpdateSnapshot),
 		api.At("POST", "/api/cluster/provider/snapshots", e9.TakeSnapshot),
 		api.At("POST", "/api/cluster/run", e6.Run),
 		api.At("GET", "/api/cluster/runs", e6.Runs),

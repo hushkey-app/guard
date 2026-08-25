@@ -139,12 +139,12 @@ write_files:
       # directory first so a half-downloaded unit never lands in /etc/systemd.
       work=$(mktemp -d)
       trap 'rm -rf "$work"' EXIT
-      for f in guard.service guard-vault.service guard-update.service guard-update.timer guard-update; do
+      for f in guard.service guard-vault.service guard-update.service guard-update.timer guard-update.path guard-update; do
         $CURL "$RAW/$f" -o "$work/$f" || { echo "guard-bootstrap: could not fetch $f from $GUARD_REF" >&2; exit 1; }
       done
       install -m 0755 "$work/guard-update" /usr/local/bin/guard-update
       install -m 0644 "$work/guard.service" "$work/guard-vault.service" \
-        "$work/guard-update.service" "$work/guard-update.timer" /etc/systemd/system/
+        "$work/guard-update.service" "$work/guard-update.timer" "$work/guard-update.path" /etc/systemd/system/
       systemctl daemon-reload
       log "units installed from $GUARD_REPO@$GUARD_REF"
 
@@ -163,8 +163,8 @@ write_files:
       # provisioning reaches this line long after timers.target has passed, so
       # the box would come up correct and never take another release. That one
       # fails silently and looks exactly like success.
-      systemctl enable --now guard-update.timer >/dev/null
-      log "the update timer is armed"
+      systemctl enable --now guard-update.timer guard-update.path >/dev/null
+      log "the update timer and immediate path are armed"
 
       # The first install is an ordinary update: it reads /etc/guard/version,
       # downloads the release, verifies it against SHA256SUMS, installs guard

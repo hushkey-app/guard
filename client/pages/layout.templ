@@ -3,8 +3,6 @@ package pages
 import (
 	"github.com/axadrn/shadcn-templ/v2/components/button"
 	"github.com/hushkey-app/guard/client/ui"
-	"github.com/hushkey-app/guard/internal/build"
-	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/mirairoad/howl-go/core/router"
 	"github.com/mirairoad/howl-go/core/state"
 )
@@ -83,7 +81,7 @@ templ Layout() {
 			<!-- Who is looking, when guard has been told to ask. Absent on an
 			     instance with no sign-in configured, which is why it is a
 			     branch rather than an empty row: there is nobody to name. -->
-			{{ viewer := state.Get[model.Viewer](ctx) }}
+			{{ viewer := state.Get[Bootstrap](ctx).Viewer }}
 			if viewer.SignedIn() {
 				<div class="mt-3 flex items-center gap-2.5 rounded-xl border border-border bg-card p-3">
 					if viewer.Picture != "" {
@@ -125,16 +123,8 @@ templ Layout() {
 				<span data-live-status>connecting</span>
 				<span data-live-action class="ml-auto text-muted-foreground">Pause</span>
 			}
-			<!-- Who made it and which build is answering. The version is the
-			     same string the OpenAPI document reports, so a bug report
-			     naming what the sidebar says names something real.
-			     A release is `v0.1.0`; a local build is what `git describe`
-			     said, which is longer and says which commit — so it is
-			     truncated with the whole of it on hover rather than
-			     shortened here into something that is not the version. -->
-			<div class="mt-3 flex items-center justify-between gap-2 px-2 text-[.65rem] text-muted-foreground">
-				<span class="shrink-0">Guard by <span class="font-medium text-foreground">Hushkey</span></span>
-				<span title={ build.Tag() } class="truncate font-mono tabular-nums">{ build.Tag() }</span>
+			<div class="mt-3 px-2 text-[.65rem] text-muted-foreground">
+				Guard by <span class="font-medium text-foreground">Hushkey</span>
 			</div>
 		</aside>
 		<div class="flex min-h-screen flex-col lg:pl-64">

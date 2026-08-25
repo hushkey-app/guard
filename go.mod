@@ -5,7 +5,8 @@ go 1.25.0
 require (
 	github.com/a-h/templ v0.3.1020
 	github.com/axadrn/shadcn-templ/v2 v2.0.0-beta.3
-	github.com/mirairoad/howl-go v0.1.0
+	github.com/coder/websocket v1.8.15
+	github.com/mirairoad/howl-go v0.2.1
 	go.opentelemetry.io/proto/otlp v1.11.0
 	golang.org/x/crypto v0.54.0
 	google.golang.org/protobuf v1.36.11
@@ -18,7 +19,6 @@ require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
@@ -44,5 +44,3 @@ require (
 )
 
 tool github.com/a-h/templ/cmd/templ
-
-replace github.com/mirairoad/howl-go => ../howl-go

@@ -293,6 +293,15 @@ func (c *Client) CreateSnapshot(ctx context.Context, apiKey, instanceID, descrip
 	return answer.Snapshot.snapshot(), nil
 }
 
+// UpdateSnapshot changes the provider-side description (the label Vultr
+// displays). The instance snapshot API calls this an update rather than a
+// rename and accepts no other editable snapshot fields.
+func (c *Client) UpdateSnapshot(ctx context.Context, apiKey, snapshotID, description string) error {
+	address := c.base + "/v2/snapshots/" + url.PathEscape(snapshotID)
+	body := map[string]string{"description": description}
+	return c.call(ctx, apiKey, http.MethodPatch, address, body, nil)
+}
+
 // DeleteSnapshot forgets one image.
 func (c *Client) DeleteSnapshot(ctx context.Context, apiKey, snapshotID string) error {
 	address := c.base + "/v2/snapshots/" + url.PathEscape(snapshotID)

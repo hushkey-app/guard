@@ -1378,7 +1378,7 @@ function renderUpdate() {
   if (state.wanted && state.wanted === state.latest) {
     actions.hidden = true;
     note.hidden = false;
-    note.textContent = `${state.latest} requested — the updater installs it within 15 minutes.`;
+    note.textContent = `${state.latest} requested — installation is starting now.`;
     return;
   }
   // No /etc/guard on this box, so there is nothing to write and no unit to act
@@ -1467,7 +1467,7 @@ function renderInfo() {
     return;
   }
   if (state.wanted && state.wanted === state.latest) {
-    summary.textContent = `${state.latest} requested — the updater installs it within 15 minutes.`;
+    summary.textContent = `${state.latest} requested — installation is starting now.`;
     return;
   }
   if (!state.managed) {
@@ -1595,6 +1595,10 @@ globalThis.guardPageMount = (page) => {
   // The cold document can start fetching as soon as guard.js executes, without
   // waiting for the WASM binary. Its later Mount consumes that same promise;
   // AOT navigations start a fresh page-specific load here.
+  // Live/pause belongs to this browser and is restored from localStorage.
+  // Every client navigation recreates the layout with its neutral SSR text,
+  // so apply the browser-owned value synchronously before any fetch finishes.
+  updateLiveControl();
   refreshUpdate();
   renderGeneration++;
   // Before anything asks for rows: the URL is what says which sessions this
