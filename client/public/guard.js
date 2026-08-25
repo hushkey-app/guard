@@ -1595,6 +1595,10 @@ globalThis.guardPageMount = (page) => {
   // The cold document can start fetching as soon as guard.js executes, without
   // waiting for the WASM binary. Its later Mount consumes that same promise;
   // AOT navigations start a fresh page-specific load here.
+  // Live/pause belongs to this browser and is restored from localStorage.
+  // Every client navigation recreates the layout with its neutral SSR text,
+  // so apply the browser-owned value synchronously before any fetch finishes.
+  updateLiveControl();
   refreshUpdate();
   renderGeneration++;
   // Before anything asks for rows: the URL is what says which sessions this
