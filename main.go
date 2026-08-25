@@ -45,6 +45,7 @@ import (
 	"github.com/mirairoad/howl-go/core/app"
 	"github.com/mirairoad/howl-go/core/console"
 	"github.com/mirairoad/howl-go/core/mw"
+	"github.com/mirairoad/howl-go/core/state"
 )
 
 //go:generate go run github.com/mirairoad/howl-go/core/cmd/fsroutes -module github.com/hushkey-app/guard/client/pages
@@ -147,6 +148,18 @@ func main() {
 
 	a := app.New(app.Config{
 		Addr: *addr, Routes: pages.FsClientRoutes(), Shell: pages.App, NotFound: pages.NotFound, Public: public,
+		// Runtime values used by client-renderable layouts are installed on the
+		// SSR context and serialized into the document for the WASM renderer.
+		// Reading these directly from process globals in a templ component would
+		// compile a different answer into views.wasm.
+		Data: func(ctx context.Context, _ string) context.Context {
+			return state.With(ctx, pages.Bootstrap{
+				Viewer: state.Get[model.Viewer](ctx), Version: build.Tag(),
+			})
+		},
+		Bootstrap: func(ctx context.Context, _ string) any {
+			return state.Get[pages.Bootstrap](ctx)
+		},
 		// Outermost first. Guard is an observability tool, so its own requests
 		// are worth observing: one structured line each, with an id that also
 		// goes back on the response.

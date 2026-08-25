@@ -14,6 +14,7 @@ import (
 	"github.com/hushkey-app/guard/client/pages"
 	"github.com/mirairoad/howl-go/core/dom"
 	"github.com/mirairoad/howl-go/core/router"
+	"github.com/mirairoad/howl-go/core/state"
 )
 
 var routes = pages.FsClientRoutes()
@@ -42,7 +43,7 @@ func unmount(_ js.Value, args []js.Value) any {
 }
 
 func render(_ js.Value, args []js.Value) any {
-	if len(args) < 1 {
+	if len(args) < 2 {
 		return ""
 	}
 	path := canonical(args[0].String())
@@ -54,6 +55,14 @@ func render(_ js.Value, args []js.Value) any {
 	ctx := router.WithRoutes(context.Background(), routes)
 	ctx = router.WithCurrent(ctx, path)
 	ctx = router.WithParams(ctx, params)
+	payload, err := router.DecodeRenderPayload(args[1].String())
+	if err != nil {
+		return ""
+	}
+	ctx, err = state.Hydrate[pages.Bootstrap](ctx, payload.Bootstrap)
+	if err != nil {
+		return ""
+	}
 
 	var output strings.Builder
 	title, head := route.HeadParts(ctx, route.Label)
