@@ -65,12 +65,23 @@ func Page() templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-8\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-8\"><div class=\"relative\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ui.PageHeading("Infrastructure", "Storage",
-			"Object storage on every stored cloud account, read live from the provider.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.SignalHeading("Storage").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"mt-4 flex items-center gap-2 md:absolute md:right-0 md:top-0 md:mt-0\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.StorageActions().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -106,7 +117,7 @@ func Page() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "The keys are the point, and they are logged")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "The keys are the point, and they are logged")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -116,7 +127,7 @@ func Page() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -132,7 +143,7 @@ func Page() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "Some providers return an S3 access key and secret with every read of a subscription. Guard keeps them out of the listing — each card says a pair exists and draws dots — and hands them over only when <strong>Reveal</strong> is pressed, through an endpoint that exists for that and writes a line saying it happened. They are never stored here. <strong>Rotate keys</strong> issues a new pair immediately: everything still holding the old secret stops working, which is the point of pressing it. A card with neither button is one whose provider mints its credentials somewhere guard cannot reach — Cloudflare's R2 keys are API tokens, made on Cloudflare's own token screen — and it says so rather than showing dots over a pair that is not coming.")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "Some providers return an S3 access key and secret with every read of a subscription. Guard keeps them out of the listing — each card says a pair exists and draws dots — and hands them over only when <strong>Reveal</strong> is pressed, through an endpoint that exists for that and writes a line saying it happened. They are never stored here. <strong>Rotate keys</strong> issues a new pair immediately: everything still holding the old secret stops working, which is the point of pressing it. A card with neither button is one whose provider mints its credentials somewhere guard cannot reach — Cloudflare's R2 keys are API tokens, made on Cloudflare's own token screen — and it says so rather than showing dots over a pair that is not coming.")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -148,7 +159,7 @@ func Page() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -644,11 +644,12 @@ func (n Node) Validate() error {
 			return err
 		}
 	}
-	// Something has to be probed. The two addresses are the modern way to say
-	// it and URL is the old one, so a node is valid if it has either.
+	// Old callers may still carry the service address that used to live on a
+	// machine. It remains valid for migration and topology matching, but a new
+	// machine needs no URL: service health is declared independently on /checks.
 	if strings.TrimSpace(n.Domain) == "" && strings.TrimSpace(n.InternalURL) == "" {
 		if strings.TrimSpace(n.URL) == "" {
-			return errors.New("a domain or an internal address is required")
+			return nil
 		}
 		return ValidateNodeURL(n.URL)
 	}

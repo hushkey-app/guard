@@ -100,6 +100,7 @@ css:
 		'@source "../public/charts.js";' \
 		'@source "../public/views.js";' \
 		'@source "../public/cluster.js";' \
+		'@source "../public/checks.js";' \
 		'@source "../public/registries.js";' \
 		'@source "../public/cloud.js";' \
 		'@source "../public/storage.js";' \

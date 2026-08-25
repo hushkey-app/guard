@@ -5,6 +5,7 @@ import (
 	"github.com/axadrn/shadcn-templ/v2/components/table"
 	"github.com/hushkey-app/guard/client/lifecycle"
 	"github.com/hushkey-app/guard/client/ui"
+	"github.com/hushkey-app/guard/client/ui/components"
 )
 
 templ Head() {
@@ -13,12 +14,14 @@ templ Head() {
 }
 
 templ Page() {
-	<section class="space-y-6">
-		@ui.PageHeading("Live tail", "Logs", "Filter retained logs, pause the live stream, and open any row for complete context.")
+	<section data-signal-page="logs" class="space-y-6">
+		@ui.SignalHeading("Live tail")
 		@ui.FilterBar("logs")
-		@card.Card(card.Props{Class: "gap-0 py-0"}) {
+		@components.LogCard()
+		@components.SpanRow()
+		@card.Card(card.Props{Class: "gap-0 py-0", Attributes: templ.Attributes{"data-signal-list": true}}) {
 			@table.Table() {
-				@ui.TableHead([]string{"Time", "Severity", "Service", "Message", "Trace"})
+				@ui.TableHead([]string{"Time", "Severity", "Service", "Message"})
 				@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-log-rows": true}})
 			}
 			@ui.Pagination("logs")

@@ -5,26 +5,27 @@ package pages
 
 import (
 	p0 "github.com/hushkey-app/guard/client/pages/analytics"
-	p1 "github.com/hushkey-app/guard/client/pages/cluster"
-	p20 "github.com/hushkey-app/guard/client/pages/cluster/id.dyn"
-	p2 "github.com/hushkey-app/guard/client/pages/deploys"
-	p3 "github.com/hushkey-app/guard/client/pages/login"
-	p4 "github.com/hushkey-app/guard/client/pages/logs"
-	p5 "github.com/hushkey-app/guard/client/pages/metrics"
-	p6 "github.com/hushkey-app/guard/client/pages/registries"
-	p7 "github.com/hushkey-app/guard/client/pages/secrets"
-	p8 "github.com/hushkey-app/guard/client/pages/settings"
-	p9 "github.com/hushkey-app/guard/client/pages/settings/alerts"
-	p10 "github.com/hushkey-app/guard/client/pages/settings/backup"
-	p11 "github.com/hushkey-app/guard/client/pages/settings/cloud"
-	p12 "github.com/hushkey-app/guard/client/pages/settings/config"
-	p13 "github.com/hushkey-app/guard/client/pages/settings/info"
-	p14 "github.com/hushkey-app/guard/client/pages/settings/members"
-	p15 "github.com/hushkey-app/guard/client/pages/settings/security"
-	p16 "github.com/hushkey-app/guard/client/pages/status"
-	p17 "github.com/hushkey-app/guard/client/pages/storage"
-	p18 "github.com/hushkey-app/guard/client/pages/traces"
-	p19 "github.com/hushkey-app/guard/client/pages/views"
+	p1 "github.com/hushkey-app/guard/client/pages/checks"
+	p2 "github.com/hushkey-app/guard/client/pages/cluster"
+	p21 "github.com/hushkey-app/guard/client/pages/cluster/id.dyn"
+	p3 "github.com/hushkey-app/guard/client/pages/deploys"
+	p4 "github.com/hushkey-app/guard/client/pages/login"
+	p5 "github.com/hushkey-app/guard/client/pages/logs"
+	p6 "github.com/hushkey-app/guard/client/pages/metrics"
+	p7 "github.com/hushkey-app/guard/client/pages/registries"
+	p8 "github.com/hushkey-app/guard/client/pages/secrets"
+	p9 "github.com/hushkey-app/guard/client/pages/settings"
+	p10 "github.com/hushkey-app/guard/client/pages/settings/alerts"
+	p11 "github.com/hushkey-app/guard/client/pages/settings/backup"
+	p12 "github.com/hushkey-app/guard/client/pages/settings/cloud"
+	p13 "github.com/hushkey-app/guard/client/pages/settings/config"
+	p14 "github.com/hushkey-app/guard/client/pages/settings/info"
+	p15 "github.com/hushkey-app/guard/client/pages/settings/members"
+	p16 "github.com/hushkey-app/guard/client/pages/settings/security"
+	p17 "github.com/hushkey-app/guard/client/pages/status"
+	p18 "github.com/hushkey-app/guard/client/pages/storage"
+	p19 "github.com/hushkey-app/guard/client/pages/traces"
+	p20 "github.com/hushkey-app/guard/client/pages/views"
 	"github.com/mirairoad/howl-go/core/router"
 )
 
@@ -33,25 +34,26 @@ func FsClientRoutes() []router.Route {
 	return []router.Route{
 		{Pattern: "/", Label: "Home", Page: Page, Head: Head, Mount: Mount, Unmount: Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
 		{Pattern: "/analytics", Label: "Analytics", Page: p0.Page, Head: p0.Head, Mount: p0.Mount, Unmount: p0.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/cluster", Label: "Cluster", Page: p1.Page, Head: p1.Head, Mount: p1.Mount, Unmount: p1.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/deploys", Label: "Deploys", Page: p2.Page, Head: p2.Head, Mount: p2.Mount, Unmount: p2.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/login", Label: "Login", Page: p3.Page, Head: nil, Mount: nil, Unmount: nil, Layouts: nil, Client: false, Raw: true},
-		{Pattern: "/logs", Label: "Logs", Page: p4.Page, Head: p4.Head, Mount: p4.Mount, Unmount: p4.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/metrics", Label: "Metrics", Page: p5.Page, Head: p5.Head, Mount: p5.Mount, Unmount: p5.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/registries", Label: "Registries", Page: p6.Page, Head: p6.Head, Mount: p6.Mount, Unmount: p6.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/secrets", Label: "Secrets", Page: p7.Page, Head: p7.Head, Mount: p7.Mount, Unmount: p7.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/settings", Label: "Settings", Page: p8.Page, Head: p8.Head, Mount: p8.Mount, Unmount: p8.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/settings/alerts", Label: "Alerts", Page: p9.Page, Head: p9.Head, Mount: p9.Mount, Unmount: p9.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/settings/backup", Label: "Backup", Page: p10.Page, Head: p10.Head, Mount: p10.Mount, Unmount: p10.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/settings/cloud", Label: "Cloud", Page: p11.Page, Head: p11.Head, Mount: p11.Mount, Unmount: p11.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/settings/config", Label: "Config", Page: p12.Page, Head: p12.Head, Mount: p12.Mount, Unmount: p12.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/settings/info", Label: "Info", Page: p13.Page, Head: p13.Head, Mount: p13.Mount, Unmount: p13.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/settings/members", Label: "Members", Page: p14.Page, Head: p14.Head, Mount: p14.Mount, Unmount: p14.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/settings/security", Label: "Security", Page: p15.Page, Head: p15.Head, Mount: p15.Mount, Unmount: p15.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/status", Label: "Status", Page: p16.Page, Head: nil, Mount: nil, Unmount: nil, Layouts: nil, Client: false, Raw: true},
-		{Pattern: "/storage", Label: "Storage", Page: p17.Page, Head: p17.Head, Mount: p17.Mount, Unmount: p17.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/traces", Label: "Traces", Page: p18.Page, Head: p18.Head, Mount: p18.Mount, Unmount: p18.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/views", Label: "Views", Page: p19.Page, Head: p19.Head, Mount: p19.Mount, Unmount: p19.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
-		{Pattern: "/cluster/{id}", Label: "Id", Page: p20.Page, Head: p20.Head, Mount: p20.Mount, Unmount: p20.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/checks", Label: "Checks", Page: p1.Page, Head: p1.Head, Mount: p1.Mount, Unmount: p1.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/cluster", Label: "Cluster", Page: p2.Page, Head: p2.Head, Mount: p2.Mount, Unmount: p2.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/deploys", Label: "Deploys", Page: p3.Page, Head: p3.Head, Mount: p3.Mount, Unmount: p3.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/login", Label: "Login", Page: p4.Page, Head: nil, Mount: nil, Unmount: nil, Layouts: nil, Client: false, Raw: true},
+		{Pattern: "/logs", Label: "Logs", Page: p5.Page, Head: p5.Head, Mount: p5.Mount, Unmount: p5.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/metrics", Label: "Metrics", Page: p6.Page, Head: p6.Head, Mount: p6.Mount, Unmount: p6.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/registries", Label: "Registries", Page: p7.Page, Head: p7.Head, Mount: p7.Mount, Unmount: p7.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/secrets", Label: "Secrets", Page: p8.Page, Head: p8.Head, Mount: p8.Mount, Unmount: p8.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/settings", Label: "Settings", Page: p9.Page, Head: p9.Head, Mount: p9.Mount, Unmount: p9.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/settings/alerts", Label: "Alerts", Page: p10.Page, Head: p10.Head, Mount: p10.Mount, Unmount: p10.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/settings/backup", Label: "Backup", Page: p11.Page, Head: p11.Head, Mount: p11.Mount, Unmount: p11.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/settings/cloud", Label: "Cloud", Page: p12.Page, Head: p12.Head, Mount: p12.Mount, Unmount: p12.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/settings/config", Label: "Config", Page: p13.Page, Head: p13.Head, Mount: p13.Mount, Unmount: p13.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/settings/info", Label: "Info", Page: p14.Page, Head: p14.Head, Mount: p14.Mount, Unmount: p14.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/settings/members", Label: "Members", Page: p15.Page, Head: p15.Head, Mount: p15.Mount, Unmount: p15.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/settings/security", Label: "Security", Page: p16.Page, Head: p16.Head, Mount: p16.Mount, Unmount: p16.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/status", Label: "Status", Page: p17.Page, Head: nil, Mount: nil, Unmount: nil, Layouts: nil, Client: false, Raw: true},
+		{Pattern: "/storage", Label: "Storage", Page: p18.Page, Head: p18.Head, Mount: p18.Mount, Unmount: p18.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/traces", Label: "Traces", Page: p19.Page, Head: p19.Head, Mount: p19.Mount, Unmount: p19.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/views", Label: "Views", Page: p20.Page, Head: p20.Head, Mount: p20.Mount, Unmount: p20.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
+		{Pattern: "/cluster/{id}", Label: "Id", Page: p21.Page, Head: p21.Head, Mount: p21.Mount, Unmount: p21.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
 	}
 }

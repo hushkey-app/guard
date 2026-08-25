@@ -14,8 +14,12 @@ templ Head() {
 
 templ Page() {
 	<section class="space-y-8">
-		@ui.PageHeading("Infrastructure", "Deploys",
-			"A versioned image onto the machines guard already watches — over the same SSH login, proved by the same health check.")
+		<div class="relative">
+			@ui.SignalHeading("Deploys")
+			<div class="mt-4 flex flex-wrap items-center gap-2 md:absolute md:right-0 md:top-0 md:mt-0">
+				@components.DeployActions()
+			</div>
+		</div>
 		@components.DeployGroups()
 		@components.DeployRuns()
 		@components.DeployTemplates()

@@ -14,7 +14,12 @@ templ Head() {
 
 templ Page() {
 	<section class="space-y-6">
-		@ui.PageHeading("Infrastructure", "Registries", "The container registries your stored keys unlock — read live from the provider, so what you see is what is stored right now.")
+		<div class="relative">
+			@ui.SignalHeading("Registries")
+			<div class="mt-4 flex items-center gap-2 md:absolute md:right-0 md:top-0 md:mt-0">
+				@components.RegistryActions()
+			</div>
+		</div>
 		@components.RegistryExplorer()
 		@components.ConfirmDialog()
 		@alert.Alert() {

@@ -65,12 +65,23 @@ func Page() templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-8\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"space-y-8\"><div class=\"relative\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ui.PageHeading("Infrastructure", "Deploys",
-			"A versioned image onto the machines guard already watches — over the same SSH login, proved by the same health check.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.SignalHeading("Deploys").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"mt-4 flex flex-wrap items-center gap-2 md:absolute md:right-0 md:top-0 md:mt-0\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.DeployActions().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -130,7 +141,7 @@ func Page() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "What a deploy actually does, and what it will not do")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "What a deploy actually does, and what it will not do")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -140,7 +151,7 @@ func Page() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -156,7 +167,7 @@ func Page() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "Guard writes two files into the template's directory — the compose file and a <code class=\"font-mono\">.env</code> holding <code class=\"font-mono\">TAG</code> — then runs <code class=\"font-mono\">compose pull</code> and <code class=\"font-mono\">up -d</code> over the machine's stored login. The old files are kept as <code class=\"font-mono\">.guard-bak</code>. A machine is healthy when its health path answers three times in a row inside two minutes, and nothing else: an error-rate check on a container twenty seconds old has no traffic to measure, and would pass anything. <strong>A locked machine refuses a deploy</strong>, and a run stops at the first failure rather than carrying on or rolling back by itself — someone presses the next thing. A rollback is that same press with the machine's last known good tag, which is the last one that actually answered.")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "Guard writes two files into the template's directory — the compose file and a <code class=\"font-mono\">.env</code> holding <code class=\"font-mono\">TAG</code> — then runs <code class=\"font-mono\">compose pull</code> and <code class=\"font-mono\">up -d</code> over the machine's stored login. The old files are kept as <code class=\"font-mono\">.guard-bak</code>. A machine is healthy when its health path answers three times in a row inside two minutes, and nothing else: an error-rate check on a container twenty seconds old has no traffic to measure, and would pass anything. <strong>A locked machine refuses a deploy</strong>, and a run stops at the first failure rather than carrying on or rolling back by itself — someone presses the next thing. A rollback is that same press with the machine's last known good tag, which is the last one that actually answered.")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -172,7 +183,7 @@ func Page() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

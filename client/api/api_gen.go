@@ -52,6 +52,11 @@ func (c *Client) AddClusterNode(ctx context.Context, body model.Node) (model.Nod
 	return api.Call[model.Node](ctx, c.Transport, "POST", "/api/cluster", nil, body)
 }
 
+// AddHealthCheck calls POST /api/checks.
+func (c *Client) AddHealthCheck(ctx context.Context, body model.HealthCheck) (model.HealthCheck, error) {
+	return api.Call[model.HealthCheck](ctx, c.Transport, "POST", "/api/checks", nil, body)
+}
+
 // AddMember calls POST /api/members.
 func (c *Client) AddMember(ctx context.Context, body members.Invite) (model.Member, error) {
 	return api.Call[model.Member](ctx, c.Transport, "POST", "/api/members", nil, body)
@@ -346,6 +351,11 @@ func (c *Client) Health(ctx context.Context) (contract.Health, error) {
 	return api.Call[contract.Health](ctx, c.Transport, "GET", "/healthz", nil, nil)
 }
 
+// HealthChecks calls GET /api/checks.
+func (c *Client) HealthChecks(ctx context.Context) ([]model.HealthCheck, error) {
+	return api.Call[[]model.HealthCheck](ctx, c.Transport, "GET", "/api/checks", nil, nil)
+}
+
 // ImportCloudInstance calls POST /api/cluster/provider/import.
 func (c *Client) ImportCloudInstance(ctx context.Context, body provider.ImportRequest) (model.Node, error) {
 	return api.Call[model.Node](ctx, c.Transport, "POST", "/api/cluster/provider/import", nil, body)
@@ -499,6 +509,12 @@ func (c *Client) RemoveClusterNode(ctx context.Context, id string) error {
 	return err
 }
 
+// RemoveHealthCheck calls DELETE /api/checks/{id}.
+func (c *Client) RemoveHealthCheck(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/checks/{id}", id), nil, nil)
+	return err
+}
+
 // RemoveMember calls DELETE /api/members/{email}.
 func (c *Client) RemoveMember(ctx context.Context, email string) (members.Removed, error) {
 	return api.Call[members.Removed](ctx, c.Transport, "DELETE", api.Path("/api/members/{email}", email), nil, nil)
@@ -555,6 +571,11 @@ func (c *Client) RunACommand(ctx context.Context, body cluster.Command) (model.R
 // RunClusterAction calls POST /api/cluster/run.
 func (c *Client) RunClusterAction(ctx context.Context, body contract.RunRequest) (model.Run, error) {
 	return api.Call[model.Run](ctx, c.Transport, "POST", "/api/cluster/run", nil, body)
+}
+
+// RunHealthCheck calls POST /api/checks/run.
+func (c *Client) RunHealthCheck(ctx context.Context, body contract.HealthCheckRequest) (model.Check, error) {
+	return api.Call[model.Check](ctx, c.Transport, "POST", "/api/checks/run", nil, body)
 }
 
 // SampleMachine calls POST /api/cluster/stats.
@@ -681,6 +702,11 @@ func (c *Client) UpdateClusterNode(ctx context.Context, id string, body model.No
 // UpdateConfiguration calls PUT /api/config.
 func (c *Client) UpdateConfiguration(ctx context.Context, body config2.Values) (config.State, error) {
 	return api.Call[config.State](ctx, c.Transport, "PUT", "/api/config", nil, body)
+}
+
+// UpdateHealthCheck calls PUT /api/checks/{id}.
+func (c *Client) UpdateHealthCheck(ctx context.Context, id string, body model.HealthCheck) (model.HealthCheck, error) {
+	return api.Call[model.HealthCheck](ctx, c.Transport, "PUT", api.Path("/api/checks/{id}", id), nil, body)
 }
 
 // UpdateSettings calls PUT /api/settings.

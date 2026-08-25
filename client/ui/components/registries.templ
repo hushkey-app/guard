@@ -17,27 +17,28 @@ import (
 // holds a handful of repositories and a repository holds tags — a drawer's
 // worth of depth — and keeping them on one page keeps "back" instant, with
 // nothing refetched.
+templ RegistryActions() {
+	@button.Button(button.Props{
+		Variant:    button.VariantOutline,
+		Size:       button.SizeSm,
+		Attributes: templ.Attributes{"data-registry-refresh": true},
+	}) {
+		Refresh
+	}
+	@button.Button(button.Props{
+		Size:       button.SizeSm,
+		Class:      "hidden",
+		Attributes: templ.Attributes{"data-registry-new": true},
+	}) {
+		New registry
+	}
+}
+
 templ RegistryExplorer() {
 	<div class="space-y-6">
 		<p data-registry-status class="hidden rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"></p>
-		<div data-registry-toolbar class="flex flex-wrap items-center justify-between gap-3">
+		<div data-registry-toolbar>
 			<p data-registry-summary class="text-sm text-muted-foreground"></p>
-			<div class="flex items-center gap-2">
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-registry-refresh": true},
-				}) {
-					Refresh
-				}
-				@button.Button(button.Props{
-					Size:       button.SizeSm,
-					Class:      "hidden",
-					Attributes: templ.Attributes{"data-registry-new": true},
-				}) {
-					New registry
-				}
-			</div>
 		</div>
 		@registryCreate()
 		<!-- A list, not a wall of cards — the same shape the cluster page

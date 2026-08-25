@@ -16,26 +16,27 @@ import (
 // line in the log. Copying those two strings into an application is the whole
 // reason this page exists instead of another tab on the provider's console;
 // pretending otherwise would just mean the tab stays open.
+templ StorageActions() {
+	@button.Button(button.Props{
+		Variant:    button.VariantOutline,
+		Size:       button.SizeSm,
+		Attributes: templ.Attributes{"data-storage-refresh": true},
+	}) {
+		Refresh
+	}
+	@button.Button(button.Props{
+		Size:       button.SizeSm,
+		Attributes: templ.Attributes{"data-storage-new": true},
+	}) {
+		New storage
+	}
+}
+
 templ StoragePanel() {
 	<div class="space-y-6">
 		<p data-storage-status class="hidden rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"></p>
-		<div class="flex flex-wrap items-center justify-between gap-3">
+		<div>
 			<p data-storage-summary class="text-sm text-muted-foreground">Loading…</p>
-			<div class="flex items-center gap-2">
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-storage-refresh": true},
-				}) {
-					Refresh
-				}
-				@button.Button(button.Props{
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-storage-new": true},
-				}) {
-					New storage
-				}
-			</div>
 		</div>
 		<!-- A list, grouped by the account key the buckets came from — the same
 		     shape the cluster page settled on. A bucket is a line; what it is

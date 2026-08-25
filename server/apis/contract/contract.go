@@ -218,6 +218,18 @@ func (r NodeRequest) Validate() error {
 	return nil
 }
 
+// HealthCheckRequest names one service check for an immediate probe.
+type HealthCheckRequest struct {
+	CheckID int64 `json:"check_id"`
+}
+
+func (r HealthCheckRequest) Validate() error {
+	if r.CheckID <= 0 {
+		return api.Invalid("check_id", "is required")
+	}
+	return nil
+}
+
 // BackupRequest is what an export is asked with.
 //
 // Empty is a real answer rather than a missing one: a backup with no passphrase

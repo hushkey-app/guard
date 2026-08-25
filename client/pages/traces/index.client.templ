@@ -14,16 +14,12 @@ templ Head() {
 }
 
 templ Page() {
-	<section class="space-y-6">
-		@ui.PageHeading("Request paths", "Traces", "Inspect spans by time, service, status, duration, parent, and trace context.")
+	<section data-signal-page="traces" class="space-y-6">
+		@ui.SignalHeading("Request paths")
 		@ui.FilterBar("traces")
-		// Opening any span opens its whole trace here: one request as a Gantt
-		// chart, parents above children, each bar placed by its offset from the
-		// start. A span list tells you what happened; only the timeline tells
-		// you what was waiting on what.
 		@components.TraceCard()
 		@components.SpanRow()
-		@card.Card(card.Props{Class: "gap-0 py-0"}) {
+		@card.Card(card.Props{Class: "gap-0 py-0", Attributes: templ.Attributes{"data-signal-list": true}}) {
 			@table.Table() {
 				@ui.TableHead([]string{"Start", "Status", "Service", "Span", "Kind", "Duration", "Trace"})
 				@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-trace-rows": true}})

@@ -131,6 +131,9 @@ type Facets struct {
 type MetricPoint struct {
 	Timestamp time.Time `json:"timestamp"`
 	Value     float64   `json:"value"`
+	Count     uint64    `json:"count,omitempty"`
+	Min       *float64  `json:"min,omitempty"`
+	Max       *float64  `json:"max,omitempty"`
 }
 
 type MetricSeries struct {

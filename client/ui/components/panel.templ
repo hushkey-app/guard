@@ -244,39 +244,86 @@ templ SpanRow() {
 	</template>
 }
 
-// TraceCard is the waterfall on the traces page — the same renderer as the
-// waterfall panel, in a card of its own above the span table, showing whichever
-// trace was last opened.
-templ TraceCard() {
-	<div data-trace-card hidden>
-		@card.Card(card.Props{Class: "gap-3"}) {
-			@card.Header() {
-				@card.Title(card.TitleProps{Class: "text-base"}) {
-					Trace timeline
-				}
-				@card.Description() {
-					<span data-trace-id class="font-mono"></span>
-				}
-				@card.Action() {
-					<div class="flex items-center gap-2">
-						@badge.Badge(badge.Props{Variant: badge.VariantSecondary, Attributes: templ.Attributes{"data-trace-duration": true}}) {
-							—
-						}
-						@button.Button(button.Props{
-							Variant:    button.VariantGhost,
-							Size:       button.SizeIconSm,
-							Attributes: templ.Attributes{"data-trace-close": true, "aria-label": "Hide the timeline"},
-						}) {
-							✕
-						}
+// LogCard adds trace context directly beneath a log that carries a trace ID.
+// The table row is already the log record; repeating its fields here would
+// bury the relationship somebody opened the row to inspect.
+templ LogCard() {
+	<template data-log-inline-template>
+		<tr data-log-inline class="bg-muted/10">
+			<td colspan="4" class="p-0">
+				<div class="w-full px-2 py-4 sm:px-3">
+					<div class="mb-3 flex items-start justify-between gap-4">
+						<div class="min-w-0">
+							<p class="text-sm font-semibold">Trace timeline</p>
+							<p data-log-trace-id class="truncate font-mono text-xs text-muted-foreground"></p>
+						</div>
+						@badge.Badge(badge.Props{Variant: badge.VariantSecondary, Attributes: templ.Attributes{"data-log-trace-duration": true}}) { — }
 					</div>
-				}
-			}
-			@card.Content() {
-				<p data-trace-services class="mb-2 text-xs text-muted-foreground"></p>
-				<div data-waterfall class="max-h-[26rem] overflow-y-auto"></div>
-			}
+					<p data-log-trace-services class="mb-2 text-xs text-muted-foreground"></p>
+					<div data-log-waterfall class="max-h-[28rem] overflow-y-auto"><p class="py-6 text-center text-sm text-muted-foreground">Loading trace timeline…</p></div>
+				</div>
+			</td>
+		</tr>
+	</template>
+}
+
+// TraceCard is cloned into the traces table directly below the row somebody
+// pressed. Keeping it as a table row means the request stays in context: press
+// once to expand its waterfall, press the same row again to collapse it.
+templ TraceCard() {
+	<template data-trace-inline-template>
+		<tr data-trace-inline class="bg-muted/10">
+			<td colspan="7" class="p-0">
+				<div class="w-full px-2 py-4 sm:px-3">
+					<div class="mb-3 flex items-start justify-between gap-4">
+						<div class="min-w-0">
+							<p class="text-sm font-semibold">Trace timeline</p>
+							<p data-trace-id class="truncate font-mono text-xs text-muted-foreground"></p>
+						</div>
+						@badge.Badge(badge.Props{Variant: badge.VariantSecondary, Attributes: templ.Attributes{"data-trace-duration": true}}) { — }
+					</div>
+					<p data-trace-services class="mb-2 text-xs text-muted-foreground"></p>
+					<div data-waterfall class="max-h-[28rem] overflow-y-auto"><p class="py-6 text-center text-sm text-muted-foreground">Loading timeline…</p></div>
+				</div>
+			</td>
+		</tr>
+	</template>
+}
+
+// DetailDrawer is shared furniture, but its scope matters. The global copy
+// serves logs, metrics, and chart drills. The trace copy is a child of the
+// timeline so a span can only drill down from the trace that owns it.
+templ DetailDrawer(scope string, overlay bool) {
+	<div data-detail-shell data-detail-scope={ scope } class="absolute inset-0 z-20">
+		if overlay {
+			<button type="button" data-detail-close aria-label="Close details" class="absolute inset-0 bg-black/60 transition-opacity"></button>
 		}
+		<aside data-detail-panel class="pointer-events-auto absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-border bg-card text-card-foreground shadow-2xl transition-transform duration-200">
+			<div class="flex items-center justify-between gap-4 border-b border-border p-5">
+				<div class="min-w-0">
+					<p data-detail-eyebrow class="text-xs font-semibold uppercase tracking-[.18em] text-primary">Telemetry detail</p>
+					<h2 data-detail-title class="mt-1 truncate text-xl font-semibold">Event</h2>
+				</div>
+				@button.Button(button.Props{
+					Variant:    button.VariantGhost,
+					Size:       button.SizeIconSm,
+					Attributes: templ.Attributes{"data-detail-close": true, "aria-label": "Close details"},
+				}) {
+					✕
+				}
+			</div>
+			<div data-detail-content class="flex-1 space-y-6 overflow-y-auto p-5"></div>
+			<div data-detail-footer hidden class="border-t border-border p-4">
+				@button.Button(button.Props{
+					Variant:    button.VariantOutline,
+					Size:       button.SizeSm,
+					Class:      "w-full",
+					Attributes: templ.Attributes{"data-detail-back": true},
+				}) {
+					← Back to the list
+				}
+			</div>
+		</aside>
 	</div>
 }
 

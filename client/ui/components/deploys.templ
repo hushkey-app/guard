@@ -21,6 +21,23 @@ import (
 // every class stays somewhere Tailwind looks.
 
 // DeployGroups is the top of the page: the groups, each with a Deploy button.
+templ DeployActions() {
+	@button.Button(button.Props{
+		Variant:    button.VariantOutline,
+		Size:       button.SizeSm,
+		Attributes: templ.Attributes{"data-deploy-new-group": true, "type": "button"},
+	}) {
+		Add group
+	}
+	@button.Button(button.Props{
+		Variant:    button.VariantOutline,
+		Size:       button.SizeSm,
+		Attributes: templ.Attributes{"data-deploy-new-template": true, "type": "button"},
+	}) {
+		New template
+	}
+}
+
 templ DeployGroups() {
 	@card.Card() {
 		@card.Header() {
@@ -31,15 +48,6 @@ templ DeployGroups() {
 				A group is a set of machines out of the cluster — not a second inventory.
 				A machine deleted there leaves every group here by itself.
 			}
-			<div class="flex flex-wrap items-center gap-2">
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-deploy-new-group": true, "type": "button"},
-				}) {
-					Add group
-				}
-			</div>
 		}
 		@card.Content() {
 			<p data-deploy-status class="text-sm text-muted-foreground empty:hidden" hidden></p>
@@ -63,15 +71,6 @@ templ DeployTemplates() {
 				replacement machine is provisioned by deploying to it. Saving writes a new version;
 				the version a past run points at is never rewritten.
 			}
-			<div class="flex flex-wrap items-center gap-2">
-				@button.Button(button.Props{
-					Variant:    button.VariantOutline,
-					Size:       button.SizeSm,
-					Attributes: templ.Attributes{"data-deploy-new-template": true, "type": "button"},
-				}) {
-					New template
-				}
-			</div>
 		}
 		@card.Content() {
 			<div data-template-rows class="divide-y divide-border rounded-lg border border-border"></div>

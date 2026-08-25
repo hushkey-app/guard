@@ -20,7 +20,7 @@ var navOrder = []struct {
 	Label    string
 	Patterns []string
 }{
-	{"Watch", []string{"/", "/views"}},
+	{"Watch", []string{"/", "/checks", "/views"}},
 	{"Signals", []string{"/logs", "/traces", "/metrics", "/analytics"}},
 	{"Infrastructure", []string{"/cluster", "/deploys", "/registries", "/storage", "/secrets"}},
 }
@@ -35,6 +35,7 @@ var navOrder = []struct {
 var navIcons = map[string]string{
 	"/":           "overview",
 	"/views":      "views",
+	"/checks":     "checks",
 	"/logs":       "logs",
 	"/traces":     "traces",
 	"/metrics":    "metrics",

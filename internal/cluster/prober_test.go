@@ -24,6 +24,28 @@ func (f *fake) Nodes() ([]model.Node, error) { return f.nodes, nil }
 
 func (f *fake) NodesForProbe() ([]model.Node, error) { return f.nodes, nil }
 
+func (f *fake) HealthChecksForProbe() ([]model.HealthCheck, error) {
+	checks := make([]model.HealthCheck, 0, len(f.nodes))
+	for _, node := range f.nodes {
+		checks = append(checks, model.HealthCheck{
+			ID: node.ID, Name: node.Name, URL: node.URL, Enabled: node.Enabled,
+			IntervalSeconds: node.IntervalSeconds, CheckedAt: node.CheckedAt, NodeID: node.ID,
+		})
+	}
+	return checks, nil
+}
+
+func (f *fake) HealthCheck(id int64) (model.HealthCheck, error) {
+	node, err := f.Node(id)
+	if err != nil {
+		return model.HealthCheck{}, err
+	}
+	return model.HealthCheck{ID: node.ID, Name: node.Name, URL: node.URL, Enabled: node.Enabled,
+		IntervalSeconds: node.IntervalSeconds, CheckedAt: node.CheckedAt, NodeID: node.ID}, nil
+}
+
+func (f *fake) RecordHealthCheck(int64, model.Check) error { return nil }
+
 func (f *fake) Node(id int64) (model.Node, error) {
 	for _, node := range f.nodes {
 		if node.ID == id {

@@ -1,0 +1,147 @@
+package components
+
+import (
+	"fmt"
+	"github.com/axadrn/shadcn-templ/v2/components/badge"
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/card"
+	"github.com/axadrn/shadcn-templ/v2/components/table"
+	"github.com/hushkey-app/guard/client/ui"
+)
+
+// WidgetPlugin is the overview catalogue. Width uses the same twelve-column
+// language as saved Views; Sizes is deliberately per-widget because a stat is
+// useful at three columns while a service log needs room to remain legible.
+type WidgetPlugin struct {
+	Key         string
+	Label       string
+	Description string
+	Icon        string
+	Width       int
+	Sizes       string
+	Pinned      bool
+}
+
+func OverviewWidgetPlugins() []WidgetPlugin {
+	return []WidgetPlugin{
+		{Key: "health", Label: "Health checks", Description: "Live service availability and uptime", Icon: "checks", Width: 12, Sizes: "6,8,12", Pinned: true},
+		{Key: "cluster", Label: "Cluster", Description: "Reachable machines", Icon: "cluster", Width: 3, Sizes: "3,4,6", Pinned: true},
+		{Key: "instances", Label: "Instances", Description: "Active telemetry identities", Icon: "server", Width: 3, Sizes: "3,4,6", Pinned: true},
+		{Key: "logs", Label: "Logs", Description: "Retained log records", Icon: "logs", Width: 3, Sizes: "3,4,6", Pinned: true},
+		{Key: "errors", Label: "Errors", Description: "Records needing attention", Icon: "alert", Width: 3, Sizes: "3,4,6", Pinned: true},
+		{Key: "spans", Label: "Spans", Description: "Trace activity", Icon: "traces", Width: 3, Sizes: "3,4,6", Pinned: true},
+		{Key: "metrics", Label: "Metrics", Description: "Metric data points", Icon: "metrics", Width: 3, Sizes: "3,4,6", Pinned: true},
+		{Key: "service-logs", Label: "Service logs", Description: "Newest logs from one selected service", Icon: "logs", Width: 6, Sizes: "4,6,8,12", Pinned: true},
+		{Key: "views", Label: "Views", Description: "Saved telemetry questions", Icon: "views", Width: 6, Sizes: "4,6,8,12", Pinned: true},
+		{Key: "cluster-map", Label: "Cluster detail", Description: "Machines and the services placed on them", Icon: "cluster", Width: 12, Sizes: "6,8,12", Pinned: true},
+		{Key: "instance-list", Label: "Instance detail", Description: "Every reporting identity", Icon: "server", Width: 4, Sizes: "4,6,8", Pinned: true},
+		{Key: "activity", Label: "Recent activity", Description: "Newest telemetry across every signal", Icon: "activity", Width: 8, Sizes: "6,8,12", Pinned: true},
+	}
+}
+
+templ OverviewWidgets() {
+	<input id="dashboard-widgets" type="checkbox" class="peer sr-only"/>
+	<div data-widget-grid class="grid grid-cols-1 gap-4 lg:grid-cols-12">
+		for _, plugin := range OverviewWidgetPlugins() {
+			<article
+				data-dashboard-widget={ plugin.Key }
+				data-widget-frame
+				data-widget-width={ fmt.Sprint(plugin.Width) }
+				data-widget-sizes={ plugin.Sizes }
+				data-widget-default-pinned={ fmt.Sprint(plugin.Pinned) }
+				class="group/widget relative min-w-0"
+				style={ "--widget-span:" + fmt.Sprint(plugin.Width) }
+			>
+				<div data-widget-edit-badge class="absolute -left-2 -top-3 z-20 hidden items-center gap-2 rounded-full border border-border bg-popover px-3 py-1.5 text-xs font-medium shadow-lg">
+					<span class="text-primary">@ui.Icon(plugin.Icon, "size-3.5")</span><span>{ plugin.Label }</span>
+				</div>
+				<div data-widget-edit-controls class="absolute -right-2 -top-3 z-20 hidden items-center gap-1">
+					<button type="button" data-widget-resize class="rounded-full border border-border bg-popover px-2.5 py-1.5 font-mono text-[.65rem] text-muted-foreground shadow-lg hover:text-foreground" aria-label={ "Resize " + plugin.Label + " widget" } title="Change width"><span data-widget-size>{ fmt.Sprint(plugin.Width) }</span>/12</button>
+					<button type="button" data-widget-remove class="grid size-8 place-items-center rounded-full border border-border bg-popover text-muted-foreground shadow-lg hover:bg-destructive hover:text-white" aria-label={ "Remove " + plugin.Label + " widget" } title="Remove widget">@ui.Icon("close", "size-4")</button>
+				</div>
+				switch plugin.Key {
+					case "health":
+						@StatusWidget()
+					case "cluster":
+						@ui.Stat("Cluster", "cluster", "—", "machines reachable")
+					case "instances":
+						@ui.Stat("Instances", "instances", "—", "active identities")
+					case "logs":
+						@ui.Stat("Logs", "logs", "—", "retained records")
+					case "errors":
+						@ui.Stat("Errors", "errors", "—", "need attention")
+					case "spans":
+						@ui.Stat("Spans", "spans", "—", "trace activity")
+					case "metrics":
+						@ui.Stat("Metrics", "metrics", "—", "data points")
+					case "service-logs":
+						@ServiceLogsWidget()
+					case "views":
+						@ViewsWidget()
+					case "cluster-map":
+						@Topology()
+					case "instance-list":
+						@InstancesWidget()
+					case "activity":
+						@ActivityWidget()
+				}
+			</article>
+		}
+	</div>
+	<label for="dashboard-widgets" class="fixed inset-0 z-40 hidden bg-black/55 peer-checked:block" aria-label="Close widget drawer"></label>
+	<aside class="fixed inset-y-0 right-0 z-50 flex w-[min(28rem,92vw)] translate-x-full flex-col border-l border-border bg-background shadow-2xl transition-transform peer-checked:translate-x-0" aria-label="Widget library">
+		<div class="flex items-start justify-between gap-4 border-b border-border p-5">
+			<div><p class="text-xs font-semibold uppercase tracking-[.2em] text-primary">Dashboard</p><h2 class="mt-1 text-xl font-semibold">Widget library</h2><p class="mt-1 text-sm text-muted-foreground">Pin what matters, then size and arrange it on the board.</p></div>
+			<label for="dashboard-widgets" class="cursor-pointer rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close widget drawer">@ui.Icon("close", "size-4")</label>
+		</div>
+		<div class="flex-1 space-y-2 overflow-y-auto p-4">
+			for _, plugin := range OverviewWidgetPlugins() {
+				<div data-widget-catalogue={ plugin.Key } class="flex items-center gap-3 rounded-xl border border-border p-3">
+					<span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">@ui.Icon(plugin.Icon, "size-4")</span>
+					<div class="min-w-0 flex-1"><p class="text-sm font-medium">{ plugin.Label }</p><p class="mt-0.5 text-xs text-muted-foreground">{ plugin.Description }</p></div>
+					<span data-widget-catalogue-size class="shrink-0 font-mono text-[.65rem] text-muted-foreground">{ fmt.Sprint(plugin.Width) }/12</span>
+					@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"data-widget-pin": plugin.Key}}) { <span data-widget-pin-label>Pin</span> }
+				</div>
+			}
+		</div>
+		<p class="border-t border-border p-4 text-xs text-muted-foreground">Layout is saved in this browser. Drag handles also support the arrow keys.</p>
+	</aside>
+}
+
+templ StatusWidget() {
+	@card.Card(card.Props{Class: "h-full gap-0 py-0", Attributes: templ.Attributes{"data-status-widget": true}}) {
+		<div data-status-widget-compact class="p-5"><p class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Service status</p><div class="mt-3 flex items-center gap-3"><span data-status-dot class="size-3 rounded-full"></span><p data-status-headline class="text-xl font-semibold">Loading…</p></div><p data-status-count class="mt-2 text-xs text-muted-foreground"></p></div>
+		<div data-status-widget-medium class="p-5"><div class="flex items-center justify-between gap-4"><div><p class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Service status</p><h2 data-status-headline class="mt-1 text-xl font-semibold">Loading…</h2></div><a href="/checks" class="text-xs text-primary hover:underline">Manage checks →</a></div><div data-status-services class="mt-4 grid gap-2 sm:grid-cols-2"></div></div>
+		<div data-status-widget-wide class="p-5"><div class="flex items-center justify-between gap-4"><div class="flex items-center gap-3"><span data-status-dot class="size-3 rounded-full"></span><div><p class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Service status</p><h2 data-status-headline class="mt-0.5 text-xl font-semibold">Loading…</h2></div></div><div class="text-right"><p data-status-count class="text-sm font-medium"></p><a href="/checks" class="text-xs text-primary hover:underline">Manage checks →</a></div></div><div data-status-services class="mt-5 grid gap-3 lg:grid-cols-2"></div></div>
+	}
+}
+
+templ ServiceLogsWidget() {
+	@card.Card(card.Props{Class: "h-full gap-0 py-0"}) {
+		<div class="flex items-center justify-between gap-3 border-b border-border p-4"><div><h2 class="font-medium">Service logs</h2><p class="text-xs text-muted-foreground">Newest retained records</p></div><select data-widget-log-service class="cn-native-select h-8 max-w-48 text-xs" aria-label="Service shown in log widget"><option value="">All services</option></select></div>
+		<div data-widget-log-rows class="divide-y divide-border"><p class="p-5 text-sm text-muted-foreground">Loading logs…</p></div>
+		<div class="border-t border-border px-4 py-3 text-right"><a data-widget-log-link href="/logs" class="text-xs text-primary hover:underline">Open logs →</a></div>
+	}
+}
+
+templ ViewsWidget() {
+	@card.Card(card.Props{Class: "h-full gap-0 py-0"}) {
+		<div class="flex items-center justify-between border-b border-border p-4"><div><h2 class="font-medium">Views</h2><p class="text-xs text-muted-foreground">Saved telemetry questions</p></div><a href="/views" class="text-xs text-primary hover:underline">Open views →</a></div>
+		<div data-widget-view-list class="divide-y divide-border"><p class="p-5 text-sm text-muted-foreground">Loading views…</p></div>
+	}
+}
+
+templ InstancesWidget() {
+	@card.Card() {
+		@card.Header() { @card.Title() { Instances } @card.Description() { Every identity that has reported } @card.Action() { @badge.Badge(badge.Props{Variant: badge.VariantSecondary}) { <span data-stat="instances">—</span>&nbsp;watched } } }
+		@card.Content(card.ContentProps{Class: "space-y-2"}) { <div class="space-y-2" data-instance-list>@ui.Empty("Loading service identities…")</div> }
+	}
+}
+
+templ ActivityWidget() {
+	@card.Card(card.Props{Class: "h-full gap-0 py-0"}) {
+		<div class="flex items-center justify-between border-b border-border p-5"><h2 class="font-medium">Recent activity</h2><span class="text-xs text-muted-foreground">newest first</span></div>
+		<div class="p-5" data-recent-empty>@ui.Empty("Loading recent telemetry…")</div>
+		@table.Table() { @ui.TableHead([]string{"Time", "Signal", "Service", "Event", "Context"}) @table.Body(table.BodyProps{Attributes: templ.Attributes{"data-event-rows": true, "data-signal": ""}}) }
+	}
+}

@@ -8,14 +8,8 @@ import (
 	"github.com/hushkey-app/guard/client/ui"
 )
 
-// ClusterForm adds a machine to watch.
-//
-// A machine is described twice because it is reached twice: the domain is where
-// the world finds it, the internal address is where guard finds it, and the
-// health path follows the machine between them. Either address is enough; the
-// internal one wins when both are given, because a public name is often
-// answered by a load balancer that keeps saying 200 long after the box behind
-// it stopped.
+// ClusterForm declares a machine. Service URLs and their public visibility live
+// on /checks; this form is only the infrastructure identity and optional login.
 //
 // The way in — an SSH login, and the commands to run with it — is set on the
 // machine's own row afterwards. It is not what you are thinking about while
@@ -37,13 +31,13 @@ templ ClusterForm() {
 				     this is what guard needs to watch it, that is what it needs
 				     to log in. -->
 				<div class="flex items-center gap-2 text-xs">
-					<label for="machine-step-1" class="cursor-pointer rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground peer-checked/one:bg-sidebar-accent peer-checked/one:text-foreground">1 · Where it answers</label>
+					<label for="machine-step-1" class="cursor-pointer rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground peer-checked/one:bg-sidebar-accent peer-checked/one:text-foreground">1 · Machine</label>
 					@ui.Icon("chevron", "size-3 -rotate-90 opacity-40")
 					<label for="machine-step-2" class="cursor-pointer rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground peer-checked/two:bg-sidebar-accent peer-checked/two:text-foreground">2 · How to log in <span class="opacity-60">(optional)</span></label>
 				</div>
 				<div class="hidden peer-checked/one:block">
-					<p class="mb-4 text-sm text-muted-foreground">Guard fetches the health address on a timer and records whether it answered.</p>
-					<div class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]">
+					<p class="mb-4 text-sm text-muted-foreground">Name the infrastructure and where it belongs. Add service health separately under Checks.</p>
+					<div class="grid gap-4 sm:grid-cols-2">
 					@field.Field() {
 						@field.Label(field.LabelProps{For: "node-name"}) {
 							Name
@@ -56,18 +50,6 @@ templ ClusterForm() {
 						})
 					}
 					@field.Field() {
-						@field.Label(field.LabelProps{For: "node-domain"}) {
-							Address
-						}
-						@input.Input(input.Props{
-							ID:          "node-domain",
-							Placeholder: "https://vps-1.example.com or http://localhost:8000",
-							Required:    true,
-							Class:       "font-mono",
-							Attributes:  templ.Attributes{"data-node": "domain", "spellcheck": "false", "autocomplete": "off"},
-						})
-					}
-					@field.Field() {
 						@field.Label(field.LabelProps{For: "node-group"}) {
 							Group
 						}
@@ -75,17 +57,6 @@ templ ClusterForm() {
 							ID:          "node-group",
 							Placeholder: "VPC-1 (optional)",
 							Attributes:  templ.Attributes{"data-node": "group", "maxlength": "60", "autocomplete": "off", "list": "cluster-groups"},
-						})
-					}
-					@field.Field() {
-						@field.Label(field.LabelProps{For: "node-health"}) {
-							Health path
-						}
-						@input.Input(input.Props{
-							ID:          "node-health",
-							Placeholder: "/api/health",
-							Class:       "font-mono",
-							Attributes:  templ.Attributes{"data-node": "health", "spellcheck": "false", "autocomplete": "off"},
 						})
 					}
 					</div>
@@ -101,23 +72,8 @@ templ ClusterForm() {
 				     the row, because a login that has to be found before it can
 				     be typed is a login nobody types. -->
 				<div class="hidden peer-checked/two:block">
-					<p class="mb-4 text-sm text-muted-foreground">Leave these empty to watch the machine without logging in to it.</p>
-					<div class="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,14rem)]">
-					@field.Field() {
-						@field.Label(field.LabelProps{For: "node-interval"}) {
-							Every
-						}
-						<div class="flex items-stretch">
-							@input.Input(input.Props{
-								ID:         "node-interval",
-								Type:       "number",
-								Value:      "3",
-								Class:      "rounded-r-none",
-								Attributes: templ.Attributes{"data-node": "interval", "min": "1", "max": "3600"},
-							})
-							<span class="grid shrink-0 place-items-center rounded-r-lg border border-l-0 border-input px-2 text-sm text-muted-foreground">s</span>
-						</div>
-					}
+					<p class="mb-4 text-sm text-muted-foreground">Leave these empty when Guard should inventory the machine without logging in.</p>
+					<div class="grid gap-4 sm:grid-cols-2">
 					@field.Field() {
 						@field.Label(field.LabelProps{For: "node-ssh"}) {
 							SSH address
@@ -155,8 +111,7 @@ templ ClusterForm() {
 				     a step is a form people think is unfinished. -->
 				<div class="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
 					<p class="max-w-md text-xs text-muted-foreground">
-						The health path hangs off the address — guard fetches it from the server, so it can be a name
-						only the server resolves. A login, if you give one, has to connect before the machine is added.
+						Service health is configured on <a href="/checks" class="text-primary hover:underline">Checks</a>. A login, if you give one, has to connect before the machine is added.
 					</p>
 					@button.Button(button.Props{Type: button.TypeSubmit, Class: "ml-auto"}) {
 						Add machine
@@ -183,21 +138,13 @@ templ ClusterList() {
 		</div>
 		<div data-cluster-rows class="divide-y divide-border"></div>
 		<div data-cluster-empty class="p-8">
-			@ui.Empty("No machines yet. Add one above and guard starts watching it within the interval.")
+			@ui.Empty("No machines yet. Add one and link its cloud instance to read power status.")
 		</div>
 	}
 }
 
-// ClusterRow is one machine: a header line that is the same on the overview,
-// and a panel underneath that only the settings page opens.
-//
-// The strip on the right is the last sixty checks, oldest first — a shape that
-// shows a flapping node, which a single "up" badge never can.
-//
-// Two addresses, drawn differently on purpose. The domain is a link, because a
-// browser can follow it. The internal address is text, because it is on a
-// network the browser is usually not on, and a link that always fails teaches
-// people to distrust the page instead of the network.
+// ClusterRow is one machine: provider power in the headline, and a panel
+// underneath for infrastructure settings. Service health has its own page.
 templ ClusterRow() {
 	<template data-cluster-row-template>
 		<div data-node-row>
@@ -225,43 +172,12 @@ templ ClusterRow() {
 						<span data-node-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
 						<span data-node-lock-badge hidden class="cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
 					</div>
-					<div class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-						<a data-node-url target="_blank" rel="noreferrer noopener" class="truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"></a>
-						<!-- Never a link. This address is reached from guard's
-						     network, and the browser reading this page is
-						     usually somewhere else entirely. -->
-						<span data-node-internal class="truncate font-mono text-xs text-muted-foreground empty:hidden" title="Checked by guard from the server — your browser cannot open this"></span>
-					</div>
-					<p data-node-error class="mt-0.5 truncate text-xs text-destructive empty:hidden"></p>
 					<div data-node-tags class="mt-1 flex flex-wrap items-center gap-1.5 empty:hidden"></div>
 				</div>
 				<!-- Allowed to shrink and to wrap. Fixed at its natural width it
 				     ran past the edge of the card on a narrow window, taking the
 				     buttons with it. -->
 				<div class="flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
-					<div class="text-right">
-						<p data-node-latency class="font-mono text-sm tabular-nums"></p>
-						<p data-node-checked class="text-[.65rem] text-muted-foreground"></p>
-					</div>
-					<div class="text-right">
-						<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
-						<p data-node-checks class="text-[.65rem] text-muted-foreground">24h uptime</p>
-					</div>
-					<!-- Editable in place. A machine's cadence is the one thing
-					     about it that gets tuned, and a dialog to change one number
-					     is a dialog nobody opens. -->
-					<label class="flex shrink-0 items-center gap-1 text-[.65rem] text-muted-foreground" title="How often to check this machine">
-						every
-						<input
-							type="number"
-							data-node-interval
-							min="1"
-							max="3600"
-							class="cn-input h-7 w-14 px-1.5 text-center font-mono text-xs tabular-nums"
-						/>
-						s
-					</label>
-					<div data-node-strip class="hidden h-6 w-24 items-end gap-px xl:flex" title="the last sixty checks"></div>
 					@button.Button(button.Props{
 						Variant:    button.VariantGhost,
 						Size:       button.SizeIconSm,
@@ -269,14 +185,6 @@ templ ClusterRow() {
 						Attributes: templ.Attributes{"data-node-duplicate": true, "aria-label": "Duplicate this machine", "title": "Copy the address, the cadence and the commands onto a new machine"},
 					}) {
 						@iconCopy()
-					}
-					@button.Button(button.Props{
-						Variant:    button.VariantGhost,
-						Size:       button.SizeIconSm,
-						Class:      "text-muted-foreground",
-						Attributes: templ.Attributes{"data-node-pause": true, "aria-label": "Pause or resume watching"},
-					}) {
-						<span data-node-pause-icon>⏸</span>
 					}
 					@button.Button(button.Props{
 						Variant:    button.VariantGhost,
@@ -303,19 +211,8 @@ templ ClusterRow() {
 templ clusterDetail() {
 	<div data-node-detail hidden class="space-y-5 border-t border-border bg-muted/30 p-4">
 		<section class="space-y-3">
-			<div class="flex items-center justify-between gap-3">
-				<h3 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Address</h3>
-				<p data-node-probe class="truncate font-mono text-[.65rem] text-muted-foreground"></p>
-			</div>
-			<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]">
-				<label class="grid gap-1.5 text-xs text-muted-foreground">
-					Where the service answers
-					<input data-node-field="domain" spellcheck="false" autocomplete="off" placeholder="https://vps-1.example.com" class="cn-input h-9 font-mono text-xs"/>
-				</label>
-				<label class="grid gap-1.5 text-xs text-muted-foreground">
-					Health path
-					<input data-node-field="health_path" spellcheck="false" autocomplete="off" placeholder="/api/health" class="cn-input h-9 font-mono text-xs"/>
-				</label>
+			<h3 class="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">Placement</h3>
+			<div class="grid gap-3">
 				<!-- Where the machine *is*, which the cluster page lays itself
 				     out by. Free text: guard cannot know whether the boundary
 				     somebody cares about is a VPC, a region or a floor. -->
@@ -323,30 +220,12 @@ templ clusterDetail() {
 					Group
 					<input data-node-field="group" list="cluster-groups" maxlength="60" autocomplete="off" placeholder="VPC-1 — empty means Ungrouped" class="cn-input h-9 text-xs"/>
 				</label>
-				<!-- The status page. Two controls rather than one, because "is
-				     this machine public" and "what do strangers call it" are
-				     different questions: the name on the card is the one
-				     somebody SSHes into, and publishing it tells a reader the
-				     naming scheme, the provider and the shape of the fleet.
-				     Empty falls back to the machine's name, which is a choice
-				     somebody can make on purpose. -->
-				<label class="grid gap-1.5 text-xs text-muted-foreground sm:col-span-2">
-					Public name
-					<input data-node-field="public_name" maxlength="60" autocomplete="off" placeholder="Database — empty publishes the machine name itself" class="cn-input h-9 text-xs"/>
-				</label>
-				<label class="flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
-					<input data-node-field="public" type="checkbox" class="size-4 accent-primary"/>
-					<span>Show this machine on the public status page at <code class="font-mono">/status</code></span>
-				</label>
 			</div>
 			<datalist id="cluster-groups"></datalist>
 			<div class="flex flex-wrap items-center justify-between gap-3">
-				<p class="max-w-lg text-xs text-muted-foreground">
-					Guard fetches this from the server, so it can be an address only the server can reach.
-					The machine's own IP goes under SSH — that is a way in, not a health check.
-				</p>
+				<p class="max-w-lg text-xs text-muted-foreground">Service URLs and public status visibility are managed independently under <a href="/checks" class="text-primary hover:underline">Checks</a>.</p>
 				@button.Button(button.Props{Size: button.SizeSm, Class: "ml-auto", Attributes: templ.Attributes{"data-node-save": true}}) {
-					Save address
+					Save placement
 				}
 			</div>
 		</section>
@@ -474,9 +353,8 @@ templ clusterDetail() {
 			</div>
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<p data-cloud-note class="max-w-lg text-xs text-muted-foreground">
-					Linking adds what a health check cannot see: whether the box is powered on at all,
-					what it costs, and what it can be rolled back to. The instance is checked before it
-					is stored, and the machine is still watched without one.
+					Linking makes the provider's power status authoritative for this machine and adds
+					cost, transfer and snapshots. The instance is checked before the link is stored.
 				</p>
 				<div class="ml-auto flex items-center gap-2">
 					@button.Button(button.Props{
@@ -768,40 +646,32 @@ templ chevronSmall() {
 // ClusterOps is the /cluster page: one card per machine with its stored
 // commands right there to run. It is the operational surface — the settings
 // page declares and edits machines, this page acts on them — so the only
-// writes that leave it are "check now" and "run this saved command", and
+// writes that leave it are machine actions, and
 // the command list is read-only on purpose: a page for pressing buttons at
 // 3am should not also be a page where a button can be redefined.
 templ ClusterOps() {
 	<div class="space-y-6">
-		<div class="flex flex-wrap items-center justify-between gap-3">
+		<div class="flex flex-wrap items-center gap-3">
 			<p data-cluster-summary class="text-sm text-muted-foreground">Loading…</p>
-			@button.Button(button.Props{
-				Variant:    button.VariantOutline,
-				Size:       button.SizeSm,
-				Attributes: templ.Attributes{"data-cluster-check": true},
-			}) {
-				Check all now
-			}
 		</div>
 		<!-- A column of groups, each with its own grid inside: the layout is by
 		     group because that is how a fleet is held in somebody's head. -->
 		<div data-cluster-cards class="space-y-8"></div>
 		<datalist id="cluster-groups"></datalist>
 		<div data-cluster-cards-empty hidden>
-			@ui.Empty("No machines watched yet. Add one below and it appears here.")
+			@ui.Empty("No machines yet. Add one and link its cloud instance to read power status here.")
 		</div>
 	</div>
 }
 
-// ClusterOpsCard is the card ClusterOps clones per machine. The status,
-// address and uptime fields reuse the row's data attributes so cluster.js
-// fills both surfaces with one set of writers.
+// ClusterOpsCard is the card ClusterOps clones per machine. Power status comes
+// from the linked provider; HTTP service health belongs exclusively to Checks.
 templ ClusterOpsCard() {
 	<template data-cluster-card-template>
 		<!-- A row, not a card. Cards were two to a line and mostly whitespace;
 		     a machine is a line, and twenty machines should be twenty lines you
 		     can run an eye down. Everything needed to *find* the one you want
-		     is in the head — state, name, tags, address, and the five numbers —
+		     is in the head — power, name, tags and host utilisation —
 		     and everything needed to *act* on it is behind the fold. -->
 		<article data-node-id class="bg-card text-card-foreground">
 			<div data-card-head class="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-muted/30">
@@ -822,27 +692,12 @@ templ ClusterOpsCard() {
 						<span data-node-lock-badge hidden class="cn-badge cn-badge-variant-secondary inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
 						<div data-node-tags class="flex min-w-0 flex-wrap items-center gap-1.5 empty:hidden"></div>
 					</div>
-					<div class="flex min-w-0 items-center gap-2">
-						<a data-node-url target="_blank" rel="noreferrer noopener" class="truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"></a>
-						<span data-node-internal class="truncate font-mono text-xs text-muted-foreground empty:hidden" title="Checked by guard from the server — your browser cannot open this"></span>
-						<p data-node-error class="truncate text-xs text-destructive empty:hidden"></p>
-					</div>
 				</div>
-				<!-- The five numbers, in fixed columns so they line up down the
-				     list: that alignment is the whole reason a list beats a wall
-				     of cards for finding the machine that is unlike the others. -->
-				@headFigure("Response") {
-					<p data-node-latency class="font-mono text-sm tabular-nums"></p>
-					<p data-node-checked class="text-[.6rem] text-muted-foreground"></p>
-				}
-				@headFigure("Uptime") {
-					<p data-node-uptime class="font-mono text-sm tabular-nums"></p>
-					<p data-node-checks class="text-[.6rem] text-muted-foreground"></p>
-				}
+				<!-- Host figures line up down the list so a hot machine is visible
+				     without opening every row. -->
 				@headStat("cpu", "CPU")
 				@headStat("mem", "Mem")
 				@headStat("disk", "Disk")
-				<div data-node-strip class="hidden h-7 w-20 shrink-0 items-end gap-px xl:flex" title="the last sixty checks"></div>
 			</div>
 			<div data-card-body hidden class="space-y-4 border-t border-border bg-background/40 px-4 py-4">
 				<!-- The machine's own numbers, with their bars. The head carries
@@ -987,7 +842,7 @@ templ cloudStrip() {
 				Size:       button.SizeSm,
 				Attributes: templ.Attributes{"data-cloud-power": "halt", "title": "Stop the instance. It keeps its disk, its address and its bill."},
 			}) {
-				Halt
+				Stop
 			}
 			@button.Button(button.Props{
 				Variant:    button.VariantOutline,
@@ -1011,8 +866,8 @@ templ cloudStrip() {
 	</div>
 }
 
-// headFigure is one of the two health numbers in the row head: the value, and
-// the line of context under it. Fixed width so the column holds down the list.
+// headFigure is a compact two-line value used by list heads in this package.
+// Fixed width keeps its column aligned down the list.
 templ headFigure(label string) {
 	<div class="hidden w-24 shrink-0 flex-col md:flex" title={ label }>
 		{ children... }

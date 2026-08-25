@@ -30,6 +30,7 @@ type IconDef struct {
 // icon should cost a missing icon and not a missing row.
 var Icons = map[string]IconDef{
 	"overview": {Body: `<path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>`},
+	"checks":   {Body: `<path d="M3 12h4l2-7 4 14 2-7h6"/>`},
 	"views":    {Body: `<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="8" height="6" rx="1.5"/><rect x="15" y="14" width="6" height="6" rx="1.5"/>`},
 	"logs":     {Body: `<path d="M5 4h14v16H5z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/>`},
 	"traces":   {Body: `<circle cx="6" cy="6" r="2"/><circle cx="18" cy="12" r="2"/><circle cx="8" cy="18" r="2"/><path d="M8 6h6a2 2 0 0 1 2 2v2"/><path d="M16 14v0a2 2 0 0 1-2 2h-4"/>`},
@@ -47,6 +48,12 @@ var Icons = map[string]IconDef{
 	"sign-out":   {Body: `<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>`},
 	"menu":       {Body: `<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>`},
 	"close":      {Body: `<path d="M6 6l12 12"/><path d="M18 6 6 18"/>`},
+	"plus":       {Body: `<path d="M12 5v14"/><path d="M5 12h14"/>`},
+	"server":     {Body: `<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01"/><path d="M7 17h.01"/><path d="M11 7h6"/><path d="M11 17h6"/>`},
+	"alert":      {Body: `<path d="M12 3 2.8 19h18.4Z"/><path d="M12 9v4"/><path d="M12 16h.01"/>`},
+	"activity":   {Body: `<path d="M3 12h4l2.5-6 5 12 2.5-6h4"/>`},
+	"pencil":     {Body: `<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>`},
+	"trash":      {Body: `<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/>`},
 	"back":       {Body: `<path d="M15 6l-6 6 6 6"/>`},
 	"dot":        {Fill: "currentColor", Body: `<circle cx="12" cy="12" r="4"/>`},
 	"info":       {Body: `<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>`},

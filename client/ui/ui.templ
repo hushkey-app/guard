@@ -50,6 +50,12 @@ templ PageHeading(eyebrow, title, lede string) {
 	</div>
 }
 
+// SignalHeading keeps the four telemetry workspaces compact: their active
+// navigation item already names the signal, so the useful heading is the mode.
+templ SignalHeading(title string) {
+	<h1 class="text-base font-semibold tracking-tight text-primary">{ title }</h1>
+}
+
 templ Stat(label, key, value, note string) {
 	@card.Card(card.Props{Size: card.SizeSm}) {
 		@card.Content() {
@@ -78,7 +84,7 @@ templ Empty(message string) {
 // wear the shadcn surface through the Input component and style-nova's
 // cn-native-select.
 templ FilterBar(signal string) {
-	<div data-filter-signal={ signal }>
+	<div data-filter-signal={ signal } data-signal-toolbar>
 		@card.Card(card.Props{Size: card.SizeSm}) {
 			@card.Content() {
 				<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -99,41 +105,17 @@ templ FilterBar(signal string) {
 							<option value="">All levels</option>
 						}
 					}
-					if signal == "metrics" {
-						@Select("name", "Metric", "xl:col-span-2") {
-							<option value="">All metrics</option>
-						}
-						@Select("group", "Group by", "") {
-							<option value="">Metric</option>
-							<option value="service">Service</option>
-							<option value="instance">Instance</option>
-						}
-					}
-					@Field(searchSpan(signal), signal+"-query", "Search") {
+					if signal != "metrics" {
+						@Field(searchSpan(signal), signal+"-query", "Search") {
 						@input.Input(input.Props{
 							ID:          signal + "-query",
 							Type:        "search",
 							Placeholder: "name, message, trace ID, attribute…",
 							Attributes:  templ.Attributes{"data-filter": "query"},
-						})
-					}
-					<div class="flex items-end">
-						@button.Button(button.Props{
-							Size:       button.SizeSm,
-							Class:      "w-full",
-							Attributes: templ.Attributes{"data-refresh-now": true},
-						}) {
-							Refresh
+							})
 						}
+					}
 					</div>
-				</div>
-				<!-- Which machines to look at. Chips rather than a select,
-				     because more than one is the useful case — "everything on
-				     the two web boxes" is a question, and a multi-select that
-				     needs a modifier key held down to express it is a control
-				     people get wrong. Filled by guard.js from the cluster;
-				     absent entirely when no machines are watched. -->
-				<div data-cluster-filter class="mt-4 hidden flex-wrap items-center gap-2 border-t border-border pt-4"></div>
 				<!-- A filter that arrived on a link rather than being typed:
 				     /traces?rum_path=/pricing is the walk from a row on
 				     /analytics into the spans of the sessions that saw that
@@ -299,13 +281,10 @@ func filterLevelLabel(signal string) string {
 	return "Status"
 }
 
-// The metrics bar spends two columns on the metric picker, so its search box
-// takes one; every other signal gives search the width it can spare.
+// Signal searches fill the remaining half of the six-column filter bar.
+// Metrics has no search field: its received instruments live in the library.
 func searchSpan(signal string) string {
-	if signal == "metrics" {
-		return ""
-	}
-	return "xl:col-span-2"
+	return "xl:col-span-3"
 }
 
 // current renders aria-current as the ARIA spec spells it: "page" for the one

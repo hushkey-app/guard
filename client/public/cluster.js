@@ -11,20 +11,43 @@ import { ensure as swr, forget, set as remember } from "./store.js";
 // It imports `ask` back from here, which is a cycle ES modules are fine with
 // so long as nothing is called while the modules are still evaluating: both
 // sides only ever reach across inside a function.
-import { fillCloudCard, fillCloudDetail } from "./cloud.js";
+import { fillCloudCard, fillCloudDetail, powerStatus } from "./cloud.js";
 
 const tones = {
   up: "border-primary/40 bg-primary/15 text-primary",
   down: "cn-badge-variant-destructive",
   unknown: "cn-badge-variant-secondary",
   paused: "border-warning/40 bg-warning/15 text-warning",
+  running: "border-primary/40 bg-primary/15 text-primary",
+  stopped: "cn-badge-variant-destructive",
+  pending: "cn-badge-variant-secondary",
+  unlinked: "cn-badge-variant-secondary",
 };
 
 const colours = {
   up: "var(--primary)",
   down: "var(--destructive)",
   unknown: "var(--muted-foreground)",
+  running: "var(--primary)",
+  stopped: "var(--destructive)",
+  pending: "var(--muted-foreground)",
+  unlinked: "var(--muted-foreground)",
 };
+
+function fillPowerStatus(item, node) {
+  const status = powerStatus(node);
+  const dot = qs("[data-node-dot]", item);
+  if (dot) {
+    dot.style.background = colours[status.state] || colours.unknown;
+    dot.title = status.label;
+  }
+  const badge = qs("[data-node-badge]", item);
+  if (badge) {
+    badge.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${tones[status.state] || tones.unknown}`;
+    badge.textContent = status.label;
+  }
+  return status;
+}
 
 // What a stored password looks like. It is not the password and it is not its
 // length — the server never sends either — so the count of dots says nothing
@@ -243,19 +266,6 @@ function fillInstances(host, instances, emptyMessage) {
 
 const count = (n) => `${n} ${n === 1 ? "service" : "services"}`;
 
-// Whether the browser reading this page has any hope of opening an address.
-// Loopback and the private ranges are guard's side of the network, not the
-// reader's, and https pages block plain http to them anyway.
-const privateHost = /^(localhost$|127\.|0\.0\.0\.0$|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|.*\.local$|.*\.internal$)/i;
-
-function reachableFromBrowser(raw) {
-  try {
-    return !privateHost.test(new URL(raw).hostname);
-  } catch {
-    return false;
-  }
-}
-
 function hostOf(raw) {
   try {
     return new URL(raw).host;
@@ -266,7 +276,10 @@ function hostOf(raw) {
 
 function renderStat() {
   for (const stat of qsa('[data-stat="cluster"]')) {
-    stat.textContent = nodes.length ? `${nodes.filter((node) => node.status === "up").length}/${nodes.length}` : "—";
+    const linked = nodes.filter((node) => node.provider_instance_id);
+    stat.textContent = linked.length
+      ? `${linked.filter((node) => powerStatus(node).state === "running").length}/${linked.length}`
+      : "—";
   }
 }
 
@@ -312,16 +325,25 @@ function render() {
 
   const summary = qs("[data-cluster-summary]");
   if (summary) {
-    const up = nodes.filter((node) => node.status === "up").length;
-    const down = nodes.filter((node) => node.status === "down").length;
-    summary.textContent = nodes.length
-      ? `${up} of ${nodes.length} reachable${down ? ` · ${down} down` : ""}`
-      : "Nothing watched yet";
+    const states = nodes.map((node) => powerStatus(node).state);
+    const running = states.filter((state) => state === "running").length;
+    const stopped = states.filter((state) => state === "stopped").length;
+    const unlinked = states.filter((state) => state === "unlinked").length;
+    const unreadable = states.length - running - stopped - unlinked;
+    summary.textContent = nodes.length ? [
+      `${running} running`,
+      stopped ? `${stopped} stopped` : "",
+      unreadable ? `${unreadable} pending` : "",
+      unlinked ? `${unlinked} not linked` : "",
+    ].filter(Boolean).join(" · ") : "No machines yet";
   }
-  // The overview's stat tile. Reachable over watched, because "3" alone does
-  // not say whether that is all of them.
+  // The overview's stat tile is powered-on over provider-linked machines.
+  // Unlinked machines have no power claim to include in either side.
   for (const stat of qsa('[data-stat="cluster"]')) {
-    stat.textContent = nodes.length ? `${nodes.filter((node) => node.status === "up").length}/${nodes.length}` : "—";
+    const linked = nodes.filter((node) => node.provider_instance_id);
+    stat.textContent = linked.length
+      ? `${linked.filter((node) => powerStatus(node).state === "running").length}/${linked.length}`
+      : "—";
   }
 }
 
@@ -345,36 +367,14 @@ function row(node) {
   const item = template.content.firstElementChild.cloneNode(true);
   item.dataset.nodeId = node.id;
 
-  const status = node.enabled ? node.status : "paused";
-  qs("[data-node-dot]", item).style.background = node.enabled ? colours[node.status] : "var(--warning)";
-  qs("[data-node-dot]", item).title = status;
+  fillPowerStatus(item, node);
   qs("[data-node-name]", item).textContent = node.name;
-
-  const badge = qs("[data-node-badge]", item);
-  badge.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${tones[status]}`;
-  badge.textContent = node.enabled ? (node.status_code ? `${status} · ${node.status_code}` : status) : "paused";
 
   const lockBadge = qs("[data-node-lock-badge]", item);
   if (lockBadge) {
     lockBadge.hidden = !node.locked;
     lockBadge.textContent = "locked";
     lockBadge.title = "Locked: the login is frozen and no command can be added, edited or removed";
-  }
-
-  // The probed address, as a link only when a browser could actually follow it.
-  // Guard dials it from the server, so it is often localhost or a private
-  // address — and a link that fails every time teaches people to distrust the
-  // page rather than the network.
-  const link = qs("[data-node-url]", item);
-  const internal = qs("[data-node-internal]", item);
-  if (reachableFromBrowser(node.url)) {
-    link.textContent = node.url;
-    link.href = node.url;
-    link.hidden = false;
-    if (internal) internal.textContent = "";
-  } else {
-    link.hidden = true;
-    if (internal) internal.textContent = node.url ? `${node.url} · from the server` : "";
   }
 
   const icon = qs("[data-node-icon]", item);
@@ -386,31 +386,7 @@ function row(node) {
     icon.onerror = () => { icon.hidden = true; };
   }
 
-  // A node that has never answered has no error to show and no latency to
-  // report; saying "0 ms" would be a measurement it never took.
-  qs("[data-node-error]", item).textContent = node.error || "";
-  qs("[data-node-latency]", item).textContent = node.checked_at ? `${number.format(Math.round(node.latency_ms))} ms` : "—";
-  qs("[data-node-checked]", item).textContent = node.checked_at ? relativeTime(node.checked_at) : "not checked yet";
-  // A decimal on a whole number is noise: 100% and 0% are the two readings a
-  // reader sees most, and "0.0%" says nothing "0%" does not.
-  qs("[data-node-uptime]", item).textContent = node.checks
-    ? `${node.uptime.toFixed(Number.isInteger(node.uptime) ? 0 : 1)}%`
-    : "—";
-  // How many checks that percentage is made of. 100% of two checks and 100% of
-  // twenty thousand are the same number and not the same claim.
-  qs("[data-node-checks]", item).textContent = node.checks
-    ? `over ${number.format(node.checks)} check${node.checks === 1 ? "" : "s"}`
-    : "not checked yet";
-
-  const interval = qs("[data-node-interval]", item);
-  if (interval) interval.value = node.interval_seconds || 3;
-
   fillTags(item, node.tags);
-  strip(qs("[data-node-strip]", item), node.history || []);
-
-  const pause = qs("[data-node-pause-icon]", item);
-  if (pause) pause.textContent = node.enabled ? "⏸" : "▶";
-  qs("[data-node-pause]", item)?.setAttribute("title", node.enabled ? "Pause watching" : "Resume watching");
 
   detail(item, node);
   return item;
@@ -427,18 +403,9 @@ function detail(item, node) {
   turn(item, open);
 
   const field = (name) => qs(`[data-node-field="${name}"]`, panel);
-  // A machine added before the address and the health path were one field kept
-  // its old internal address; showing that is better than showing an empty box
-  // next to a machine that is plainly being checked.
-  field("domain").value = node.domain || node.internal_url || "";
   field("group").value = node.group || "";
-  field("public_name").value = node.public_name || "";
-  field("public").checked = !!node.public;
-  field("health_path").value = node.health_path || "";
   field("ssh_address").value = node.ssh_address || "";
   field("stats_interval").value = node.stats_interval_seconds ?? 0;
-
-  qs("[data-node-probe]", panel).textContent = node.url ? `checking ${node.url}` : "";
 
   // Dots for a stored password, and the box is read-only until somebody asks to
   // change it: the value here is not the password, and letting it be edited in
@@ -783,14 +750,16 @@ function groupNodes(list) {
 // across a room.
 function groupHeading(group, members) {
   const row = el("div", "flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-2");
-  const down = members.filter((node) => node.enabled && node.status === "down").length;
-  const paused = members.filter((node) => !node.enabled).length;
+  const states = members.map((node) => powerStatus(node).state);
+  const running = states.filter((state) => state === "running").length;
+  const stopped = states.filter((state) => state === "stopped").length;
+  const unlinked = states.filter((state) => state === "unlinked").length;
   row.append(el("h2", "text-sm font-semibold tracking-tight", group || "Ungrouped"));
   row.append(el("span", "text-xs text-muted-foreground",
     `${members.length} machine${members.length === 1 ? "" : "s"}`));
-  if (down) row.append(el("span", "text-xs font-medium text-destructive", `${down} down`));
-  if (paused) row.append(el("span", "text-xs text-warning", `${paused} paused`));
-  if (!down && !paused) row.append(el("span", "text-xs text-muted-foreground", "all up"));
+  if (stopped) row.append(el("span", "text-xs font-medium text-destructive", `${stopped} stopped`));
+  if (unlinked) row.append(el("span", "text-xs text-muted-foreground", `${unlinked} not linked`));
+  if (running === members.length) row.append(el("span", "text-xs text-muted-foreground", "all running"));
   return row;
 }
 
@@ -813,9 +782,7 @@ function cardFor(template, node) {
   const item = template.content.firstElementChild.cloneNode(true);
   item.dataset.nodeId = node.id;
 
-  const status = node.enabled ? node.status : "paused";
-  qs("[data-node-dot]", item).style.background = node.enabled ? colours[node.status] : "var(--warning)";
-  qs("[data-node-dot]", item).title = status;
+  fillPowerStatus(item, node);
   // The name is the way in to the machine's own page. A link rather than the
   // whole row, because the row is a disclosure — clicking it opens the fold, and
   // a row that navigated instead would take away the quick look.
@@ -827,10 +794,6 @@ function cardFor(template, node) {
   // this as one of guard's own links rather than an outbound one.
   nameLink.dataset.navLink = "true";
   name.append(nameLink);
-
-  const badge = qs("[data-node-badge]", item);
-  badge.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${tones[status]}`;
-  badge.textContent = node.checked_at && node.enabled ? `${status} · ${Math.round(node.latency_ms)}ms` : status;
 
   const lockBadge = qs("[data-node-lock-badge]", item);
   lockBadge.hidden = !node.locked;
@@ -844,29 +807,7 @@ function cardFor(template, node) {
     icon.onerror = () => { icon.hidden = true; };
   }
 
-  const link = qs("[data-node-url]", item);
-  const internal = qs("[data-node-internal]", item);
-  if (reachableFromBrowser(node.url)) {
-    link.textContent = node.url;
-    link.href = node.url;
-    link.hidden = false;
-    internal.textContent = "";
-  } else {
-    link.hidden = true;
-    internal.textContent = node.url ? `${node.url} · from the server` : "";
-  }
-
-  qs("[data-node-error]", item).textContent = node.error || "";
-  qs("[data-node-latency]", item).textContent = node.checked_at ? `${number.format(Math.round(node.latency_ms))} ms` : "—";
-  qs("[data-node-checked]", item).textContent = node.checked_at ? relativeTime(node.checked_at) : "not checked yet";
-  qs("[data-node-uptime]", item).textContent = node.checks
-    ? `${node.uptime.toFixed(Number.isInteger(node.uptime) ? 0 : 1)}%`
-    : "—";
-  qs("[data-node-checks]", item).textContent = node.checks
-    ? `over ${number.format(node.checks)} check${node.checks === 1 ? "" : "s"}`
-    : "not checked yet";
   fillTags(item, node.tags);
-  strip(qs("[data-node-strip]", item), node.history || []);
 
   const actions = node.actions || [];
   showBody(item, opened.has(node.id));
@@ -1121,10 +1062,8 @@ function strip(host, history) {
 function readForm(form) {
   const node = {
     name: qs('[data-node="name"]', form).value.trim(),
-    domain: qs('[data-node="domain"]', form).value.trim(),
-    health_path: qs('[data-node="health"]', form).value.trim(),
+    group: qs('[data-node="group"]', form).value.trim(),
     ssh_address: qs('[data-node="ssh"]', form).value.trim(),
-    interval_seconds: Number(qs('[data-node="interval"]', form).value) || 3,
   };
   // Only when there is one. An empty string means "forget the password", which
   // is a different request from "there was never one".
@@ -1145,29 +1084,12 @@ async function addNode(form) {
   try {
     await request("/api/cluster", { method: "POST", headers: adminHeaders(), body: JSON.stringify(node) });
     form.reset();
-    status.textContent = `Watching ${node.name}. The first check runs within the interval.`;
+    status.textContent = `Added ${node.name}. Add any service URLs from Checks.`;
     await refreshCluster();
-    // Ask for its state immediately rather than leaving a new row saying
-    // "unknown" for half a minute, which reads as broken.
-    await checkNow();
   } catch (failure) {
     status.textContent = failure.message;
   } finally {
     if (submit) submit.disabled = false;
-  }
-}
-
-async function checkNow() {
-  const button = qs("[data-cluster-check]");
-  if (button) button.disabled = true;
-  try {
-    nodes = await request("/api/cluster/check", { method: "POST", headers: adminHeaders() });
-    render();
-  } catch (failure) {
-    const status = qs("[data-cluster-status]");
-    if (status) status.textContent = failure.message;
-  } finally {
-    if (button) button.disabled = false;
   }
 }
 
@@ -1215,16 +1137,7 @@ async function saveDetail(panel) {
   const id = item.dataset.nodeId;
   const field = (name) => qs(`[data-node-field="${name}"]`, panel).value.trim();
   const changes = {
-    domain: field("domain"),
-    // Cleared on the way past: the address and the health path are one field
-    // now, and a leftover internal address would go on being probed instead.
-    internal_url: "",
-    health_path: field("health_path"),
     group: field("group"),
-    public_name: field("public_name"),
-    // .checked, not .value: the helper above trims a string, and a checkbox's
-    // value is the literal "on" whether or not it is ticked.
-    public: qs('[data-node-field="public"]', panel).checked,
     ssh_address: field("ssh_address"),
     // A number, and zero means off — so it is read as one rather than sent as
     // the string an <input> hands over, which the API would reject.
@@ -1401,30 +1314,15 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-node-password]")) event.target.dataset.changed = "1";
 });
 
-// change, not input: a number box fires input on every keystroke, and saving
-// "1" on the way to typing "120" would briefly hammer the machine at one
-// second.
 document.addEventListener("change", (event) => {
   const select = event.target.closest?.("[data-instance-node]");
   if (select) {
     const row = select.closest("[data-service]");
     assign(row.dataset.service, row.dataset.instance, Number(select.value)).catch(reportOn(select));
-    return;
   }
-  const box = event.target.closest?.("[data-node-interval]");
-  if (!box) return;
-  const row = box.closest("[data-node-id]");
-  const seconds = Math.min(3600, Math.max(1, Number(box.value) || 3));
-  box.value = seconds;
-  updateNode(row.dataset.nodeId, { interval_seconds: seconds }).catch(reportOn(box));
 });
 
 document.addEventListener("click", (event) => {
-  if (event.target.closest("[data-cluster-check]")) {
-    checkNow();
-    return;
-  }
-
   // Ask one machine now rather than waiting out its cadence. No confirmation:
   // it is a fixed read-only command that changes nothing, which is the same
   // reason it is allowed on a locked machine.
@@ -1517,13 +1415,6 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  const pause = event.target.closest("[data-node-pause]");
-  if (pause) {
-    const id = pause.closest("[data-node-id]").dataset.nodeId;
-    const node = nodes.find((item) => String(item.id) === String(id));
-    updateNode(id, { enabled: !node?.enabled }).catch(reportOn(pause));
-    return;
-  }
   const copy = event.target.closest("[data-node-duplicate]");
   if (copy) {
     duplicateNode(copy.closest("[data-node-id]").dataset.nodeId).catch(reportOn(copy));
@@ -1910,9 +1801,10 @@ function drawMachine(host, node, cached) {
   if (title) title.textContent = node.name;
   const note = qs("[data-machine-note]");
   if (note) {
+    const power = powerStatus(node).label;
     note.textContent = [
       node.group || "Ungrouped",
-      node.enabled ? node.status : "paused",
+      power,
       node.locked ? "locked" : "",
       cached ? "from your last visit" : "",
     ].filter(Boolean).join(" · ");

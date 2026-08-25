@@ -19,6 +19,12 @@ const WIDTH = 960;
 const HEIGHT = 320;
 const PAD = { left: 56, right: 16, top: 14, bottom: 28 };
 
+// Public-IP locations are looked up only when a map is actually drawn, then
+// kept for the life of the tab. A live dashboard refreshes every few seconds;
+// without this cache it would turn one dot into hundreds of identical network
+// calls and exhaust the geolocation service's daily allowance.
+const ipLocationCache = new Map();
+
 // Which body template a panel needs. The chart shapes all draw into one SVG
 // host; the rest are markup with slots, declared in client/ui/components.
 export function bodyKind(panel) {
@@ -508,6 +514,181 @@ function arc(cx, cy, inner, outer, from, to) {
 }
 
 // ---------------------------------------------------------------------------
+// Public IP map
+// ---------------------------------------------------------------------------
+
+// The map intentionally consumes the categorical frame: the category is the
+// public IP and the value is its count (or other chosen aggregate). That keeps
+// IP lookup out of the query compiler and means no location is persisted as if
+// it were telemetry the exporter actually sent.
+function renderMap(host, frame, options = {}) {
+  const rows = new Map();
+  for (const [category, value] of frame.rows) {
+    const original = String(category || "").trim();
+    const ip = publicIP(original);
+    if (!ip) continue;
+    const existing = rows.get(ip);
+    if (existing) existing.value += Number(value) || 0;
+    else rows.set(ip, { ip, category: original, value: Number(value) || 0 });
+  }
+
+  if (!rows.size) {
+    host.replaceChildren(note("No public IP addresses matched. Private, loopback and reserved ranges stay off the map."));
+    return [];
+  }
+
+  const root = mapBase();
+  const status = label(WIDTH / 2, HEIGHT / 2 + 4, `Locating ${rows.size} public IP${rows.size === 1 ? "" : "s"}…`);
+  status.classList.add("fill-foreground");
+  root.appendChild(status);
+  host.replaceChildren(root);
+
+  // A renderer normally completes synchronously. Location is the exception:
+  // leave the base map on screen, then add its dots when the HTTPS lookups
+  // settle. The containment check prevents an old preview response painting
+  // into a builder that has already moved to another visualisation.
+  locateRows([...rows.values()])
+    .then((located) => {
+      if (!root.isConnected || !host.contains(root)) return;
+      status.remove();
+      const points = located.filter((row) => row.location);
+      if (!points.length) {
+        const unavailable = label(WIDTH / 2, HEIGHT / 2 + 4, "IP locations are unavailable right now");
+        unavailable.classList.add("fill-foreground");
+        root.appendChild(unavailable);
+        return;
+      }
+
+      const max = Math.max(...points.map((row) => row.value), 1);
+      for (const row of points.sort((a, b) => b.value - a.value)) {
+        const [cx, cy] = mapPoint(row.location.longitude, row.location.latitude);
+        const radius = 4 + 9 * Math.sqrt(Math.max(0, row.value) / max);
+        const colour = colourFor(row.ip);
+        root.appendChild(svg("circle", { cx, cy, r: radius + 4, fill: colour, opacity: 0.12, "pointer-events": "none" }));
+        root.appendChild(mark(svg("circle", {
+          cx, cy, r: radius, fill: colour, opacity: 0.88,
+          stroke: "var(--card)", "stroke-width": 2,
+        }), {
+          title: [row.location.city, row.location.country].filter(Boolean).join(", ") || row.ip,
+          rows: [["public IP", row.ip], [measureLabel(options), withUnit(row.value, frame.unit)]],
+          selection: { series: row.category, has_series: true },
+        }, options));
+      }
+
+      const footer = label(18, HEIGHT - 8,
+        `${points.length} of ${rows.size} public IP${rows.size === 1 ? "" : "s"} located · approximate`, "start");
+      root.appendChild(footer);
+    });
+  return [];
+}
+
+function mapBase() {
+  const root = svg("svg", {
+    viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
+    class: "h-full w-full",
+    role: "img",
+    "aria-label": "World map of public IP locations",
+  });
+
+  root.appendChild(svg("rect", { x: 10, y: 8, width: WIDTH - 20, height: HEIGHT - 28, rx: 10, fill: "var(--muted)", opacity: 0.22 }));
+  for (const longitude of [-120, -60, 0, 60, 120]) {
+    const [x] = mapPoint(longitude, 0);
+    root.appendChild(svg("line", { x1: x, x2: x, y1: 8, y2: HEIGHT - 20, stroke: "currentColor", class: "text-border", opacity: 0.45 }));
+  }
+  for (const latitude of [-30, 0, 30, 60]) {
+    const [, y] = mapPoint(0, latitude);
+    root.appendChild(svg("line", { x1: 10, x2: WIDTH - 10, y1: y, y2: y, stroke: "currentColor", class: "text-border", opacity: 0.45 }));
+  }
+
+  // A deliberately quiet, low-detail basemap: enough geography to read a dot
+  // as Perth, California or western Europe, without competing with the data.
+  const continents = [
+    [[-168, 71], [-140, 72], [-112, 58], [-86, 52], [-52, 48], [-80, 24], [-98, 16], [-118, 29], [-132, 49], [-168, 60]],
+    [[-82, 13], [-61, 10], [-35, -7], [-48, -25], [-68, -56], [-78, -34]],
+    [[-11, 36], [8, 35], [30, 45], [40, 59], [23, 72], [-7, 61]],
+    [[-17, 35], [14, 37], [51, 12], [40, -35], [18, -36], [-10, 5]],
+    [[31, 70], [76, 78], [178, 66], [147, 45], [145, 5], [105, -10], [78, 9], [42, 31]],
+    [[112, -11], [154, -10], [154, -39], [132, -45], [113, -27]],
+    [[-55, 60], [-28, 76], [-42, 84], [-67, 76]],
+  ];
+  for (const points of continents) {
+    root.appendChild(svg("polygon", {
+      points: points.map(([longitude, latitude]) => mapPoint(longitude, latitude).join(",")).join(" "),
+      fill: "var(--muted-foreground)", opacity: 0.26,
+      stroke: "currentColor", class: "text-border", "stroke-width": 1,
+    }));
+  }
+  return root;
+}
+
+function mapPoint(longitude, latitude) {
+  const x = 10 + ((Number(longitude) + 180) / 360) * (WIDTH - 20);
+  const y = 8 + ((82 - Number(latitude)) / 142) * (HEIGHT - 28);
+  return [Math.max(10, Math.min(WIDTH - 10, x)), Math.max(8, Math.min(HEIGHT - 20, y))];
+}
+
+async function locateIP(ip) {
+  if (ipLocationCache.has(ip)) return ipLocationCache.get(ip);
+  const pending = fetch(`https://ipwho.is/${encodeURIComponent(ip)}?fields=success,message,ip,city,country,latitude,longitude`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`IP lookup returned ${response.status}`);
+      return response.json();
+    })
+    .then((location) => location.success && Number.isFinite(location.latitude) && Number.isFinite(location.longitude) ? location : null)
+    .catch(() => null);
+  ipLocationCache.set(ip, pending);
+  const location = await pending;
+  ipLocationCache.set(ip, location);
+  return location;
+}
+
+async function locateRows(rows) {
+  const located = new Array(rows.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < rows.length) {
+      const index = next++;
+      located[index] = { ...rows[index], location: await locateIP(rows[index].ip) };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, rows.length) }, worker));
+  return located;
+}
+
+function publicIP(value) {
+  let ip = value.trim();
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(ip);
+  if (bracketed) ip = bracketed[1];
+  const withPort = /^(\d+(?:\.\d+){3}):\d+$/.exec(ip);
+  if (withPort) ip = withPort[1];
+
+  const octets = ip.split(".");
+  if (octets.length === 4 && octets.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) {
+    const numeric = octets.map(Number);
+    const [a, b, c] = numeric;
+    const reserved = a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)) || (b === 88 && c === 99))) ||
+      (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+      (a === 203 && b === 0 && c === 113);
+    return reserved ? "" : numeric.join(".");
+  }
+
+  const lower = ip.toLowerCase().split("%")[0];
+  const mapped = /^::ffff:(\d+(?:\.\d+){3})$/.exec(lower);
+  if (mapped) return publicIP(mapped[1]);
+  const halves = lower.split("::");
+  const parts = lower.split(":").filter(Boolean);
+  if (halves.length > 2 || parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part)) ||
+      (halves.length === 1 && parts.length !== 8) || (halves.length === 2 && parts.length >= 8)) return "";
+  if (lower === "::" || lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd") ||
+      /^fe[89ab]/.test(lower) || lower.startsWith("ff") || lower.startsWith("2001:db8")) return "";
+  return lower;
+}
+
+// ---------------------------------------------------------------------------
 // Distribution
 // ---------------------------------------------------------------------------
 
@@ -915,6 +1096,7 @@ const renderers = {
   status_history: renderStatusHistory,
   bar: renderBar,
   pie: renderPie,
+  map: renderMap,
   histogram: renderHistogram,
   heatmap: renderHeatmap,
   scatter: (host, frame, options) => renderScatter(host, frame, options, false),
