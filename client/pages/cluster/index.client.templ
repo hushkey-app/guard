@@ -8,7 +8,7 @@ import (
 
 templ Head() {
 	<title>Cluster — Guard</title>
-	<meta name="description" content="Every watched machine: status, uptime, the commands kept for it, and where new machines are declared."/>
+	<meta name="description" content="Every machine: provider power, host utilisation, stored commands, and infrastructure settings."/>
 }
 
 // One page for the cluster. Declaring a machine and acting on one used to be two
@@ -21,29 +21,19 @@ templ Head() {
 // often than to declare one.
 templ Page() {
 	<section class="space-y-8">
-		@ui.PageHeading("Infrastructure", "Cluster",
-			"Every watched machine, with the commands somebody keeps for it ready to run — and where new machines are declared.")
-		<div class="space-y-3">
-			<div class="flex flex-wrap items-center justify-between gap-3">
-				<p class="text-sm text-muted-foreground">Grouped as they are declared. Open one for the commands kept for it.</p>
+		<div class="relative">
+			@ui.SignalHeading("Cluster")
+			<div class="mt-4 flex items-center md:absolute md:right-0 md:top-0 md:mt-0">
 				@components.MachineDialogOpen("Add or edit machines")
 			</div>
+		</div>
+		<div class="space-y-3">
 			@components.ClusterOps()
-			@ui.Note("What counts as up") {
-				<p>
-					Any answer from 200 to 399 within the timeout. Guard follows up to three redirects,
-					reads nothing of the body, and sends no credentials.
-				</p>
-				<p>
-					Change the cadence with <code>GUARD_CLUSTER_INTERVAL</code> and
-					<code>GUARD_CLUSTER_TIMEOUT</code>.
-				</p>
-			}
 			@ui.Note("What happens when you run a command") {
 				<p>
 					A command runs over SSH as the user in the machine's address, only if it was saved
-					first, and every run is logged. Running needs a stored login — a machine watched
-					without one still shows its status here.
+					first, and every run is logged. Running needs a stored login; reading provider
+					power does not.
 				</p>
 				<p>
 					A locked machine's commands are frozen: they can be run, and nothing else.

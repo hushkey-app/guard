@@ -338,9 +338,8 @@ func TestDrillEndpoint(t *testing.T) {
 	}
 }
 
-// Adding a node decides which URLs guard will fetch, on a timer, from inside
-// whatever network it runs in — so it is admin even though it looks like a
-// bookmark.
+// Adding a node may store an SSH login and cloud actions, so it is admin even
+// though a machine with neither is only inventory.
 func TestClusterEndpoints(t *testing.T) {
 	_, secured := server(t, "secret")
 	if code := call(t, http.MethodPost, secured.URL+"/api/cluster", model.Node{Name: "VPS-1", URL: "https://example.com/health"}, nil); code != http.StatusUnauthorized {
@@ -356,7 +355,9 @@ func TestClusterEndpoints(t *testing.T) {
 		t.Fatalf("new node = %#v; it should be watched and not yet checked", node)
 	}
 
-	for _, bad := range []string{"", "not-a-url", "file:///etc/passwd"} {
+	// Empty is now valid: machines and service checks are independent. A legacy
+	// caller that does send a URL must still send one Guard can safely fetch.
+	for _, bad := range []string{"not-a-url", "file:///etc/passwd"} {
 		if code := call(t, http.MethodPost, srv.URL+"/api/cluster", model.Node{Name: "x", URL: bad}, nil); code != http.StatusBadRequest {
 			t.Errorf("url %q = %d, want 400", bad, code)
 		}

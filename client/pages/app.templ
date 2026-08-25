@@ -40,38 +40,10 @@ templ App(title, head string) {
 			     left below is furniture that is deliberately outside the outlet
 			     because it must outlive a navigation. -->
 			<main id="outlet" data-route={ router.Current(ctx) }>{ children... }</main>
-			<!-- Row detail. Present on every page because guard.js fills it from
-			     whichever table was clicked; closed it is off-canvas and inert. -->
-			<div data-detail-shell class="fixed inset-0 z-50">
-				<button type="button" data-detail-close aria-label="Close details" class="absolute inset-0 bg-black/60 transition-opacity"></button>
-				<aside data-detail-panel class="pointer-events-auto absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-border bg-card text-card-foreground shadow-2xl transition-transform duration-200">
-					<div class="flex items-center justify-between gap-4 border-b border-border p-5">
-						<div class="min-w-0">
-							<p data-detail-eyebrow class="text-xs font-semibold uppercase tracking-[.18em] text-primary">Telemetry detail</p>
-							<h2 data-detail-title class="mt-1 truncate text-xl font-semibold">Event</h2>
-						</div>
-						@button.Button(button.Props{
-							Variant:    button.VariantGhost,
-							Size:       button.SizeIconSm,
-							Attributes: templ.Attributes{"data-detail-close": true, "aria-label": "Close details"},
-						}) {
-							✕
-						}
-					</div>
-					<div data-detail-content class="flex-1 space-y-6 overflow-y-auto p-5"></div>
-					<!-- Shown when the drawer is listing what is behind a mark
-					     rather than one event: the way back to the chart. -->
-					<div data-detail-footer hidden class="border-t border-border p-4">
-						@button.Button(button.Props{
-							Variant:    button.VariantOutline,
-							Size:       button.SizeSm,
-							Class:      "w-full",
-							Attributes: templ.Attributes{"data-detail-back": true},
-						}) {
-							← Back to the list
-						}
-					</div>
-				</aside>
+			<!-- Global detail remains available to logs, metrics, and chart
+			     drills. Traces own a second, nested copy inside their timeline. -->
+			<div class="fixed inset-0 z-50 pointer-events-none">
+				@components.DetailDrawer("global", true)
 			</div>
 			<!-- Chart furniture that outlives a navigation, next to the drawer
 			     it feeds: every page draws, so every page needs these. -->

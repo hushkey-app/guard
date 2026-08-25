@@ -32,6 +32,7 @@ type Settings = model.Settings
 type Facets = model.Facets
 type MetricPoint = model.MetricPoint
 type MetricSeries = model.MetricSeries
+type HealthCheck = model.HealthCheck
 
 type Store struct {
 	// db is the *writer*, and it is one connection.
@@ -296,6 +297,12 @@ CREATE INDEX IF NOT EXISTS idx_event_instances_seen ON event_instances(last_seen
 	// One row per machine per day, because the check history keeps only one day
 	// and the status page asks for ninety.
 	if err := migrateUptime(s.db); err != nil {
+		return err
+	}
+	// HTTP services are watched independently of machines. This migration also
+	// lifts every existing machine probe into a check so upgrades keep their
+	// history and public status without leaving the old ownership in place.
+	if err := migrateHealthChecks(s.db); err != nil {
 		return err
 	}
 	// The deploys: groups over the cluster, versioned templates, and what each
@@ -760,7 +767,7 @@ func (s *Store) Metrics(f Filter, groupBy string) ([]MetricSeries, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.rdb.Query(`SELECT timestamp_ns,service,instance,name,metric_value,unit,metric_type FROM events `+where+` AND metric_value IS NOT NULL ORDER BY timestamp_ns ASC LIMIT ?`, append(args, f.Limit)...)
+	rows, err := s.rdb.Query(`SELECT timestamp_ns,service,instance,name,metric_value,unit,metric_type,attributes_json FROM events `+where+` AND metric_value IS NOT NULL ORDER BY timestamp_ns ASC LIMIT ?`, append(args, f.Limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -768,9 +775,9 @@ func (s *Store) Metrics(f Filter, groupBy string) ([]MetricSeries, error) {
 	series := map[string]*MetricSeries{}
 	for rows.Next() {
 		var timestamp int64
-		var service, instance, name, unit, metricType string
+		var service, instance, name, unit, metricType, attributesJSON string
 		var value float64
-		if err := rows.Scan(&timestamp, &service, &instance, &name, &value, &unit, &metricType); err != nil {
+		if err := rows.Scan(&timestamp, &service, &instance, &name, &value, &unit, &metricType, &attributesJSON); err != nil {
 			return nil, err
 		}
 		key := name
@@ -785,7 +792,18 @@ func (s *Store) Metrics(f Filter, groupBy string) ([]MetricSeries, error) {
 			item = &MetricSeries{Key: key, Unit: unit, Type: metricType}
 			series[key] = item
 		}
-		item.Points = append(item.Points, MetricPoint{Timestamp: time.Unix(0, timestamp).UTC(), Value: value})
+		point := MetricPoint{Timestamp: time.Unix(0, timestamp).UTC(), Value: value}
+		if metricType == "histogram" || metricType == "exponential histogram" || metricType == "summary" {
+			var attributes map[string]any
+			if json.Unmarshal([]byte(attributesJSON), &attributes) == nil {
+				if count, ok := attributes["guard.count"].(float64); ok && count >= 0 {
+					point.Count = uint64(count)
+				}
+				if min, ok := attributes["guard.min"].(float64); ok { point.Min = &min }
+				if max, ok := attributes["guard.max"].(float64); ok { point.Max = &max }
+			}
+		}
+		item.Points = append(item.Points, point)
 	}
 	out := make([]MetricSeries, 0, len(series))
 	for _, item := range series {

@@ -1,0 +1,28 @@
+package checks
+
+import (
+	"database/sql"
+	"errors"
+	"strconv"
+
+	"github.com/hushkey-app/guard/server/apis/store"
+	"github.com/mirairoad/howl-go/core/api"
+)
+
+var Remove = api.Define(api.Spec[api.None, api.None, api.None]{
+	Name:  "Remove Health Check",
+	Roles: []string{"admin"},
+	Handler: func(r *api.Request[api.None, api.None]) (api.None, error) {
+		id, err := strconv.ParseInt(r.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			return api.None{}, api.Invalid("id", "must be a number")
+		}
+		if err := store.Get().DeleteHealthCheck(id); errors.Is(err, sql.ErrNoRows) {
+			return api.None{}, api.NotFound("health check not found")
+		} else if err != nil {
+			return api.None{}, err
+		}
+		wake()
+		return api.None{}, nil
+	},
+})

@@ -26,12 +26,14 @@ import (
 )
 
 type Store interface {
-	// NodesForProbe returns the enabled nodes with their cadence and the time
+	// HealthChecksForProbe returns enabled services with their cadence and the time
 	// they were last checked — enough to decide what is due, without the
 	// uptime and history a dashboard needs.
-	NodesForProbe() ([]model.Node, error)
-	Nodes() ([]model.Node, error)
-	Node(id int64) (model.Node, error)
+	HealthChecksForProbe() ([]model.HealthCheck, error)
+	HealthCheck(id int64) (model.HealthCheck, error)
+	RecordHealthCheck(checkID int64, result model.Check) error
+	// RecordCheck keeps the machine-facing history alive for migrated checks.
+	// It can disappear once cluster health no longer presents service state.
 	RecordCheck(nodeID int64, check model.Check) error
 }
 
@@ -115,7 +117,7 @@ func (p *Prober) prepare() {
 // rule out.
 func (p *Prober) Run(ctx context.Context) {
 	p.prepare()
-	p.Log.Info("cluster prober started", slog.Duration("timeout", p.Timeout))
+	p.Log.Info("health check prober started", slog.Duration("timeout", p.Timeout))
 	for {
 		wait := p.Round(ctx)
 		timer := time.NewTimer(wait)
@@ -151,29 +153,29 @@ func (p *Prober) Wake() {
 // now" button calls RoundAll instead.
 func (p *Prober) Round(ctx context.Context) time.Duration {
 	p.prepare()
-	nodes, err := p.Store.NodesForProbe()
+	checks, err := p.Store.HealthChecksForProbe()
 	if err != nil {
-		p.Log.Error("cluster prober could not read its nodes", slog.Any("err", err))
+		p.Log.Error("health prober could not read its checks", slog.Any("err", err))
 		return p.idle()
 	}
 
 	now := time.Now()
-	var due []model.Node
+	var due []model.HealthCheck
 	next := p.idle()
-	for _, node := range nodes {
-		if node.CheckedAt.IsZero() {
-			due = append(due, node)
+	for _, check := range checks {
+		if check.CheckedAt.IsZero() {
+			due = append(due, check)
 			// It counts towards the next wake-up too: a cluster of nodes that
 			// have all just been added would otherwise be checked once and
 			// then left alone for the idle sleep.
-			next = min(next, node.Interval())
+			next = min(next, check.Interval())
 			continue
 		}
-		remaining := node.Interval() - now.Sub(node.CheckedAt)
+		remaining := check.Interval() - now.Sub(check.CheckedAt)
 		if remaining <= 0 {
-			due = append(due, node)
+			due = append(due, check)
 			// A node just checked is next due one full interval from now.
-			remaining = node.Interval()
+			remaining = check.Interval()
 		}
 		next = min(next, remaining)
 	}
@@ -187,12 +189,12 @@ func (p *Prober) Round(ctx context.Context) time.Duration {
 // "is it back yet" button, which is a different question from "what is due".
 func (p *Prober) RoundAll(ctx context.Context) {
 	p.prepare()
-	nodes, err := p.Store.NodesForProbe()
+	checks, err := p.Store.HealthChecksForProbe()
 	if err != nil {
-		p.Log.Error("cluster prober could not read its nodes", slog.Any("err", err))
+		p.Log.Error("health prober could not read its checks", slog.Any("err", err))
 		return
 	}
-	p.check(ctx, nodes)
+	p.check(ctx, checks)
 }
 
 // check probes a set of nodes concurrently.
@@ -200,17 +202,17 @@ func (p *Prober) RoundAll(ctx context.Context) {
 // Concurrent because a pass must not take as long as the sum of its timeouts:
 // ten nodes, one of them a black hole, and a serial pass would fall a minute
 // behind its own schedule within a minute.
-func (p *Prober) check(ctx context.Context, nodes []model.Node) {
+func (p *Prober) check(ctx context.Context, checks []model.HealthCheck) {
 	var wait sync.WaitGroup
-	for _, node := range nodes {
-		if !node.Enabled {
+	for _, check := range checks {
+		if !check.Enabled {
 			continue
 		}
 		wait.Add(1)
-		go func(node model.Node) {
+		go func(check model.HealthCheck) {
 			defer wait.Done()
-			p.checkAndRecord(ctx, node)
-		}(node)
+			p.checkAndRecord(ctx, check)
+		}(check)
 	}
 	wait.Wait()
 }
@@ -229,28 +231,35 @@ func (p *Prober) idle() time.Duration {
 // yet" rather than waiting out the interval.
 func (p *Prober) CheckNow(ctx context.Context, id int64) (model.Check, error) {
 	p.prepare()
-	node, err := p.Store.Node(id)
+	check, err := p.Store.HealthCheck(id)
 	if err != nil {
 		return model.Check{}, err
 	}
-	return p.checkAndRecord(ctx, node), nil
+	return p.checkAndRecord(ctx, check), nil
 }
 
-func (p *Prober) checkAndRecord(ctx context.Context, node model.Node) model.Check {
-	check := p.Check(ctx, node.URL)
-	if err := p.Store.RecordCheck(node.ID, check); err != nil {
-		p.Log.Error("cluster check not recorded", slog.String("node", node.Name), slog.Any("err", err))
+func (p *Prober) checkAndRecord(ctx context.Context, target model.HealthCheck) model.Check {
+	check := p.Check(ctx, target.URL)
+	if err := p.Store.RecordHealthCheck(target.ID, check); err != nil {
+		p.Log.Error("health check not recorded", slog.String("check", target.Name), slog.Any("err", err))
+	}
+	// Migrated machine checks continue to colour their old machine row while
+	// health configuration and publication live exclusively on /checks.
+	if target.NodeID > 0 {
+		if err := p.Store.RecordCheck(target.NodeID, check); err != nil {
+			p.Log.Error("machine check compatibility result not recorded", slog.Int64("node", target.NodeID), slog.Any("err", err))
+		}
 	}
 	// Only from a machine that just answered, and at most once a day: a box
 	// that is down has better things to be asked for, and most machines have no
 	// favicon at all — which is an answer worth remembering rather than
 	// rediscovering on every check.
 	if check.OK {
-		p.fetchIcon(ctx, node)
+		p.fetchIcon(ctx, model.Node{ID: target.NodeID, Name: target.Name, URL: target.URL})
 	}
 	if !check.OK {
-		p.Log.Warn("cluster node is down",
-			slog.String("node", node.Name), slog.String("url", node.URL),
+		p.Log.Warn("health check is down",
+			slog.String("check", target.Name), slog.String("url", target.URL),
 			slog.Int("status", check.StatusCode), slog.String("err", check.Error))
 	}
 	return check
@@ -311,6 +320,9 @@ const maxIcon = 64 << 10
 // more, at the cost of downloading and parsing a page on every node — and a
 // health endpoint usually answers JSON, so there would be no HTML to read.
 func (p *Prober) fetchIcon(ctx context.Context, node model.Node) {
+	if node.ID <= 0 {
+		return
+	}
 	icons, ok := p.Store.(Icons)
 	if !ok {
 		return

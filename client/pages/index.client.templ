@@ -1,10 +1,7 @@
 package pages
 
 import (
-	"github.com/axadrn/shadcn-templ/v2/components/badge"
 	"github.com/axadrn/shadcn-templ/v2/components/button"
-	"github.com/axadrn/shadcn-templ/v2/components/card"
-	"github.com/axadrn/shadcn-templ/v2/components/table"
 	"github.com/hushkey-app/guard/client/lifecycle"
 	"github.com/hushkey-app/guard/client/ui"
 	"github.com/hushkey-app/guard/client/ui/components"
@@ -16,67 +13,26 @@ templ Head() {
 }
 
 templ Page() {
-	<section class="space-y-8">
+	<section class="space-y-6">
 		<div class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
 			<div>
 				<p class="text-xs font-semibold uppercase tracking-[.22em] text-primary">Status</p>
 				<h1 class="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Everything in sight.</h1>
 				<p class="mt-2 max-w-2xl text-muted-foreground">Logs, traces, and metrics from every service—one small receiver, no sprawling stack.</p>
 			</div>
-			@button.Button(button.Props{Href: "/logs", Size: button.SizeSm}) {
-				Inspect live logs →
-			}
+			<div class="flex items-center gap-2">
+				@button.Button(button.Props{Href: "/logs", Variant: button.VariantOutline, Size: button.SizeSm}) { Inspect live logs → }
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"data-dashboard-edit": true, "aria-pressed": "false"}}) { @ui.Icon("pencil", "size-4")<span data-dashboard-edit-label>Edit</span> }
+				<label for="dashboard-widgets" class="cn-button group/button inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap outline-none select-none cn-button-variant-default cn-button-size-sm [&_svg]:pointer-events-none [&_svg]:shrink-0" title="Add widget">@ui.Icon("plus", "size-4")<span>Add widget</span></label>
+			</div>
 		</div>
-		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-			@ui.Stat("Cluster", "cluster", "—", "machines reachable")
-			@ui.Stat("Instances", "instances", "—", "active identities")
-			@ui.Stat("Logs", "logs", "—", "retained records")
-			@ui.Stat("Errors", "errors", "—", "need attention")
-			@ui.Stat("Spans", "spans", "—", "trace activity")
-			@ui.Stat("Metrics", "metrics", "—", "data points")
-		</div>
+		@components.OverviewWidgets()
 		// What runs where. An instance is discovered from telemetry and a node
 		// is declared, and the two are joined on the hosts the telemetry names —
 		// so a machine that stops reporting keeps its place here and goes red,
 		// instead of quietly vanishing from a flat list.
-		@components.Topology()
 		@components.TopologyGroup()
 		@components.TopologyInstance()
-		<div class="grid gap-6 xl:grid-cols-[1fr_1.6fr]">
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						Instances
-					}
-					@card.Description() {
-						Every identity that has reported, placed or not
-					}
-					@card.Action() {
-						@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-							<span data-stat="instances">—</span>&nbsp;watched
-						}
-					}
-				}
-				@card.Content(card.ContentProps{Class: "space-y-2"}) {
-					<div class="space-y-2" data-instance-list>
-						@ui.Empty("Loading service identities…")
-					</div>
-				}
-			}
-			@card.Card(card.Props{Class: "gap-0 py-0"}) {
-				<div class="flex items-center justify-between border-b border-border p-5">
-					<h2 class="font-medium">Recent activity</h2>
-					<span class="text-xs text-muted-foreground">newest first</span>
-				</div>
-				<div class="p-5" data-recent-empty>
-					@ui.Empty("Loading recent telemetry…")
-				</div>
-				@table.Table() {
-					@ui.TableHead([]string{"Time", "Signal", "Service", "Event", "Context"})
-					@table.Body(table.BodyProps{Attributes: templ.Attributes{"data-event-rows": true, "data-signal": ""}})
-				}
-			}
-		</div>
 	</section>
 }
 

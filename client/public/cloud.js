@@ -21,6 +21,7 @@ import { ask } from "./cluster.js";
 const facts = new Map(); // nodeID -> { at, data, error }
 const inFlight = new Map(); // nodeID -> promise
 const snapshots = new Map(); // nodeID -> { at, rows, error }
+const powerChanges = new Set(); // nodeID while the provider is changing state
 const factsTTL = 60_000;
 
 // Which cards have their snapshot list open. A fold is a reading position,
@@ -52,6 +53,42 @@ const states = {
   stopped: "cn-badge-variant-destructive",
   pending: "cn-badge-variant-secondary",
 };
+
+const powerTitles = {
+  start: "Power the instance on",
+  reboot: "Power-cycle the instance — not the same as a reboot over SSH",
+  halt: "Stop the instance. It keeps its disk, its address and its bill.",
+};
+
+// The provider is the authority for whether a linked machine exists and is
+// powered. Cluster uses this same answer for its row headline, so an HTTP
+// service result can never disagree with the infrastructure page again.
+export function powerStatus(node) {
+  if (!node?.provider_instance_id) return { state: "unlinked", label: "not linked" };
+  const entry = facts.get(node.id);
+  if (!entry) return { state: "pending", label: "reading power…" };
+  if (entry.error) return { state: "unknown", label: "power unreadable" };
+  const state = entry.data?.instance?.power_status || "unknown";
+  return { state, label: state };
+}
+
+// The provider's power state is the authority for the switches too, not just
+// for the badge beside them. Apart from preventing no-op requests, this makes
+// the available action legible at a glance: a stopped box can only be started;
+// a running box can be restarted or stopped.
+function fillPowerControls(item, nodeID, power, unavailable) {
+  for (const control of qsa("[data-cloud-power]", item)) {
+    const action = control.dataset.cloudPower;
+    let reason = "";
+    if (powerChanges.has(nodeID)) reason = "A power change is in progress";
+    else if (unavailable) reason = unavailable;
+    else if (power === "running" && action === "start") reason = "This instance is already running";
+    else if (power === "stopped" && action !== "start") reason = "This instance is stopped";
+    else if (power !== "running" && power !== "stopped") reason = `Power state is ${power}`;
+    control.disabled = !!reason;
+    control.title = reason || powerTitles[action];
+  }
+}
 
 function bytes(value) {
   if (!value) return "0 B";
@@ -122,6 +159,8 @@ export function fillCloudCard(item, node) {
   const error = qs("[data-cloud-error]", item);
   const transfer = qs("[data-cloud-transfer]", item);
   const bar = qs("[data-cloud-transfer-bar]", item);
+  let power = "";
+  let powerUnavailable = "Reading power state…";
 
   if (!entry) {
     state.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${states.pending}`;
@@ -135,9 +174,11 @@ export function fillCloudCard(item, node) {
     meta.textContent = "";
     transfer.textContent = "";
     error.textContent = entry.error;
+    powerUnavailable = "Power state unavailable";
   } else {
     const instance = entry.data.instance || {};
-    const power = instance.power_status || "unknown";
+    power = instance.power_status || "unknown";
+    powerUnavailable = "";
     state.className = `cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap ${states[power] || states.pending}`;
     // The server status matters when it disagrees with the switch: an
     // instance can be "running" and still be installing, which is a
@@ -168,6 +209,8 @@ export function fillCloudCard(item, node) {
       transfer.textContent = entry.data.transfer_error ? "transfer unavailable" : "";
     }
   }
+
+  fillPowerControls(item, node.id, power, powerUnavailable);
 
   const open = openSnapshots.has(node.id);
   qs("[data-cloud-snapshots]", item).hidden = !open;
@@ -690,23 +733,39 @@ function cardError(card, message) {
 async function powerNode(nodeID, action, card) {
   const name = nameOf(card);
   const words = {
-    start: { title: `Start ${name}?`, body: "The instance powers on. It answers again once it has booted." },
-    reboot: { title: `Reboot ${name}?`, body: "This is a power-cycle at the provider, not a reboot over SSH. Anything running on the machine stops now." },
-    halt: { title: `Halt ${name}?`, body: "The instance stops. It keeps its disk, its address and its bill — and answers nothing until it is started again." },
+    start: { title: `Start ${name}?`, body: "The instance powers on. It answers again once it has booted.", confirm: "Yes, start" },
+    reboot: { title: `Reboot ${name}?`, body: "This is a power-cycle at the provider, not a reboot over SSH. Anything running on the machine stops now.", confirm: "Yes, reboot" },
+    halt: { title: `Stop ${name}?`, body: "The instance stops. It keeps its disk, its address and its bill — and answers nothing until it is started again.", confirm: "Yes, stop" },
   }[action];
-  if (!await ask({ ...words, confirm: `Yes, ${action}` })) return;
+  if (!await ask(words)) return;
+  powerChanges.add(nodeID);
+  redraw();
   try {
     await request("/api/cluster/provider/power", {
       method: "POST", headers: adminHeaders(),
       body: JSON.stringify({ node_id: nodeID, action }),
     });
     cardError(card, "");
-    // The provider takes a moment to agree that anything happened, so the
-    // strip is refetched rather than guessed at.
-    setTimeout(() => loadFacts(nodeID, true).catch(() => {}), 1500);
+    settlePower(nodeID, action);
   } catch (failure) {
+    powerChanges.delete(nodeID);
+    redraw();
     cardError(card, failure.message);
   }
+}
+
+// Power APIs acknowledge the request before the instance necessarily reaches
+// its new state. Keep the controls still and reread the provider for a short
+// settling window, instead of showing the old switches as actionable again.
+async function settlePower(nodeID, action) {
+  const expected = action === "halt" ? "stopped" : "running";
+  for (const delay of [1500, 3000, 5000]) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    const entry = await loadFacts(nodeID, true).catch(() => null);
+    if (entry?.data?.instance?.power_status === expected) break;
+  }
+  powerChanges.delete(nodeID);
+  redraw();
 }
 
 async function takeSnapshot(nodeID, card) {

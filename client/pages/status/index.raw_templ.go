@@ -179,7 +179,7 @@ func Page() templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if len(status.Services) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"rounded-xl border border-border bg-card p-8 text-center text-card-foreground\"><p class=\"text-sm text-muted-foreground\">Nothing is published yet. A machine appears here once it is marked public on its card in the dashboard.</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"rounded-xl border border-border bg-card p-8 text-center text-card-foreground\"><p class=\"text-sm text-muted-foreground\">Nothing is published yet. A service appears here once its check is published from the Checks page.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

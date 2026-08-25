@@ -1,0 +1,128 @@
+package components
+
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/axadrn/shadcn-templ/v2/components/field"
+	"github.com/axadrn/shadcn-templ/v2/components/input"
+	"github.com/hushkey-app/guard/client/ui"
+)
+
+// HealthCheckDialog is the one editor for adding and changing checks. Keeping
+// configuration behind a deliberate press lets the page itself stay a small
+// operational surface: state, target, uptime, then actions.
+//
+// The overlay follows Guard's native checkbox convention. No interactive
+// shadcn bundle is served, and putting modal state in JavaScript would make
+// cold render and client navigation two different implementations.
+templ HealthCheckDialog() {
+	<input id="check-dialog" type="checkbox" class="peer sr-only"/>
+	<div class="fixed inset-0 z-50 hidden place-items-center overflow-y-auto p-4 peer-checked:grid">
+		<label for="check-dialog" aria-label="Close" class="absolute inset-0 bg-black/70"></label>
+		<div role="dialog" aria-modal="true" aria-labelledby="check-dialog-title" class="relative z-10 w-full max-w-2xl rounded-2xl border border-border bg-card text-card-foreground shadow-2xl">
+			<div class="flex items-start justify-between gap-4 border-b border-border p-5">
+				<div>
+					<p class="text-xs font-semibold uppercase tracking-[.18em] text-primary">Health check</p>
+					<h2 id="check-dialog-title" data-check-dialog-title class="mt-1 text-lg font-semibold tracking-tight">Add a health check</h2>
+					<p class="mt-1 text-sm text-muted-foreground">Guard makes this request from the server, including to private addresses.</p>
+				</div>
+				<label for="check-dialog" aria-label="Close" class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground">
+					@ui.Icon("close", "size-4")
+				</label>
+			</div>
+			<form data-check-form class="space-y-5 p-5">
+				<div class="grid gap-4 sm:grid-cols-2">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "check-name"}) { Name }
+						@input.Input(input.Props{ID: "check-name", Required: true, Placeholder: "Guard API", Attributes: templ.Attributes{"data-check-field": "name", "maxlength": "80", "autocomplete": "off"}})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "check-interval"}) { Check every }
+						<div class="flex items-stretch">
+							@input.Input(input.Props{ID: "check-interval", Type: "number", Value: "3", Class: "rounded-r-none", Attributes: templ.Attributes{"data-check-field": "interval", "min": "1", "max": "3600"}})
+							<span class="grid shrink-0 place-items-center rounded-r-lg border border-l-0 border-input px-3 text-sm text-muted-foreground">seconds</span>
+						</div>
+					}
+					<div class="sm:col-span-2">
+						@field.Field() {
+							@field.Label(field.LabelProps{For: "check-url"}) { URL }
+							@input.Input(input.Props{ID: "check-url", Required: true, Type: "url", Placeholder: "https://api.example.com/health", Class: "font-mono", Attributes: templ.Attributes{"data-check-field": "url", "spellcheck": "false", "autocomplete": "off"}})
+						}
+					</div>
+				</div>
+
+				<!-- Optional and absent when there are no machines to choose. A
+				     service does not acquire a fake "cluster" label merely because
+				     the editor knows machines exist elsewhere. -->
+				<div data-check-machine-field hidden class="rounded-xl border border-border bg-muted/30 p-4">
+					<label class="grid gap-1.5 text-xs text-muted-foreground" for="check-machine">
+						Machine <span class="opacity-70">(optional)</span>
+						<select id="check-machine" data-check-field="node_id" class="cn-native-select h-9 w-full text-xs">
+							<option value="">Not attached to a machine</option>
+						</select>
+					</label>
+					<p class="mt-2 text-xs text-muted-foreground">Attach only when this URL belongs to one specific machine. Load balancers and shared services should stay unattached.</p>
+				</div>
+
+				<div class="grid gap-4 rounded-xl border border-border bg-muted/30 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+					<label class="grid gap-1.5 text-xs text-muted-foreground">Public name<input data-check-field="public_name" maxlength="80" autocomplete="off" placeholder="Defaults to the internal name" class="cn-input h-9 text-xs"/></label>
+					<label class="flex h-9 items-center gap-2 text-xs text-muted-foreground"><input data-check-field="public" type="checkbox" class="size-4 accent-primary"/> Publish on <code class="font-mono">/status</code></label>
+					<label class="flex h-9 items-center gap-2 text-xs text-muted-foreground"><input data-check-field="enabled" type="checkbox" checked class="size-4 accent-primary"/> Enabled</label>
+				</div>
+
+				<div class="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+					<p data-check-form-status class="text-sm text-muted-foreground empty:hidden"></p>
+					<div class="ml-auto flex items-center gap-2">
+						<label for="check-dialog" class="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground">Cancel</label>
+						@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm, Attributes: templ.Attributes{"data-check-submit": true}}) { Add check }
+					</div>
+				</div>
+			</form>
+		</div>
+	</div>
+}
+
+templ HealthCheckList() {
+	<div class="space-y-4">
+		<div data-check-rows class="grid gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
+		<div data-check-empty class="rounded-xl border border-dashed border-border p-8">@ui.Empty("No checks yet. Add a URL and Guard will probe it immediately.")</div>
+	</div>
+	@HealthCheckCard()
+}
+
+// HealthCheckCard is deliberately read-only and compact. Editing belongs in
+// the dialog; a card on an operational page should answer whether the service
+// is healthy without looking like a settings form.
+templ HealthCheckCard() {
+	<template data-check-row-template>
+		<article data-check-row class="flex min-w-0 flex-col rounded-xl border border-border bg-card p-4 text-card-foreground">
+			<div class="flex min-w-0 items-start gap-3">
+				<span data-check-dot class="mt-1.5 size-2.5 shrink-0 rounded-full"></span>
+				<div class="min-w-0 flex-1">
+					<div class="flex min-w-0 items-center gap-2">
+						<h3 data-check-title class="truncate text-sm font-medium"></h3>
+						<span data-check-badge class="cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap"></span>
+					</div>
+					<p data-check-url class="mt-1 truncate font-mono text-[.68rem] text-muted-foreground"></p>
+				</div>
+			</div>
+			<p data-check-error class="mt-2 truncate text-xs text-destructive empty:hidden"></p>
+			<div class="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3">
+				<div><p data-check-uptime class="font-mono text-sm tabular-nums">—</p><p class="text-[.65rem] text-muted-foreground">24h uptime</p></div>
+				<div class="text-right"><p data-check-latency class="font-mono text-sm tabular-nums">—</p><p data-check-checked class="text-[.65rem] text-muted-foreground">not checked</p></div>
+			</div>
+			<div data-check-machine hidden class="mt-3 items-center gap-1.5 text-xs text-muted-foreground">
+				@ui.Icon("cluster", "size-3.5")
+				<span data-check-machine-name class="truncate"></span>
+			</div>
+			<div data-check-strip class="mt-3 flex h-3 items-end gap-px" title="Last sixty checks"></div>
+			<div class="mt-auto flex items-center justify-between gap-2 pt-4">
+				<p data-check-note class="min-w-0 truncate text-xs text-muted-foreground"></p>
+				<div class="ml-auto flex shrink-0 items-center gap-1">
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeXs, Attributes: templ.Attributes{"data-check-run": true}}) { Check now }
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"data-check-edit": true, "aria-label": "Edit health check", "title": "Edit"}}) { @ui.Icon("pencil", "size-3.5") }
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Class: "text-muted-foreground hover:text-destructive", Attributes: templ.Attributes{"data-check-delete": true, "aria-label": "Delete health check", "title": "Delete"}}) { @ui.Icon("trash", "size-3.5") }
+				</div>
+			</div>
+		</article>
+	</template>
+}

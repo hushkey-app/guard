@@ -30,9 +30,8 @@ templ Head() {
 }
 
 templ Page() {
-	<section data-analytics-page class="space-y-8">
-		@ui.PageHeading("What people did", "Analytics",
-			"The URL is the group and an action is a column. Guard counts sessions — not users, not visitors, not people — and one row is one page of your product.")
+	<section data-analytics-page data-signal-page="analytics" class="space-y-6">
+		@ui.SignalHeading("What people did")
 		@analyticsOff()
 		@analyticsInstall()
 		@analyticsLive()
@@ -217,8 +216,9 @@ templ howToRelay() {
 // header row written here would be a second list of them to keep in step.
 templ analyticsLive() {
 	<div data-analytics-live hidden class="space-y-6">
-		@card.Card(card.Props{Size: card.SizeSm}) {
-			@card.Content() {
+		<div data-signal-toolbar>
+			@card.Card(card.Props{Size: card.SizeSm}) {
+				@card.Content() {
 				<div class="flex flex-wrap items-end justify-between gap-3">
 					<!-- No "all retained" here, unlike every other window in the
 					     dashboard: the strip's second half is the window of equal
@@ -250,8 +250,9 @@ templ analyticsLive() {
 						@AnalyticsHowTo("analytics-howto-live")
 					</div>
 				</div>
+				}
 			}
-		}
+		</div>
 		<div data-analytics-strip class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"></div>
 		@card.Card(card.Props{Class: "gap-0 py-0"}) {
 			<!-- The two controls sit on the grid they change rather than on a

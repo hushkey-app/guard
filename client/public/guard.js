@@ -4,10 +4,10 @@
 // The shared vocabulary lives in core.js, the panel renderers in charts.js, and
 // everything under /views in views.js. This file imports all three; none of
 // them imports this one, so the dependency runs one way.
-import { adminHeaders, bytes, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, since, svgNS, text, timeText } from "./core.js";
+import { adminHeaders, bytes, compact, duration, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, since, svgNS, text, timeText } from "./core.js";
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
-import { clusterNodes, refreshCluster, refreshMachine } from "./cluster.js";
+import { refreshCluster, refreshMachine } from "./cluster.js";
 import { refreshRegistries } from "./registries.js";
 import { refreshCloud } from "./cloud.js";
 import { refreshStorage } from "./storage.js";
@@ -18,22 +18,24 @@ import { refreshConfig } from "./config.js";
 import { refreshBackup } from "./backup.js";
 import { closeDeployStreams, refreshDeploys } from "./deploys.js";
 import { refreshAnalytics } from "./analytics.js";
+import { refreshHealthChecks } from "./checks.js";
 import { screenCleared } from "./store.js";
 
-// Which machines the signal pages are scoped to. Shared across logs, traces and
-// metrics, and remembered: "I am looking at the two web boxes" is a stance you
-// hold while moving between pages, not a per-page setting you re-enter.
-const clusterFilter = new Set(JSON.parse(localStorage.getItem("guard.cluster") || "[]"));
+// Machine-scoped signal queries were retired: service is the useful isolation
+// boundary, and resolving persisted node IDs through topology made an old
+// browser preference able to hide every event. Forget the retired key as well
+// as ignoring it, so it cannot return after a downgrade/upgrade cycle.
+try { localStorage.removeItem("guard.cluster"); } catch { /* storage may be disabled */ }
 
 // The one filter nobody types: an analytics path arrives in the URL and the
 // table narrows to the spans of the browser sessions that saw it. It is what
 // makes a rate on /analytics walkable — the ids stay in the database, the link
 // carries the path, and the store does the join.
 //
-// Read from the URL on every mount rather than held as a stance the way the
-// machine chips are, because it belongs to the link somebody followed: a
-// reload, a new tab, the Back button and a pasted address all land on the same
-// table, and walking anywhere else drops it without anybody having to say so.
+// Read from the URL on every mount because it belongs to the link somebody
+// followed: a reload, a new tab, the Back button and a pasted address all land
+// on the same table, and walking anywhere else drops it without anybody having
+// to say so.
 let linkedPath = "";
 
 function readLinkedFilter() {
@@ -67,37 +69,6 @@ function renderLinkedFilter() {
   }
 }
 
-async function renderClusterFilter() {
-  const hosts = qsa("[data-cluster-filter]");
-  if (!hosts.length) return;
-  const nodes = await clusterNodes();
-  for (const host of hosts) {
-    // No machines watched, no filter: a control that can only say "all" is a
-    // control that says nothing.
-    host.classList.toggle("hidden", nodes.length === 0);
-    host.classList.toggle("flex", nodes.length > 0);
-    if (!nodes.length) continue;
-
-    const label = el("span", `text-xs font-medium ${muted}`, "Machines");
-    const chips = nodes.map((node) => {
-      const on = clusterFilter.has(node.id);
-      const chip = el("button", `cn-badge inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap ${
-        on ? "border-primary/40 bg-primary/15 text-primary" : "cn-badge-variant-secondary"}`);
-      chip.type = "button";
-      chip.dataset.clusterChip = node.id;
-      chip.setAttribute("aria-pressed", String(on));
-      const dot = el("span", "size-1.5 shrink-0 rounded-full");
-      dot.style.background = node.status === "up" ? "var(--primary)" : node.status === "down" ? "var(--destructive)" : "var(--muted-foreground)";
-      chip.append(dot, text(node.name));
-      return chip;
-    });
-    const all = el("button", `text-xs underline-offset-2 hover:underline ${muted}`, "All machines");
-    all.type = "button";
-    all.dataset.clusterChip = "all";
-    host.replaceChildren(label, ...chips, ...(clusterFilter.size ? [all] : []));
-  }
-}
-
 const pageSize = 50;
 const signalPages = new Map([["logs", 0], ["traces", 0], ["metrics", 0]]);
 const signalRequests = new Map();
@@ -116,6 +87,317 @@ let renderGeneration = 0;
 let summarySignature = "";
 const signalSignatures = new Map();
 let metricsSignature = "";
+let latestMetricSeries = [];
+let signalListObserver;
+
+// Keep the event list inside the viewport even when the filter toolbar changes
+// height (the custom range adds a second row). The card then gives its spare
+// space to the table container, so the document stays still while rows scroll.
+function sizeSignalList() {
+  const list = qs("[data-signal-list]");
+  if (!list) return;
+  const pageTop = list.getBoundingClientRect().top + window.scrollY;
+  const pageGutter = window.innerWidth >= 1024 ? 32 : 16;
+  const available = window.innerHeight - pageTop - pageGutter;
+  list.style.setProperty("--signal-list-height", `${Math.max(288, available)}px`);
+}
+
+function mountSignalList() {
+  signalListObserver?.disconnect();
+  signalListObserver = undefined;
+  if (!qs("[data-signal-list]")) return;
+  requestAnimationFrame(sizeSignalList);
+  const toolbar = qs("[data-signal-toolbar]");
+  if (toolbar && "ResizeObserver" in window) {
+    signalListObserver = new ResizeObserver(() => requestAnimationFrame(sizeSignalList));
+    signalListObserver.observe(toolbar);
+  }
+}
+
+window.addEventListener("resize", sizeSignalList, { passive: true });
+
+const signalURLParams = ["range", "service", "severity", "name", "q", "group", "from", "to", "page", "nodes"];
+
+function signalRoot(signal) {
+  return qs(`[data-filter-signal="${signal}"]`);
+}
+
+function localDateTime(value) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function setFilterValue(root, name, value) {
+  const control = qs(`[data-filter="${name}"]`, root);
+  if (!control) return;
+  // Facets arrive after the first event request. Keep a linked service or
+  // metric selectable until the real option list arrives, so the very first
+  // request already matches the address somebody opened.
+  if (control.tagName === "SELECT" && value && ![...control.options].some((option) => option.value === value)) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    control.appendChild(option);
+  }
+  control.value = value;
+}
+
+function readSignalURLState(signal) {
+  const root = signalRoot(signal);
+  if (!root) return;
+  const params = new URLSearchParams(location.search);
+  const page = Number.parseInt(params.get("page") || "1", 10);
+  signalPages.set(signal, Number.isFinite(page) && page > 0 ? page - 1 : 0);
+  for (const name of ["service", "severity", "name", "group"]) setFilterValue(root, name, params.get(name) || "");
+  setFilterValue(root, "query", params.get("q") || "");
+  const range = params.get("range") || (params.has("from") || params.has("to") ? "custom" : "1h");
+  setFilterValue(root, "range", range);
+  setFilterValue(root, "from", localDateTime(params.get("from")));
+  setFilterValue(root, "to", localDateTime(params.get("to")));
+  qs("[data-custom-range]", root)?.classList.toggle("hidden", range !== "custom");
+}
+
+function syncSignalURL(signal) {
+  const root = signalRoot(signal);
+  if (!root) return;
+  const here = new URL(location.href);
+  for (const name of signalURLParams) here.searchParams.delete(name);
+  const value = (name) => qs(`[data-filter="${name}"]`, root)?.value || "";
+  here.searchParams.set("range", value("range") || "1h");
+  for (const name of ["service", "severity", "name", "group"]) if (value(name)) here.searchParams.set(name, value(name));
+  if (value("query")) here.searchParams.set("q", value("query"));
+  if (value("range") === "custom") {
+    for (const name of ["from", "to"]) {
+      const date = new Date(value(name));
+      if (value(name) && !Number.isNaN(date.getTime())) here.searchParams.set(name, date.toISOString());
+    }
+  }
+  const page = signalPages.get(signal) || 0;
+  if (page) here.searchParams.set("page", String(page + 1));
+  history.replaceState(history.state, "", here.pathname + here.search + here.hash);
+}
+
+// The overview is a personal board. Its layout is deliberately browser-local:
+// pinning a widget is a reading preference, not shared Guard configuration.
+// The twelve-column widths match saved Views so a panel has one spatial
+// language everywhere in the product.
+const dashboardLayoutKey = "guard.dashboard.layout.v1";
+let dashboardLayout = null;
+let dashboardDragging = null;
+let dashboardEditing = false;
+
+function dashboardFrames() { return qsa("[data-dashboard-widget]"); }
+
+function loadDashboardLayout() {
+  const frames = dashboardFrames();
+  if (!frames.length) return null;
+  const defaults = {
+    order: frames.map((frame) => frame.dataset.dashboardWidget),
+    pinned: Object.fromEntries(frames.map((frame) => [frame.dataset.dashboardWidget, frame.dataset.widgetDefaultPinned === "true"])),
+    widths: Object.fromEntries(frames.map((frame) => [frame.dataset.dashboardWidget, Number(frame.dataset.widgetWidth)])),
+    service: "",
+  };
+  try {
+    const stored = JSON.parse(localStorage.getItem(dashboardLayoutKey) || "null");
+    if (stored) {
+      const known = new Set(defaults.order);
+      defaults.order = [...(stored.order || []).filter((key) => known.has(key)), ...defaults.order.filter((key) => !(stored.order || []).includes(key))];
+      defaults.pinned = { ...defaults.pinned, ...(stored.pinned || {}) };
+      defaults.widths = { ...defaults.widths, ...(stored.widths || {}) };
+      defaults.service = stored.service || "";
+    }
+  } catch { /* an old or disabled localStorage means the default board */ }
+  dashboardLayout = defaults;
+  return defaults;
+}
+
+function saveDashboardLayout() {
+  if (!dashboardLayout) return;
+  try { localStorage.setItem(dashboardLayoutKey, JSON.stringify(dashboardLayout)); } catch { /* the board still works for this visit */ }
+}
+
+function applyDashboardLayout() {
+  const grid = qs("[data-widget-grid]");
+  if (!grid) return;
+  const layout = loadDashboardLayout();
+  const byKey = new Map(dashboardFrames().map((frame) => [frame.dataset.dashboardWidget, frame]));
+  for (const key of layout.order) {
+    const frame = byKey.get(key);
+    if (!frame) continue;
+    const sizes = (frame.dataset.widgetSizes || "12").split(",").map(Number);
+    const width = sizes.includes(Number(layout.widths[key])) ? Number(layout.widths[key]) : sizes[0];
+    layout.widths[key] = width;
+    frame.hidden = !layout.pinned[key];
+    frame.style.setProperty("--widget-span", String(width));
+    qs("[data-widget-size]", frame).textContent = String(width);
+    grid.appendChild(frame);
+  }
+  for (const row of qsa("[data-widget-catalogue]")) {
+    const key = row.dataset.widgetCatalogue;
+    const pinned = Boolean(layout.pinned[key]);
+    const button = qs("[data-widget-pin]", row);
+    button.setAttribute("aria-pressed", String(pinned));
+    qs("[data-widget-pin-label]", button).textContent = pinned ? "Unpin" : "Pin";
+    qs("[data-widget-catalogue-size]", row).textContent = `${layout.widths[key]}/12`;
+  }
+  const service = qs("[data-widget-log-service]");
+  if (service) service.value = layout.service;
+  grid.classList.toggle("dashboard-editing", dashboardEditing);
+  for (const frame of dashboardFrames()) {
+    frame.draggable = dashboardEditing;
+    frame.tabIndex = dashboardEditing && !frame.hidden ? 0 : -1;
+    if (dashboardEditing) frame.setAttribute("aria-label", `Move ${frame.dataset.dashboardWidget} widget. Use arrow keys to reorder.`);
+    else frame.removeAttribute("aria-label");
+  }
+  const edit = qs("[data-dashboard-edit]");
+  if (edit) {
+    edit.setAttribute("aria-pressed", String(dashboardEditing));
+    qs("[data-dashboard-edit-label]", edit).textContent = dashboardEditing ? "Done" : "Edit";
+  }
+}
+
+function setDashboardEditing(editing) {
+  dashboardEditing = editing;
+  applyDashboardLayout();
+}
+
+function dashboardWidgetPinned(key) {
+  const frame = qs(`[data-dashboard-widget="${key}"]`);
+  return Boolean(frame && !frame.hidden);
+}
+
+function setDashboardPinned(key, pinned) {
+  if (!dashboardLayout) loadDashboardLayout();
+  dashboardLayout.pinned[key] = pinned;
+  saveDashboardLayout();
+  applyDashboardLayout();
+}
+
+function resizeDashboardWidget(frame) {
+  if (!dashboardLayout) return;
+  const key = frame.dataset.dashboardWidget;
+  const sizes = frame.dataset.widgetSizes.split(",").map(Number);
+  const current = Number(dashboardLayout.widths[key]);
+  dashboardLayout.widths[key] = sizes[(Math.max(0, sizes.indexOf(current)) + 1) % sizes.length];
+  saveDashboardLayout();
+  applyDashboardLayout();
+}
+
+function saveDashboardOrder() {
+  if (!dashboardLayout) return;
+  dashboardLayout.order = dashboardFrames().map((frame) => frame.dataset.dashboardWidget);
+  saveDashboardLayout();
+}
+
+// Metrics uses the same twelve-column, browser-local board language as Home,
+// but its catalogue is discovered from OTLP rather than compiled into markup.
+// Keeping a separate key means rearranging runtime instruments cannot move the
+// health and cluster widgets on the overview.
+const metricLayoutKey = "guard.metrics.layout.v1";
+let metricLayout = null;
+let metricDragging = null;
+let metricEditing = false;
+
+function metricFrames() { return qsa("[data-metric-widget]"); }
+
+function defaultMetricPinned(item, index) {
+  const useful = /(?:heap\.(?:size|used|limit)|gc\.duration|active_requests|request\.duration|cpu\.utilization|memory\.usage|memory\.utilization)$/i;
+  return useful.test(item.key) || index < 6;
+}
+
+function loadMetricLayout(series = latestMetricSeries) {
+  const defaults = {
+    order: series.map((item) => item.key),
+    pinned: Object.fromEntries(series.map((item, index) => [item.key, defaultMetricPinned(item, index)])),
+    widths: Object.fromEntries(series.map((item) => [item.key, 4])),
+  };
+  try {
+    const stored = JSON.parse(localStorage.getItem(metricLayoutKey) || "null");
+    if (stored) {
+      const known = new Set(defaults.order);
+      defaults.order = [...(stored.order || []).filter((key) => known.has(key)), ...defaults.order.filter((key) => !(stored.order || []).includes(key))];
+      defaults.pinned = { ...defaults.pinned, ...(stored.pinned || {}) };
+      defaults.widths = { ...defaults.widths, ...(stored.widths || {}) };
+    }
+  } catch { /* the received instruments still get a useful default board */ }
+  metricLayout = defaults;
+  return defaults;
+}
+
+function saveMetricLayout() {
+  if (!metricLayout) return;
+  try { localStorage.setItem(metricLayoutKey, JSON.stringify(metricLayout)); } catch { /* local preference only */ }
+}
+
+function applyMetricLayout() {
+  const grid = qs("[data-metric-widget-grid]");
+  if (!grid || !metricLayout) return;
+  const byKey = new Map(metricFrames().map((frame) => [frame.dataset.metricWidget, frame]));
+  for (const key of metricLayout.order) {
+    const frame = byKey.get(key);
+    if (!frame) continue;
+    const sizes = (frame.dataset.widgetSizes || "4,6,8,12").split(",").map(Number);
+    const width = sizes.includes(Number(metricLayout.widths[key])) ? Number(metricLayout.widths[key]) : sizes[0];
+    metricLayout.widths[key] = width;
+    frame.hidden = !metricLayout.pinned[key];
+    frame.style.setProperty("--widget-span", String(width));
+    qs("[data-widget-size]", frame).textContent = String(width);
+    grid.appendChild(frame);
+  }
+  for (const row of qsa("[data-metric-catalogue-item]")) {
+    const key = row.dataset.metricCatalogueItem;
+    const pinned = Boolean(metricLayout.pinned[key]);
+    const button = qs("[data-metric-widget-pin]", row);
+    button.setAttribute("aria-pressed", String(pinned));
+    qs("[data-metric-widget-pin-label]", button).textContent = pinned ? "Unpin" : "Pin";
+    qs("[data-metric-catalogue-size]", row).textContent = `${metricLayout.widths[key]}/12`;
+  }
+  grid.classList.toggle("dashboard-editing", metricEditing);
+  for (const frame of metricFrames()) {
+    frame.draggable = metricEditing;
+    frame.tabIndex = metricEditing && !frame.hidden ? 0 : -1;
+    if (metricEditing) frame.setAttribute("aria-label", `Move ${humanMetricName(frame.dataset.metricWidget)} card. Use arrow keys to reorder.`);
+    else frame.removeAttribute("aria-label");
+  }
+  const edit = qs("[data-metric-dashboard-edit]");
+  if (edit) {
+    edit.setAttribute("aria-pressed", String(metricEditing));
+    qs("[data-metric-dashboard-edit-label]", edit).textContent = metricEditing ? "Done" : "Edit";
+  }
+  const empty = qs("[data-metric-board-empty]");
+  if (empty) empty.hidden = metricFrames().some((frame) => !frame.hidden);
+}
+
+function setMetricEditing(editing) {
+  metricEditing = editing;
+  if (!editing && latestMetricSeries.length) renderMetricCards(latestMetricSeries);
+  else applyMetricLayout();
+}
+
+function setMetricPinned(key, pinned) {
+  if (!metricLayout) loadMetricLayout();
+  metricLayout.pinned[key] = pinned;
+  saveMetricLayout();
+  applyMetricLayout();
+}
+
+function resizeMetricWidget(frame) {
+  if (!metricLayout) return;
+  const key = frame.dataset.metricWidget;
+  const sizes = frame.dataset.widgetSizes.split(",").map(Number);
+  const current = Number(metricLayout.widths[key]);
+  metricLayout.widths[key] = sizes[(Math.max(0, sizes.indexOf(current)) + 1) % sizes.length];
+  saveMetricLayout();
+  applyMetricLayout();
+}
+
+function saveMetricOrder() {
+  if (!metricLayout) return;
+  metricLayout.order = metricFrames().map((frame) => frame.dataset.metricWidget);
+  saveMetricLayout();
+}
 
 function setStat(name, value) {
   for (const node of qsa(`[data-stat="${name}"]`)) node.textContent = number.format(value ?? 0);
@@ -155,6 +437,8 @@ function eventText(event) { return event.message || (event.value !== undefined ?
 const tones = {
   neutral: "cn-badge-variant-secondary",
   error: "cn-badge-variant-destructive",
+  debug: "border-violet-400/40 bg-violet-400/15 text-violet-300",
+  info: "border-blue-400/40 bg-blue-400/15 text-blue-300",
   warning: "border-warning/40 bg-warning/15 text-warning",
   ok: "border-primary/40 bg-primary/15 text-primary",
   trace: "border-chart-3/40 bg-chart-3/15 text-chart-3",
@@ -168,6 +452,14 @@ function badge(value, tone = tones.neutral) {
   return node;
 }
 
+function logTone(severity = "INFO") {
+  if (/error|fatal/i.test(severity)) return tones.error;
+  if (/warn/i.test(severity)) return tones.warning;
+  if (/debug|trace/i.test(severity)) return tones.debug;
+  if (/info/i.test(severity)) return tones.info;
+  return tones.neutral;
+}
+
 function emptyRow(body, columns, message) {
   const row = document.createElement("tr");
   const cell = td(message, `py-12 text-center ${muted}`);
@@ -179,16 +471,28 @@ function emptyRow(body, columns, message) {
 function renderLogs(events) {
   const body = qs("[data-log-rows]");
   if (!body) return;
-  if (!events.length) return emptyRow(body, 5, "No logs match this view.");
+  if (!events.length) return emptyRow(body, 4, "No logs match this view.");
   body.replaceChildren(...events.map((event) => {
     const row = eventRow(event);
+    row.dataset.logRow = "true";
+    row.dataset.traceId = event.trace_id || "";
+    row.dataset.severity = (event.severity || "INFO").toUpperCase();
+    if (!event.trace_id) {
+      row.classList.remove("cursor-pointer");
+      row.removeAttribute("tabindex");
+    }
     const severity = document.createElement("td");
     severity.className = cellBase;
-    severity.appendChild(badge(event.severity || "INFO", /error|fatal/i.test(event.severity || "") ? tones.error : /warn/i.test(event.severity || "") ? tones.warning : tones.neutral));
+    severity.appendChild(badge(event.severity || "INFO", logTone(event.severity)));
     row.append(td(timeText(event.timestamp), `whitespace-nowrap font-mono text-xs ${muted}`), severity,
-      td(event.service, "font-medium"), td(event.message || "—", "max-w-xl truncate"), td(shortID(event.trace_id), `font-mono text-[.65rem] ${muted}`));
+      td(event.service, "font-medium"), td(event.message || "—", "max-w-xl truncate"));
     return row;
   }));
+  if (expandedLog) {
+    const row = qsa("[data-event-id]", body).find((candidate) => candidate.dataset.eventId === expandedLog.eventID);
+    if (row) renderLogInline(row, expandedLog);
+    else expandedLog = null;
+  }
 }
 
 function renderTraces(events) {
@@ -197,6 +501,7 @@ function renderTraces(events) {
   if (!events.length) return emptyRow(body, 7, "No spans match this view.");
   body.replaceChildren(...events.map((event) => {
     const row = eventRow(event);
+    row.dataset.traceId = event.trace_id;
     const status = document.createElement("td");
     status.className = cellBase;
     status.appendChild(badge((event.severity || "OK").toLowerCase(), /error/i.test(event.severity || "") ? tones.error : tones.ok));
@@ -205,6 +510,11 @@ function renderTraces(events) {
       td(`${number.format(event.duration_ms || 0)} ms`, "whitespace-nowrap font-mono text-xs"), td(shortID(event.trace_id), `font-mono text-[.65rem] ${muted}`));
     return row;
   }));
+  if (expandedTrace) {
+    const row = qsa("[data-event-id]", body).find((candidate) => candidate.dataset.eventId === expandedTrace.eventID);
+    if (row) renderTraceInline(row, expandedTrace.trace);
+    else expandedTrace = null;
+  }
 }
 
 function renderMetricRows(events) {
@@ -255,15 +565,67 @@ function renderInstances(instances) {
   }));
 }
 
+function renderDashboardServiceOptions(instances) {
+  const select = qs("[data-widget-log-service]");
+  if (!select) return;
+  const services = [...new Set((instances || []).map((instance) => instance.service).filter(Boolean))].sort();
+  const wanted = dashboardLayout?.service || select.value;
+  const all = el("option", "", "All services"); all.value = "";
+  const options = services.map((service) => { const option = el("option", "", service); option.value = service; return option; });
+  select.replaceChildren(all, ...options);
+  select.value = services.includes(wanted) ? wanted : "";
+  if (dashboardLayout && select.value !== wanted) dashboardLayout.service = "";
+}
+
+async function refreshDashboardLogs() {
+  const host = qs("[data-widget-log-rows]");
+  if (!host || !dashboardWidgetPinned("service-logs")) return;
+  const service = qs("[data-widget-log-service]")?.value || "";
+  const params = new URLSearchParams({ signal: "logs", limit: "6" });
+  if (service) params.set("service", service);
+  const events = await request(`/api/events?${params}`);
+  if (!events.length) {
+    host.replaceChildren(el("p", `p-5 text-sm ${muted}`, service ? `No retained logs from ${service}.` : "No retained logs yet."));
+  } else {
+    host.replaceChildren(...events.slice(0, 6).map((event) => {
+      const row = el("button", "grid w-full grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-4 py-3 text-left hover:bg-accent/50");
+      row.type = "button"; row.dataset.eventId = event.id;
+      row.append(el("span", `font-mono text-[.65rem] ${muted}`, timeText(event.timestamp)), el("span", "truncate text-xs font-medium", event.service || "unknown"));
+      const message = el("span", "col-span-2 truncate text-sm", event.message || "log record");
+      row.append(message);
+      return row;
+    }));
+  }
+  const link = qs("[data-widget-log-link]");
+  if (link) link.href = service ? `/logs?service=${encodeURIComponent(service)}` : "/logs";
+}
+
+async function refreshDashboardViews() {
+  const host = qs("[data-widget-view-list]");
+  if (!host || !dashboardWidgetPinned("views")) return;
+  const views = await request("/api/views");
+  if (!views.length) {
+    host.replaceChildren(el("p", `p-5 text-sm ${muted}`, "No saved views yet."));
+    return;
+  }
+  host.replaceChildren(...views.slice(0, 6).map((view) => {
+    const row = el("a", "flex items-center gap-3 px-4 py-3 hover:bg-accent/50");
+    row.href = "/views";
+    const copy = el("span", "min-w-0 flex-1");
+    copy.append(el("span", "block truncate text-sm font-medium", view.name), el("span", `block truncate text-xs ${muted}`, view.description || `${view.panel} · ${view.query?.signal || "telemetry"}`));
+    row.append(copy, el("span", `shrink-0 font-mono text-[.65rem] ${muted}`, `${view.width || 12}/12`));
+    return row;
+  }));
+}
+
 function filterParams(signal, paginate = false) {
-  const root = qs(`[data-filter-signal="${signal}"]`);
+  const root = signalRoot(signal);
   const params = new URLSearchParams({ signal, limit: paginate ? String(pageSize + 1) : signal === "metrics" ? "500" : "250" });
   if (paginate) params.set("offset", String((signalPages.get(signal) || 0) * pageSize));
   if (!root) return params;
   const value = (name) => qs(`[data-filter="${name}"]`, root)?.value || "";
   for (const name of ["service", "severity", "name"]) if (value(name)) params.set(name, value(name));
   if (value("query")) params.set("q", value("query"));
-  if (clusterFilter.size) params.set("nodes", [...clusterFilter].join(","));
   if (linkedPath) params.set("rum_path", linkedPath);
   const range = value("range");
   const durations = { "15m": 15 * 60e3, "1h": 3600e3, "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 86400e3 };
@@ -283,12 +645,18 @@ async function refreshSummary() {
     summarySignature = signature;
     setStat("logs", data.logs); setStat("errors", data.errors); setStat("spans", data.spans); setStat("metrics", data.metrics); setStat("instances", data.instances?.length);
     renderInstances(data.instances || []); renderOverview(data.recent || []);
+    renderDashboardServiceOptions(data.instances || []);
+    await refreshDashboardLogs();
     updateLiveControl();
   } catch { updateLiveControl("reconnecting"); }
 }
 
 async function refreshSignal(signal) {
 	if (!qs(`[data-filter-signal="${signal}"]`)) return;
+	// Metrics is a card board now. Its series endpoint contains the points and
+	// instrument metadata the cards need; fetching the old raw table page as
+	// well only transferred fifty records nobody could see.
+	if (signal === "metrics" && !qs("[data-metric-rows]")) return;
   const requestID = (signalRequests.get(signal) || 0) + 1;
   signalRequests.set(signal, requestID);
   const params = filterParams(signal, true);
@@ -297,6 +665,7 @@ async function refreshSignal(signal) {
   const page = signalPages.get(signal) || 0;
   if (!events.length && page > 0) {
     signalPages.set(signal, page - 1);
+    syncSignalURL(signal);
     return refreshSignal(signal);
   }
   const hasNext = events.length > pageSize;
@@ -327,7 +696,9 @@ function updateSelect(select, values, label) {
   if (!select) return;
   const current = select.value;
   const initial = document.createElement("option"); initial.value = ""; initial.textContent = label;
-  select.replaceChildren(initial, ...values.map((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value; return option; }));
+  const options = [...values];
+  if (current && !options.includes(current)) options.push(current);
+  select.replaceChildren(initial, ...options.map((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value; return option; }));
   select.value = current;
 }
 
@@ -369,7 +740,8 @@ async function refreshMetrics() {
   }).join(",")}`;
   if (signature === metricsSignature) return;
   metricsSignature = signature;
-  renderChart(series); renderMetricCards(series);
+  latestMetricSeries = series;
+  if (!metricEditing) renderMetricCards(series);
 }
 
 function renderChart(series) {
@@ -402,16 +774,248 @@ function renderChart(series) {
   const legend = qs("[data-metric-legend]"); legend.replaceChildren(...shown.map((item, index) => { const node = document.createElement("span"); node.className = `inline-flex items-center gap-2 text-xs ${muted}`; const dot = document.createElement("span"); dot.className = "size-2 rounded-full"; dot.style.background = palette[index]; node.append(dot, text(item.key)); return node; }));
 }
 
+const metricNames = new Map([
+  ["http.server.active_requests", "Active requests"],
+  ["http.server.request.body.size", "Request body size"],
+  ["http.server.request.duration", "Request duration"],
+  ["http.server.response.body.size", "Response body size"],
+  ["v8js.gc.duration", "Garbage collection"],
+  ["v8js.memory.heap.limit", "Heap limit"],
+  ["v8js.memory.heap.size", "Heap in use"],
+  ["v8js.memory.heap.used", "Heap in use"],
+  ["v8js.memory.space.available_size", "Heap space available"],
+  ["v8js.memory.heap.space.available_size", "Heap space available"],
+  ["v8js.memory.space.physical_size", "Heap physical memory"],
+  ["v8js.memory.heap.space.physical_size", "Heap physical memory"],
+  ["process.cpu.utilization", "Process CPU"],
+  ["process.memory.usage", "Process memory"],
+  ["system.cpu.utilization", "System CPU"],
+  ["system.memory.usage", "System memory"],
+  ["container.cpu.utilization", "Container CPU"],
+  ["container.memory.usage", "Container memory"],
+  ["db.client.operation.duration", "Database operation duration"],
+]);
+
+function humanMetricName(key) {
+  if (metricNames.has(key)) return metricNames.get(key);
+  const acronyms = new Map([["cpu", "CPU"], ["gc", "GC"], ["http", "HTTP"], ["https", "HTTPS"], ["db", "Database"], ["dns", "DNS"], ["io", "I/O"], ["jvm", "JVM"], ["v8js", "V8"]]);
+  return key.split(/[._-]+/).filter(Boolean).map((part, index) => {
+    const lower = part.toLowerCase();
+    if (acronyms.has(lower)) return acronyms.get(lower);
+    return index ? lower : lower.charAt(0).toUpperCase() + lower.slice(1);
+  }).join(" ");
+}
+
+function metricCategory(key) {
+  if (/^(?:postgresql|redis|mysql|mongodb|db)\./i.test(key)) return "Database";
+  if (/^(?:container|docker|k8s)\./i.test(key)) return "Container";
+  if (/^(?:system|host)\./i.test(key)) return "System";
+  if (/^process\./i.test(key)) return "Process";
+  if (/^(?:v8js|nodejs|jvm|go|dotnet|cpython)\./i.test(key)) return "Runtime";
+  if (/^http\./i.test(key)) return "HTTP";
+  return "Application";
+}
+
+function metricDescription(item) {
+  if (/gc\.duration$/i.test(item.key)) return "Latest GC pause · spikes show collection work";
+  if (/heap\.(?:size|used)$/i.test(item.key)) return "Drops show memory reclaimed by garbage collection";
+  if (/\.utilization$/i.test(item.key)) return "Latest utilization";
+  if (/\.duration$/i.test(item.key)) return item.type?.includes("histogram") ? "Average in the latest collection" : "Latest duration";
+  if (/memory.*(?:usage|size)$/i.test(item.key)) return "Latest memory measurement";
+  return `Latest ${item.type || "measurement"}`;
+}
+
+function metricPointValue(item, point) {
+  if (/histogram|summary/i.test(item.type || "") && point.count) return point.value / point.count;
+  return point.value;
+}
+
+function formatBytes(value) {
+  if (!Number.isFinite(value)) return "—";
+  if (value === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let size = Math.abs(value), index = 0;
+  while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; }
+  const shown = size >= 100 ? Math.round(size) : size >= 10 ? Number(size.toFixed(1)) : Number(size.toFixed(2));
+  return `${value < 0 ? "−" : ""}${shown} ${units[index]}`;
+}
+
+function formatMetricValue(value, unit = "", key = "") {
+  if (!Number.isFinite(value)) return "—";
+  const normalized = unit.trim().toLowerCase();
+  if (normalized === "by" || normalized === "byte" || normalized === "bytes") return formatBytes(value);
+  if (normalized === "s") return duration(value * 1000);
+  if (normalized === "ms") return duration(value);
+  if ((normalized === "1" || normalized === "%") && /(?:utilization|ratio|percent|usage)$/i.test(key)) {
+    const percent = normalized === "%" || Math.abs(value) > 1 ? value : value * 100;
+    return `${compact(percent)}%`;
+  }
+  const annotated = /^\{(.+)\}$/.exec(unit);
+  if (annotated) return `${compact(value)} ${annotated[1].replaceAll("_", " ")}`;
+  return unit ? `${compact(value)} ${unit}` : compact(value);
+}
+
+function metricPoints(item) {
+  const points = (item.points || []).map((point) => ({ ...point, displayValue: metricPointValue(item, point) })).filter((point) => Number.isFinite(point.displayValue));
+  // V8 reports one gauge per heap space at the same collection timestamp.
+  // Guard's card is the whole heap, so add those dimensions before choosing a
+  // latest value; otherwise the answer is whichever space SQLite returned
+  // last (often 0 B or a few hundred KB) instead of memory in use.
+  if (/^v8js\.memory\./i.test(item.key) && /^(?:by|bytes?)$/i.test(item.unit || "")) {
+    const grouped = new Map();
+    for (const point of points) {
+      const timestamp = point.timestamp;
+      const existing = grouped.get(timestamp);
+      if (existing) existing.displayValue += point.displayValue;
+      else grouped.set(timestamp, { ...point });
+    }
+    return [...grouped.values()];
+  }
+  return points;
+}
+
+function sampledMetricPoints(points, limit = 240) {
+  if (points.length <= limit) return points;
+  const sampled = [];
+  for (let i = 0; i < limit; i++) sampled.push(points[Math.round(i * (points.length - 1) / (limit - 1))]);
+  return sampled;
+}
+
+function metricSparkline(item, points) {
+  const plot = el("div", "relative mt-3 h-20 select-none");
+  plot.dataset.metricPlot = "true";
+  plot.tabIndex = 0;
+  plot.setAttribute("role", "img");
+  plot.setAttribute("aria-label", `${humanMetricName(item.key)} over time. Use the arrow keys for exact readings.`);
+  const shown = sampledMetricPoints(points);
+  plot._metricPoints = shown;
+  plot._metricItem = item;
+
+  const width = 640, height = 80, pad = 4;
+  let min = Math.min(...shown.map((point) => point.displayValue));
+  let max = Math.max(...shown.map((point) => point.displayValue));
+  if (min === max) { const spread = Math.abs(min || 1) * .08; min -= spread; max += spread; }
+  const x = (index) => pad + index * (width - pad * 2) / Math.max(shown.length - 1, 1);
+  const y = (value) => pad + (1 - (value - min) / (max - min)) * (height - pad * 2);
+  const coordinates = shown.map((point, index) => `${x(index)},${y(point.displayValue)}`);
+  const chart = document.createElementNS(svgNS, "svg");
+  chart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  chart.setAttribute("class", "h-20 w-full overflow-visible");
+  chart.setAttribute("aria-hidden", "true");
+  const area = document.createElementNS(svgNS, "path");
+  area.setAttribute("d", `M${coordinates.join(" L")} L${x(shown.length - 1)},${height} L${x(0)},${height} Z`);
+  area.setAttribute("class", "fill-primary/10");
+  const line = document.createElementNS(svgNS, "polyline");
+  line.setAttribute("points", coordinates.join(" "));
+  line.setAttribute("fill", "none"); line.setAttribute("stroke", "currentColor"); line.setAttribute("stroke-width", "2.5");
+  line.setAttribute("stroke-linecap", "round"); line.setAttribute("stroke-linejoin", "round"); line.setAttribute("class", "text-primary");
+  const marker = document.createElementNS(svgNS, "line");
+  marker.dataset.metricMarker = "true"; marker.setAttribute("y1", "0"); marker.setAttribute("y2", String(height));
+  marker.setAttribute("class", "hidden stroke-foreground/40"); marker.setAttribute("stroke-width", "1");
+  const dot = document.createElementNS(svgNS, "circle");
+  dot.dataset.metricMarkerDot = "true"; dot.setAttribute("r", "4"); dot.setAttribute("class", "hidden fill-primary stroke-background"); dot.setAttribute("stroke-width", "2");
+  chart.append(area, line, marker, dot);
+
+  const tooltip = el("div", "pointer-events-none absolute top-0 z-10 hidden -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-2 shadow-xl");
+  tooltip.dataset.metricTooltip = "true";
+  tooltip.append(el("p", "whitespace-nowrap text-sm font-semibold tabular-nums"), el("p", `mt-0.5 whitespace-nowrap text-[.65rem] ${muted}`));
+  plot.append(chart, tooltip);
+  return plot;
+}
+
+function metricCard(item) {
+  const points = metricPoints(item);
+  const frame = el("article", "group/widget relative min-w-0");
+  frame.dataset.metricWidget = item.key;
+  frame.dataset.widgetFrame = "true";
+  frame.dataset.widgetSizes = "4,6,8,12";
+  frame.style.setProperty("--widget-span", "4");
+
+  const editBadge = el("div", "absolute -left-2 -top-3 z-20 hidden items-center gap-2 rounded-full border border-border bg-popover px-3 py-1.5 text-xs font-medium shadow-lg");
+  editBadge.dataset.widgetEditBadge = "true";
+  editBadge.append(el("span", "size-2 rounded-full bg-primary"), text(humanMetricName(item.key)));
+  const controls = el("div", "absolute -right-2 -top-3 z-20 hidden items-center gap-1"); controls.dataset.widgetEditControls = "true";
+  const resize = el("button", "rounded-full border border-border bg-popover px-2.5 py-1.5 font-mono text-[.65rem] text-muted-foreground shadow-lg hover:text-foreground");
+  resize.type = "button"; resize.dataset.metricWidgetResize = "true"; resize.setAttribute("aria-label", `Resize ${humanMetricName(item.key)} card`);
+  resize.append(el("span", "", "4"), text("/12")); resize.firstElementChild.dataset.widgetSize = "true";
+  const remove = el("button", "grid size-8 place-items-center rounded-full border border-border bg-popover text-muted-foreground shadow-lg hover:bg-destructive hover:text-white", "×");
+  remove.type = "button"; remove.dataset.metricWidgetRemove = "true"; remove.setAttribute("aria-label", `Remove ${humanMetricName(item.key)} card`);
+  controls.append(resize, remove);
+
+  const card = el("div", "h-full overflow-hidden rounded-xl bg-card text-card-foreground ring-1 ring-foreground/10");
+  const content = el("div", "p-4");
+  const heading = el("div", "flex items-start justify-between gap-4");
+  const names = el("div", "min-w-0");
+  names.append(el("p", "truncate text-sm font-semibold", humanMetricName(item.key)), el("p", `mt-0.5 truncate font-mono text-[.65rem] ${muted}`, item.key));
+  heading.append(names, el("span", "cn-badge shrink-0 border-transparent bg-primary/10 text-primary", metricCategory(item.key)));
+  content.append(heading);
+  if (!points.length) content.append(el("p", `mt-5 text-sm ${muted}`, "No points in this window."));
+  else {
+    const values = points.map((point) => point.displayValue);
+    const latest = points.at(-1);
+    const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+    content.append(el("p", "mt-3 text-2xl font-semibold tracking-tight tabular-nums", formatMetricValue(latest.displayValue, item.unit, item.key)));
+    content.append(el("p", `mt-0.5 text-xs ${muted}`, metricDescription(item)));
+    content.append(metricSparkline(item, points));
+    const stats = el("dl", "mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3");
+    for (const [label, value] of [["Average", avg], ["Low", Math.min(...values)], ["High", Math.max(...values)]]) {
+      const stat = el("div", "min-w-0");
+      stat.append(el("dt", `text-[.65rem] uppercase tracking-wider ${muted}`, label), el("dd", "mt-0.5 truncate text-xs font-medium tabular-nums", formatMetricValue(value, item.unit, item.key)));
+      stats.append(stat);
+    }
+    content.append(stats);
+  }
+  card.append(content); frame.append(editBadge, controls, card); return frame;
+}
+
+function metricCatalogueItem(item) {
+  const row = el("div", "flex items-center gap-3 rounded-xl border border-border p-3");
+  row.dataset.metricCatalogueItem = item.key;
+  row.append(el("span", "grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-xs font-semibold text-primary", metricCategory(item.key).slice(0, 2).toUpperCase()));
+  const copy = el("div", "min-w-0 flex-1");
+  copy.append(el("p", "truncate text-sm font-medium", humanMetricName(item.key)), el("p", `mt-0.5 truncate font-mono text-[.65rem] ${muted}`, item.key));
+  const size = el("span", `shrink-0 font-mono text-[.65rem] ${muted}`, "4/12"); size.dataset.metricCatalogueSize = "true";
+  const button = el("button", "cn-button inline-flex shrink-0 items-center justify-center whitespace-nowrap cn-button-variant-outline cn-button-size-sm");
+  button.type = "button"; button.dataset.metricWidgetPin = item.key; button.append(el("span", "", "Pin")); button.firstElementChild.dataset.metricWidgetPinLabel = "true";
+  row.append(copy, size, button); return row;
+}
+
 function renderMetricCards(series) {
-  const host = qs("[data-metric-summary]"); if (!host) return;
-  host.replaceChildren(...series.slice(0, 12).map((item) => {
-    const values = item.points.map((p) => p.value); const latest = values.at(-1) ?? 0; const avg = values.reduce((a, b) => a + b, 0) / Math.max(values.length, 1);
-    const card = document.createElement("article"); card.className = "rounded-xl bg-card p-4 text-card-foreground ring-1 ring-foreground/10";
-    const title = document.createElement("p"); title.className = `truncate font-mono text-xs ${muted}`; title.appendChild(text(item.key));
-    const value = document.createElement("p"); value.className = "mt-3 text-2xl font-semibold tabular-nums"; value.appendChild(text(`${number.format(latest)}${item.unit ? ` ${item.unit}` : ""}`));
-    const meta = document.createElement("p"); meta.className = `mt-2 text-xs ${muted}`; meta.appendChild(text(`${item.type || "number"} · avg ${number.format(avg)} · min ${number.format(Math.min(...values))} · max ${number.format(Math.max(...values))} · ${values.length} points`));
-    card.append(title, value, meta); return card;
-  }));
+  const host = qs("[data-metric-widget-grid]");
+  const catalogue = qs("[data-metric-catalogue]");
+  if (!host || !catalogue) return;
+  loadMetricLayout(series);
+  const empty = qs("[data-metric-board-empty]", host) || el("p", `col-span-full rounded-xl border border-dashed border-border p-8 text-center text-sm ${muted}`, "No metrics are pinned. Add one from the metric library.");
+  empty.dataset.metricBoardEmpty = "true";
+  host.replaceChildren(empty, ...series.map(metricCard));
+  catalogue.replaceChildren(...series.map(metricCatalogueItem));
+  applyMetricLayout();
+}
+
+function showMetricTooltip(plot, index) {
+  const points = plot?._metricPoints || [];
+  if (!points.length) return;
+  const at = Math.max(0, Math.min(points.length - 1, index));
+  plot._metricIndex = at;
+  const point = points[at], item = plot._metricItem;
+  const ratio = points.length === 1 ? .5 : at / (points.length - 1);
+  const marker = qs("[data-metric-marker]", plot), dot = qs("[data-metric-marker-dot]", plot), tooltip = qs("[data-metric-tooltip]", plot);
+  const values = points.map((candidate) => candidate.displayValue);
+  let min = Math.min(...values), max = Math.max(...values);
+  if (min === max) { const spread = Math.abs(min || 1) * .08; min -= spread; max += spread; }
+  const x = 4 + ratio * 632, y = 4 + (1 - (point.displayValue - min) / (max - min)) * 72;
+  marker.classList.remove("hidden"); marker.setAttribute("x1", String(x)); marker.setAttribute("x2", String(x));
+  dot.classList.remove("hidden"); dot.setAttribute("cx", String(x)); dot.setAttribute("cy", String(y));
+  tooltip.classList.remove("hidden"); tooltip.style.left = `${Math.max(14, Math.min(86, ratio * 100))}%`;
+  tooltip.children[0].textContent = formatMetricValue(point.displayValue, item.unit, item.key);
+  tooltip.children[1].textContent = new Date(point.timestamp).toLocaleString();
+  plot.setAttribute("aria-label", `${humanMetricName(item.key)}: ${tooltip.children[0].textContent}, ${tooltip.children[1].textContent}. Use left and right arrow keys for other readings.`);
+}
+
+function hideMetricTooltip(plot) {
+  qs("[data-metric-tooltip]", plot)?.classList.add("hidden");
+  qs("[data-metric-marker]", plot)?.classList.add("hidden");
+  qs("[data-metric-marker-dot]", plot)?.classList.add("hidden");
 }
 
 function detailField(label, value) {
@@ -421,45 +1025,145 @@ function detailField(label, value) {
   node.append(key, content); return node;
 }
 
-async function openDetail(id) {
+// A trace-linked log expands only the trace relationship. The row already says
+// what the log said; repeating its raw record and OTLP attributes here obscures
+// the timeline somebody opened it to inspect.
+let expandedLog = null;
+let logLoadGeneration = 0;
+
+function renderLogInline(row, state = null) {
+  qs("[data-log-inline]")?.remove();
+  const template = qs("[data-log-inline-template]");
+  if (!template || !row) return;
+  const inline = template.content.firstElementChild.cloneNode(true);
+  row.setAttribute("aria-expanded", "true");
+  row.after(inline);
+  qs("[data-log-trace-id]", inline).textContent = state?.traceID || row.dataset.traceId;
+  if (state?.traceError) {
+    qs("[data-log-waterfall]", inline).replaceChildren(el("p", `py-6 text-center text-sm ${muted}`, state.traceError));
+    return;
+  }
+  if (!state?.trace) return;
+  const trace = state.trace;
+  qs("[data-log-trace-duration]", inline).textContent = `${number.format(Math.round(trace.duration_ms))} ms · ${trace.spans.length} spans`;
+  qs("[data-log-trace-services]", inline).textContent = `${trace.services.join(" · ")}${trace.errors ? ` · ${trace.errors} errored` : ""}`;
+  // The Logs page is intentionally drawer-free. Its waterfall is context for
+  // the log, not a second route into raw span detail.
+  drawWaterfall(qs("[data-log-waterfall]", inline), trace);
+}
+
+async function showLog(row) {
+  if (!row?.dataset.traceId) return;
+  if (expandedLog?.eventID === row.dataset.eventId) {
+    collapseLog();
+    return;
+  }
+  collapseTrace();
+  collapseLog();
+  const generation = ++logLoadGeneration;
+  expandedLog = { eventID: row.dataset.eventId, traceID: row.dataset.traceId, trace: null, traceError: "" };
+  renderLogInline(row, expandedLog);
+  try {
+    const trace = await request(`/api/traces/${encodeURIComponent(row.dataset.traceId)}`);
+    if (generation !== logLoadGeneration || expandedLog?.eventID !== row.dataset.eventId) return;
+    expandedLog.trace = trace;
+  } catch {
+    if (generation !== logLoadGeneration || expandedLog?.eventID !== row.dataset.eventId) return;
+    expandedLog.traceError = "Trace timeline is unavailable for this log.";
+  }
+  renderLogInline(row, expandedLog);
+}
+
+function collapseLog() {
+  logLoadGeneration++;
+  qs('[data-log-rows] [aria-expanded="true"]')?.setAttribute("aria-expanded", "false");
+  qs("[data-log-inline]")?.remove();
+  expandedLog = null;
+}
+
+function globalDetailShell() {
+  return qs('[data-detail-shell][data-detail-scope="global"]');
+}
+
+async function openDetail(id, shell = globalDetailShell()) {
+  if (!shell) return;
   const event = await request(`/api/events/${id}`);
-  qs("[data-detail-eyebrow]").textContent = `${event.signal.replace(/s$/, "")} detail`;
-  qs("[data-detail-title]").textContent = eventText(event);
+  qs("[data-detail-eyebrow]", shell).textContent = `${event.signal.replace(/s$/, "")} detail`;
+  qs("[data-detail-title]", shell).textContent = eventText(event);
   // 1px of the border colour shows between the cells as the grid gap.
   const grid = document.createElement("div"); grid.className = "grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border";
   const fields = [["Timestamp", new Date(event.timestamp).toLocaleString()], ["Received", new Date(event.received_at).toLocaleString()], ["Service", event.service], ["Instance", event.instance], ["Scope", event.scope], ["Severity / status", event.severity], ["Span kind", event.kind], ["Duration", event.duration_ms ? `${event.duration_ms} ms` : ""], ["Metric type", event.metric_type], ["Value", event.value !== undefined ? `${event.value}${event.unit ? ` ${event.unit}` : ""}` : ""], ["Trace ID", event.trace_id], ["Span ID", event.span_id], ["Parent span", event.parent_span_id]];
   grid.append(...fields.filter(([, value]) => value !== "" && value !== undefined).map(([label, value]) => detailField(label, value)));
   const attrs = document.createElement("section"); const heading = document.createElement("h3"); heading.className = "mb-3 font-medium"; heading.appendChild(text(`Attributes · ${Object.keys(event.attributes || {}).length}`));
   const pre = document.createElement("pre"); pre.className = "overflow-x-auto rounded-xl bg-code p-4 font-mono text-xs leading-6 text-code-foreground"; pre.appendChild(text(JSON.stringify(event.attributes || {}, null, 2))); attrs.append(heading, pre);
-  qs("[data-detail-content]").replaceChildren(grid, attrs); qs("[data-detail-shell]").classList.add("open"); document.body.classList.add("overflow-hidden");
+  qs("[data-detail-content]", shell).replaceChildren(grid, attrs); shell.classList.add("open"); document.body.classList.add("overflow-hidden");
   // Arriving from a drill-down leaves a list to go back to; arriving from a
   // table does not, and an inert button would be worse than none.
-  qs("[data-detail-footer]").hidden = !lastDrill;
-  if (event.trace_id) showTrace(event.trace_id).catch(() => {});
+  qs("[data-detail-footer]", shell).hidden = shell.dataset.detailScope === "trace" || !lastDrill;
 }
 
-// Opening a span opens its whole trace above the table.
+// A row expands its whole trace immediately underneath itself. Choosing one
+// span from that waterfall still opens raw event detail, so the interaction
+// moves from request to span without taking the list away or blurring it.
 //
 // A span list answers "what happened"; only the timeline answers "what was
 // waiting on what", which is the question a slow request actually raises. The
 // card is on the traces page only — the same renderer serves the waterfall
 // panel on /views, from the same endpoint.
-async function showTrace(traceID) {
-  const card = qs("[data-trace-card]");
-  if (!card) return;
-  const trace = await request(`/api/traces/${encodeURIComponent(traceID)}`);
-  qs("[data-trace-id]", card).textContent = trace.trace_id;
-  qs("[data-trace-duration]", card).textContent = `${number.format(Math.round(trace.duration_ms))} ms · ${trace.spans.length} spans`;
-  qs("[data-trace-services]", card).textContent = `${trace.services.join(" · ")}${trace.errors ? ` · ${trace.errors} errored` : ""}`;
-  drawWaterfall(qs("[data-waterfall]", card), trace, { onSpan: (id) => openDetail(id).catch(() => {}) });
-  card.hidden = false;
+let expandedTrace = null;
+let traceLoadGeneration = 0;
+
+function renderTraceInline(row, trace = null) {
+  qs("[data-trace-inline]")?.remove();
+  const template = qs("[data-trace-inline-template]");
+  if (!template || !row) return;
+  const inline = template.content.firstElementChild.cloneNode(true);
+  inline.dataset.traceID = row.dataset.traceId;
+  row.setAttribute("aria-expanded", "true");
+  row.after(inline);
+  if (!trace) return;
+  qs("[data-trace-id]", inline).textContent = trace.trace_id;
+  qs("[data-trace-duration]", inline).textContent = `${number.format(Math.round(trace.duration_ms))} ms · ${trace.spans.length} spans`;
+  qs("[data-trace-services]", inline).textContent = `${trace.services.join(" · ")}${trace.errors ? ` · ${trace.errors} errored` : ""}`;
+  drawWaterfall(qs("[data-waterfall]", inline), trace, { onSpan: (id) => openDetail(id).catch(() => {}) });
 }
 
-function closeDetail() {
-  qs("[data-detail-shell]")?.classList.remove("open");
-  document.body.classList.remove("overflow-hidden");
+async function showTrace(traceID, row) {
+  if (!row) return;
+  if (expandedTrace?.eventID === row.dataset.eventId) {
+    collapseTrace();
+    return;
+  }
+  collapseLog();
+  collapseTrace();
+  const generation = ++traceLoadGeneration;
+  expandedTrace = { traceID, eventID: row.dataset.eventId, trace: null };
+  renderTraceInline(row);
+  const trace = await request(`/api/traces/${encodeURIComponent(traceID)}`);
+  if (generation !== traceLoadGeneration || expandedTrace?.eventID !== row.dataset.eventId) return;
+  expandedTrace.trace = trace;
+  renderTraceInline(row, trace);
+}
+
+function openEventRow(row) {
+  if (row.closest("[data-log-rows]")) return showLog(row);
+  if (row.dataset.traceId) return showTrace(row.dataset.traceId, row);
+  return openDetail(row.dataset.eventId);
+}
+
+function collapseTrace() {
+  traceLoadGeneration++;
+  const openRow = qs('[data-trace-rows] [aria-expanded="true"]');
+  openRow?.setAttribute("aria-expanded", "false");
+  qs("[data-trace-inline]")?.remove();
+  expandedTrace = null;
+}
+
+function closeDetail(shell = globalDetailShell()) {
+  shell?.classList.remove("open");
+  if (!qs('[data-detail-shell].open')) document.body.classList.remove("overflow-hidden");
   lastDrill = null;
-  qs("[data-detail-footer]").hidden = true;
+  qs("[data-detail-footer]", shell)?.toggleAttribute("hidden", true);
 }
 
 // The drawer's second mode: the events behind one mark on a chart.
@@ -473,7 +1177,7 @@ async function openDrill(request, datum = {}) {
   const drill = await request_("/api/views/drill", request);
   lastDrill = { request, datum, drill };
   renderDrill();
-  qs("[data-detail-shell]").classList.add("open");
+  globalDetailShell().classList.add("open");
   document.body.classList.add("overflow-hidden");
 }
 
@@ -485,11 +1189,12 @@ function renderDrill() {
   if (!lastDrill) return;
   const { datum, drill } = lastDrill;
   const shown = drill.events.length;
-  qs("[data-detail-eyebrow]").textContent = shown === drill.total
+  const shell = globalDetailShell();
+  qs("[data-detail-eyebrow]", shell).textContent = shown === drill.total
     ? `${number.format(drill.total)} ${drill.total === 1 ? "event" : "events"}`
     : `${number.format(shown)} of ${number.format(drill.total)} events`;
-  qs("[data-detail-title]").textContent = datum.title || "Selected events";
-  qs("[data-detail-footer]").hidden = true;
+  qs("[data-detail-title]", shell).textContent = datum.title || "Selected events";
+  qs("[data-detail-footer]", shell).hidden = true;
 
   const template = qs("[data-drill-row-template]");
   const list = document.createElement("div");
@@ -516,7 +1221,7 @@ function renderDrill() {
       : event.value !== undefined ? number.format(event.value) : "";
     list.appendChild(row);
   }
-  const content = qs("[data-detail-content]");
+  const content = qs("[data-detail-content]", shell);
   content.replaceChildren(list);
   content.scrollTop = 0;
 }
@@ -526,10 +1231,11 @@ function renderDrill() {
 // imported, because guard.js imports views.js and the reverse would be a cycle.
 globalThis.guardOpenDetail = (id) => openDetail(id).catch(() => {});
 globalThis.guardOpenDrill = (request, datum) => openDrill(request, datum).catch((failure) => {
-  qs("[data-detail-eyebrow]").textContent = "Could not read these events";
-  qs("[data-detail-title]").textContent = failure.message;
-  qs("[data-detail-content]").replaceChildren();
-  qs("[data-detail-shell]").classList.add("open");
+  const shell = globalDetailShell();
+  qs("[data-detail-eyebrow]", shell).textContent = "Could not read these events";
+  qs("[data-detail-title]", shell).textContent = failure.message;
+  qs("[data-detail-content]", shell).replaceChildren();
+  shell.classList.add("open");
 });
 
 async function loadSettings() {
@@ -564,8 +1270,12 @@ async function purgeNow() {
 async function refreshPage({ facets = false } = {}) {
   const work = [refreshSignal("logs"), refreshSignal("traces"), refreshSignal("metrics"), refreshMetrics(), loadSettings()];
   if (qs("[data-stat]") || qs("[data-instance-list]")) work.push(refreshSummary());
+  // The overview widget is live; the editor is mount-and-write so a background
+  // refresh never replaces fields while somebody is typing in them.
+  if ((dashboardWidgetPinned("health") && qs("[data-status-widget]")) || (facets && qs("[data-check-rows]"))) work.push(refreshHealthChecks());
   if (qs("[data-view-grid]")) work.push(refreshViews());
-  if (qs("[data-cluster-rows]") || qs("[data-topology]") || qs("[data-cluster-cards]")) work.push(refreshCluster());
+  if (facets && dashboardWidgetPinned("views")) work.push(refreshDashboardViews());
+  if (qs("[data-cluster-rows]") || qs("[data-cluster-cards]") || (qs("[data-topology]") && (dashboardWidgetPinned("cluster-map") || dashboardWidgetPinned("cluster")))) work.push(refreshCluster());
   // One machine's own page reads one machine, on the same tick as everything else.
   if (qs("[data-machine-card]")) work.push(refreshMachine());
   // Forced only alongside a facets refresh — a mount or an explicit click —
@@ -606,7 +1316,7 @@ async function refreshPage({ facets = false } = {}) {
   if (facets && qs("[data-analytics-page]")) work.push(refreshAnalytics());
   if (facets) {
     renderLinkedFilter();
-    work.push(refreshFacets(), renderClusterFilter());
+    work.push(refreshFacets());
   }
   await Promise.allSettled(work);
 }
@@ -890,6 +1600,10 @@ globalThis.guardPageMount = (page) => {
   // Before anything asks for rows: the URL is what says which sessions this
   // page is about, and the first request must already know.
   readLinkedFilter();
+  readSignalURLState(page);
+  syncSignalURL(page);
+  mountSignalList();
+  if (page === "home") applyDashboardLayout();
   if (page === initializedPage && initialRefresh) {
     const pending = initialRefresh;
     initialRefresh = null;
@@ -911,37 +1625,103 @@ globalThis.guardPageUnmount = () => {
   // The outlet is about to throw this page's DOM away. The store keeps track of
   // what is on screen so it can skip redundant redraws; from here, nothing is.
   screenCleared();
+  signalListObserver?.disconnect();
+  signalListObserver = undefined;
   // Every open event stream belongs to the page that is being thrown away.
   closeDeployStreams();
   clearTimeout(filterTimer);
   filterTimer = undefined;
   for (const signal of signalRequests.keys()) signalRequests.set(signal, signalRequests.get(signal) + 1);
   unmountViews();
+  dashboardDragging = null;
+  dashboardEditing = false;
+  metricDragging = null;
+  metricEditing = false;
+  metricLayout = null;
+  latestMetricSeries = [];
+  traceLoadGeneration++;
+  expandedTrace = null;
+  logLoadGeneration++;
+  expandedLog = null;
 };
 
 for (const eventName of ["scroll", "wheel", "touchmove", "pointermove"]) {
   document.addEventListener(eventName, () => { lastInteraction = Date.now(); }, { passive: true });
 }
 
+// Native drag-and-drop mirrors moving apps on a phone: edit mode turns the
+// whole card into the handle, then persistence waits until the drop.
+document.addEventListener("dragstart", (event) => {
+  if (metricEditing && !event.target.closest?.("[data-widget-edit-controls]")) {
+    metricDragging = event.target.closest?.("[data-metric-widget]");
+    if (metricDragging) {
+      metricDragging.classList.add("opacity-40");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", metricDragging.dataset.metricWidget);
+      return;
+    }
+  }
+  if (!dashboardEditing || event.target.closest?.("[data-widget-edit-controls]")) return;
+  dashboardDragging = event.target.closest?.("[data-dashboard-widget]");
+  if (!dashboardDragging) return;
+  dashboardDragging.classList.add("opacity-40");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", dashboardDragging.dataset.dashboardWidget);
+});
+
+document.addEventListener("dragover", (event) => {
+  const dragging = metricDragging || dashboardDragging;
+  if (!dragging) return;
+  const over = event.target.closest?.(metricDragging ? "[data-metric-widget]" : "[data-dashboard-widget]");
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  if (!over || over === dragging || over.hidden) return;
+  const box = over.getBoundingClientRect();
+  const after = event.clientY > box.top + box.height / 2 || (Math.abs(event.clientY - (box.top + box.height / 2)) < box.height / 3 && event.clientX > box.left + box.width / 2);
+  over.parentNode.insertBefore(dragging, after ? over.nextSibling : over);
+});
+
+document.addEventListener("drop", (event) => { if (dashboardDragging || metricDragging) event.preventDefault(); });
+document.addEventListener("dragend", () => {
+  if (metricDragging) {
+    metricDragging.classList.remove("opacity-40");
+    metricDragging = null;
+    saveMetricOrder();
+    return;
+  }
+  if (!dashboardDragging) return;
+  dashboardDragging.classList.remove("opacity-40");
+  dashboardDragging = null;
+  saveDashboardOrder();
+});
+
 document.addEventListener("click", (event) => {
   // The sidebar is a CSS-only drawer below lg; navigating has to close it,
   // because on those widths nothing else will.
   if (event.target.closest("[data-nav-link]")) { const drawer = qs("#nav-drawer"); if (drawer) drawer.checked = false; }
-  const toggle = event.target.closest("[data-live-toggle]");
-  if (toggle) { live = !live; localStorage.setItem("guard.live", live ? "on" : "off"); updateLiveControl(); if (live) refreshPage(); return; }
-  const chip = event.target.closest("[data-cluster-chip]");
-  if (chip) {
-    const id = chip.dataset.clusterChip;
-    if (id === "all") clusterFilter.clear();
-    else if (!clusterFilter.delete(Number(id))) clusterFilter.add(Number(id));
-    localStorage.setItem("guard.cluster", JSON.stringify([...clusterFilter]));
-    // Back to the first page: the rows under a different set of machines are
-    // different rows, and page four of the old set means nothing in the new.
-    for (const signal of signalPages.keys()) signalPages.set(signal, 0);
-    renderClusterFilter();
-    refreshPage();
+  const editDashboard = event.target.closest("[data-dashboard-edit]");
+  if (editDashboard) { setDashboardEditing(!dashboardEditing); return; }
+  const editMetrics = event.target.closest("[data-metric-dashboard-edit]");
+  if (editMetrics) { setMetricEditing(!metricEditing); return; }
+  const pinMetric = event.target.closest("[data-metric-widget-pin]");
+  if (pinMetric) { setMetricPinned(pinMetric.dataset.metricWidgetPin, !metricLayout?.pinned[pinMetric.dataset.metricWidgetPin]); return; }
+  const removeMetric = event.target.closest("[data-metric-widget-remove]");
+  if (removeMetric) { setMetricPinned(removeMetric.closest("[data-metric-widget]").dataset.metricWidget, false); return; }
+  const resizeMetric = event.target.closest("[data-metric-widget-resize]");
+  if (resizeMetric) { resizeMetricWidget(resizeMetric.closest("[data-metric-widget]")); return; }
+  const pin = event.target.closest("[data-widget-pin]");
+  if (pin) {
+    const key = pin.dataset.widgetPin;
+    setDashboardPinned(key, !dashboardLayout?.pinned[key]);
+    refreshPage({ facets: true });
     return;
   }
+  const remove = event.target.closest("[data-widget-remove]");
+  if (remove) { setDashboardPinned(remove.closest("[data-dashboard-widget]").dataset.dashboardWidget, false); return; }
+  const resize = event.target.closest("[data-widget-resize]");
+  if (resize) { resizeDashboardWidget(resize.closest("[data-dashboard-widget]")); return; }
+  const toggle = event.target.closest("[data-live-toggle]");
+  if (toggle) { live = !live; localStorage.setItem("guard.live", live ? "on" : "off"); updateLiveControl(); if (live) refreshPage(); return; }
   if (event.target.closest("[data-linked-clear]")) {
     linkedPath = "";
     // The URL is what put it there, so the URL is what has to stop saying it:
@@ -952,43 +1732,131 @@ document.addEventListener("click", (event) => {
     here.searchParams.delete("rum_path");
     history.replaceState(history.state, "", here.pathname + here.search);
     for (const signal of signalPages.keys()) signalPages.set(signal, 0);
+    const signal = event.target.closest("[data-filter-signal]")?.dataset.filterSignal;
+    if (signal) syncSignalURL(signal);
     renderLinkedFilter();
     refreshPage();
     return;
   }
   if (event.target.closest("[data-detail-back]")) { renderDrill(); return; }
-  if (event.target.closest("[data-detail-close]")) { closeDetail(); return; }
-  if (event.target.closest("[data-trace-close]")) { qs("[data-trace-card]").hidden = true; return; }
+  const detailClose = event.target.closest("[data-detail-close]");
+  if (detailClose) { closeDetail(detailClose.closest("[data-detail-shell]")); return; }
+  if (event.target.closest("[data-trace-inline-close]")) { collapseTrace(); return; }
   const pageButton = event.target.closest("[data-page-action]");
   if (pageButton && !pageButton.disabled) {
     const signal = pageButton.closest("[data-pagination]").dataset.pagination;
     const direction = pageButton.dataset.pageAction === "next" ? 1 : -1;
     signalPages.set(signal, Math.max(0, (signalPages.get(signal) || 0) + direction));
+    syncSignalURL(signal);
     refreshSignal(signal).catch(() => {});
     return;
   }
-  const row = event.target.closest("[data-event-id]"); if (row) { openDetail(row.dataset.eventId).catch(() => {}); return; }
-  if (event.target.closest("[data-refresh-now]")) { refreshPage({ facets: true }); return; }
+  const row = event.target.closest("[data-event-id]"); if (row) { openEventRow(row).catch(() => {}); return; }
   if (event.target.closest("[data-purge-now]")) purgeNow();
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeDetail();
-  if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-event-id]")) { event.preventDefault(); openDetail(event.target.dataset.eventId).catch(() => {}); }
+  if (event.key === "Escape") {
+    const traceShell = qs('[data-detail-shell][data-detail-scope="trace"].open');
+    if (traceShell) closeDetail(traceShell);
+    else if (globalDetailShell()?.classList.contains("open")) closeDetail();
+    else if (expandedLog) collapseLog();
+    else if (expandedTrace) collapseTrace();
+  }
+  if (event.key === "Escape" && dashboardEditing) { setDashboardEditing(false); return; }
+  if (event.key === "Escape" && metricEditing) { setMetricEditing(false); return; }
+  const metricWidget = metricEditing ? event.target.closest?.("[data-metric-widget]") : null;
+  if (metricWidget && !event.target.closest?.("[data-widget-edit-controls]") && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+    event.preventDefault();
+    const visible = metricFrames().filter((frame) => !frame.hidden);
+    const at = visible.indexOf(metricWidget);
+    const step = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+    const sibling = visible[at + step];
+    if (sibling) {
+      metricWidget.parentNode.insertBefore(step > 0 ? sibling : metricWidget, step > 0 ? metricWidget : sibling);
+      metricWidget.focus();
+      saveMetricOrder();
+    }
+    return;
+  }
+  const metricPlot = event.target.closest?.("[data-metric-plot]");
+  if (metricPlot && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const last = metricPlot._metricPoints.length - 1;
+    const current = metricPlot._metricIndex ?? last;
+    const next = event.key === "Home" ? 0 : event.key === "End" ? last : current + (event.key === "ArrowLeft" ? -1 : 1);
+    showMetricTooltip(metricPlot, next);
+    return;
+  }
+  const widget = dashboardEditing ? event.target.closest?.("[data-dashboard-widget]") : null;
+  if (widget && !event.target.closest?.("[data-widget-edit-controls]") && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+    event.preventDefault();
+    const visible = dashboardFrames().filter((frame) => !frame.hidden);
+    const at = visible.indexOf(widget);
+    const step = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+    const sibling = visible[at + step];
+    if (sibling) {
+      widget.parentNode.insertBefore(step > 0 ? sibling : widget, step > 0 ? widget : sibling);
+      widget.focus();
+      saveDashboardOrder();
+    }
+    return;
+  }
+  if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-event-id]")) { event.preventDefault(); openEventRow(event.target).catch(() => {}); }
+});
+
+document.addEventListener("pointermove", (event) => {
+  const plot = event.target.closest?.("[data-metric-plot]");
+  if (!plot || !plot._metricPoints?.length) return;
+  const box = plot.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (event.clientX - box.left) / Math.max(box.width, 1)));
+  showMetricTooltip(plot, Math.round(ratio * (plot._metricPoints.length - 1)));
+});
+
+document.addEventListener("pointerout", (event) => {
+  const plot = event.target.closest?.("[data-metric-plot]");
+  if (plot && !plot.contains(event.relatedTarget) && document.activeElement !== plot) hideMetricTooltip(plot);
+});
+
+document.addEventListener("focusin", (event) => {
+  const plot = event.target.closest?.("[data-metric-plot]");
+  if (plot) showMetricTooltip(plot, plot._metricIndex ?? plot._metricPoints.length - 1);
+});
+
+document.addEventListener("focusout", (event) => {
+  const plot = event.target.closest?.("[data-metric-plot]");
+  if (plot) hideMetricTooltip(plot);
 });
 
 document.addEventListener("input", (event) => {
-  if (!event.target.matches("[data-filter]")) return;
+  if (!event.target.matches("input[data-filter]")) return;
   const signal = event.target.closest("[data-filter-signal]")?.dataset.filterSignal;
-  if (signal) signalPages.set(signal, 0);
-  clearTimeout(filterTimer); filterTimer = setTimeout(refreshPage, 180);
+  if (signal) {
+    signalPages.set(signal, 0);
+    syncSignalURL(signal);
+  }
+  clearTimeout(filterTimer); filterTimer = setTimeout(() => refreshPage(), 180);
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-widget-log-service]")) {
+    if (!dashboardLayout) loadDashboardLayout();
+    dashboardLayout.service = event.target.value;
+    saveDashboardLayout();
+    refreshDashboardLogs().catch(() => {});
+    return;
+  }
+  // Text and datetime inputs already update on `input`; handling their later
+  // `change` event would send the same query again when the control blurs.
+  if (event.target.matches("input[data-filter]")) return;
   if (event.target.matches('[data-filter="range"]')) qs("[data-custom-range]", event.target.closest("[data-filter-signal]"))?.classList.toggle("hidden", event.target.value !== "custom");
   if (event.target.matches("[data-filter]")) {
     const signal = event.target.closest("[data-filter-signal]")?.dataset.filterSignal;
-    if (signal) signalPages.set(signal, 0);
+    if (signal) {
+      signalPages.set(signal, 0);
+      syncSignalURL(signal);
+    }
+    clearTimeout(filterTimer);
     refreshPage();
   }
 });
@@ -1000,9 +1868,12 @@ document.addEventListener("submit", (event) => {
 
 updateLiveControl();
 initializedPage = location.pathname === "/" ? "home" : location.pathname.split("/").filter(Boolean)[0];
+if (initializedPage === "home") applyDashboardLayout();
 // A cold load of a drill link — a new tab, a reload, an address somebody was
 // sent — starts here rather than at the mount, so the eager pass below asks for
 // the sessions the URL names instead of the whole table and then narrowing.
 readLinkedFilter();
+readSignalURLState(initializedPage);
+syncSignalURL(initializedPage);
 initialRefresh = refreshPage({ facets: true });
 liveTimer = setTimeout(liveTick, 3000);

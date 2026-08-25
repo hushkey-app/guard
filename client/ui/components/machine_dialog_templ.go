@@ -103,13 +103,13 @@ func MachineDialog() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p>The address is where the service answers and the health path hangs off it. The SSH address is the machine itself, and it is optional — a machine reached through a load balancer is watched without anyone logging in to it.</p><p>An SSH login has to connect before the machine is added, so a password that was accepted is one that worked at least once. It is encrypted before it is stored and never sent back here: this page is told one exists and draws dots. The key is <code>GUARD_SECRET_KEY</code>, or a file beside the database when that is unset — back it up with the database.</p><p>Locking a machine freezes its login and its saved commands for good. A command can then be removed and a new one added, never edited.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p>A machine is infrastructure: its placement, provider link, host statistics and optional SSH login. HTTP services—including load balancers—are watched independently under Checks.</p><p>An SSH login has to connect before the machine is added, so a password that was accepted is one that worked at least once. It is encrypted before it is stored and never sent back here: this page is told one exists and draws dots. The key is <code>GUARD_SECRET_KEY</code>, or a file beside the database when that is unset — back it up with the database.</p><p>Locking a machine freezes its login and its saved commands for good. A command can then be removed and a new one added, never edited.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Note("Addresses, logins, and the lock").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.Note("Machines, logins, and the lock").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -156,7 +156,7 @@ func MachineDialogOpen(label string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/machine_dialog.templ`, Line: 94, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/ui/components/machine_dialog.templ`, Line: 93, Col: 9}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

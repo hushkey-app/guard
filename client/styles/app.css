@@ -150,6 +150,13 @@
   pointer-events: auto;
 }
 
+/* The span drawer is already inside the trace mission-control overlay. Keep
+ * the timeline visible and interactive beside it instead of adding another
+ * full-screen interception layer over its parent view. */
+[data-detail-shell][data-detail-scope="trace"].open {
+  pointer-events: none;
+}
+
 [data-detail-shell].open [data-detail-close]:first-child {
   opacity: 1;
 }
@@ -170,6 +177,126 @@ dialog {
   margin: auto;
 }
 
+/* Overview plugins choose their reading from the space the grid gave them,
+ * not from the viewport. A four-column widget on a wide screen is still a
+ * compact widget; container queries keep that distinction honest. */
+[data-widget-frame] {
+  container-type: inline-size;
+  grid-column: span 1 / span 1;
+}
+
+@media (min-width: 64rem) {
+  [data-widget-frame] {
+    grid-column: span var(--widget-span) / span var(--widget-span);
+  }
+}
+
+/* Dashboard editing is an explicit mode: outside it the cards keep every
+ * normal link, select and row interaction. Inside it the card becomes the
+ * drag surface and rounded controls float above its corners. */
+[data-widget-grid].dashboard-editing [data-dashboard-widget],
+[data-metric-widget-grid].dashboard-editing [data-metric-widget] {
+  cursor: grab;
+  outline: 1px dashed color-mix(in oklab, var(--primary) 55%, transparent);
+  outline-offset: 4px;
+  border-radius: var(--radius-xl);
+}
+
+[data-widget-grid].dashboard-editing [data-dashboard-widget]:active,
+[data-metric-widget-grid].dashboard-editing [data-metric-widget]:active { cursor: grabbing; }
+
+[data-widget-grid].dashboard-editing [data-widget-edit-badge],
+[data-widget-grid].dashboard-editing [data-widget-edit-controls],
+[data-metric-widget-grid].dashboard-editing [data-widget-edit-badge],
+[data-metric-widget-grid].dashboard-editing [data-widget-edit-controls] {
+  display: flex;
+  pointer-events: auto;
+}
+
+[data-widget-grid].dashboard-editing [data-dashboard-widget] > :not([data-widget-edit-badge]):not([data-widget-edit-controls]),
+[data-metric-widget-grid].dashboard-editing [data-metric-widget] > :not([data-widget-edit-badge]):not([data-widget-edit-controls]) {
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Each metric owns its scale, so bytes cannot flatten a duration into the
+ * baseline. The plot is also the tooltip's positioning context and keyboard
+ * target; focus gets the same exact reading as a pointer. */
+[data-metric-plot] {
+  touch-action: pan-y;
+}
+
+[data-metric-plot]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  border-radius: var(--radius-md);
+}
+
+/* Signals are working surfaces rather than reports: their time window and
+ * search must stay reachable while somebody is deep in a log tail, trace list,
+ * metric board, or analytics grid. The toolbar itself floats over that content
+ * rather than gaining a second full-width tray around its existing card. */
+[data-signal-toolbar] {
+  position: sticky;
+  top: .5rem;
+  z-index: 20;
+}
+
+[data-signal-toolbar] > .cn-card {
+  box-shadow: 0 .75rem 2rem oklch(0 0 0 / .28), 0 0 0 1px oklch(1 0 0 / .035);
+}
+
+/* Logs and traces are workspaces, rather than pages somebody has to scroll
+ * just to recover the column names. JS supplies the exact remaining viewport
+ * height because the filter bar can gain a custom date row; the table wrapper
+ * owns both axes of scrolling and pagination remains fixed below it. */
+[data-signal-list] {
+  height: var(--signal-list-height, auto);
+  min-height: 18rem;
+  overflow: hidden;
+}
+
+[data-signal-list] > [data-slot="table-container"] {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+[data-signal-list] > [data-pagination] {
+  flex: 0 0 auto;
+  background: var(--card);
+}
+
+[data-signal-list] [data-slot="table-head"] {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card);
+  box-shadow: inset 0 -1px var(--border);
+}
+
+@media (min-width: 64rem) {
+  [data-signal-toolbar] {
+    top: 1rem;
+  }
+}
+
+[data-status-widget-medium],
+[data-status-widget-wide] {
+  display: none;
+}
+
+@container (min-width: 36rem) {
+  [data-status-widget-compact] { display: none; }
+  [data-status-widget-medium] { display: block; }
+}
+
+@container (min-width: 64rem) {
+  [data-status-widget-medium] { display: none; }
+  [data-status-widget-wide] { display: block; }
+}
+
 /* The overview shows the same cluster rows as the settings page, without the
  * controls for changing them. One rule, rather than a second template that
  * drifts the first time a column is added. */
@@ -183,6 +310,64 @@ dialog {
  * disclosure and should not pretend to be one. */
 [data-cluster-compact] [data-node-head] {
   cursor: default;
+}
+
+/* Signal tables use a quiet neutral divider instead of the brighter generic
+ * table border. Collapsed borders keep adjacent 1px edges from doubling. */
+[data-log-rows],
+[data-trace-rows],
+[data-metric-rows] {
+  --signal-row-divider: oklch(.52 .01 270 / .34);
+}
+
+[data-log-rows] > tr[data-event-id],
+[data-trace-rows] > tr[data-event-id],
+[data-metric-rows] > tr[data-event-id] {
+  border-top: 1px solid var(--signal-row-divider);
+  border-bottom: 1px solid var(--signal-row-divider);
+}
+
+/* An expanded trace row and its waterfall are one table item. Move the row's
+ * divider to the bottom of the waterfall so there is no seam through the
+ * middle, while the open item's boundary remains clear. */
+[data-trace-rows] > tr[aria-expanded="true"],
+[data-trace-rows] > tr[aria-expanded="true"] > td,
+[data-log-rows] > tr[aria-expanded="true"],
+[data-log-rows] > tr[aria-expanded="true"] > td {
+  border-bottom-color: transparent;
+}
+
+[data-trace-inline],
+[data-trace-inline] > td {
+  border-bottom: 1px solid var(--signal-row-divider);
+}
+
+[data-log-inline],
+[data-log-inline] > td {
+  border-bottom: 1px solid var(--signal-row-divider);
+}
+
+/* A left rail means this log can be opened into a trace. Rows without trace
+ * context have no rail and no interaction; colour carries the log level while
+ * preserving the existing severity badge in the row. */
+[data-log-row="true"][data-trace-id]:not([data-trace-id=""]) > td:first-child {
+  border-left: 3px solid var(--muted-foreground);
+}
+
+[data-log-row="true"][data-trace-id]:not([data-trace-id=""])[data-severity="DEBUG"] > td:first-child {
+  border-left-color: oklch(.66 .2 302);
+}
+
+[data-log-row="true"][data-trace-id]:not([data-trace-id=""])[data-severity="INFO"] > td:first-child {
+  border-left-color: oklch(.68 .17 251);
+}
+
+[data-log-row="true"][data-trace-id]:not([data-trace-id=""])[data-severity="WARN"] > td:first-child {
+  border-left-color: var(--warning);
+}
+
+[data-log-row="true"][data-trace-id]:not([data-trace-id=""]):is([data-severity="ERROR"], [data-severity="FATAL"]) > td:first-child {
+  border-left-color: var(--destructive);
 }
 
 /* The view builder, same mechanism as the detail panel above: views.js toggles

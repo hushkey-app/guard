@@ -14,8 +14,12 @@ templ Head() {
 
 templ Page() {
 	<section class="space-y-8">
-		@ui.PageHeading("Infrastructure", "Storage",
-			"Object storage on every stored cloud account, read live from the provider.")
+		<div class="relative">
+			@ui.SignalHeading("Storage")
+			<div class="mt-4 flex items-center gap-2 md:absolute md:right-0 md:top-0 md:mt-0">
+				@components.StorageActions()
+			</div>
+		</div>
 		@components.StoragePanel()
 		@components.ConfirmDialog()
 		@alert.Alert() {

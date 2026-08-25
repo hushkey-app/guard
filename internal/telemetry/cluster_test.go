@@ -345,8 +345,8 @@ func TestNodeAddressesComposeTheProbeURL(t *testing.T) {
 		t.Fatalf("probing %q, want the old internal address", legacy.URL)
 	}
 
-	if _, err := store.SaveNode(Node{Name: "nowhere", Enabled: true}); err == nil {
-		t.Error("a machine with no address at all was accepted")
+	if _, err := store.SaveNode(Node{Name: "nowhere", Enabled: true}); err != nil {
+		t.Errorf("a machine without a service check should be valid now: %v", err)
 	}
 	if _, err := store.SaveNode(Node{Name: "bad path", Domain: "https://x.example.com", HealthPath: "api/health"}); err == nil {
 		t.Error("a health path that is not a path was accepted")

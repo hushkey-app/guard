@@ -84,10 +84,9 @@ func (s *Store) pruneUptimeDays() error {
 // PublicStatus is everything the status page shows, and nothing else.
 //
 // This is the one read in guard that answers an unauthenticated request, so the
-// shape of it is the security boundary. It selects the machines that were
-// marked public, one at a time, by name — and it returns the public name, never
-// the machine's own: the point of a nickname is that "PACK-POSTGRES-VPS-MAIN"
-// is an internal fact and "Database" is what a customer should read.
+// shape of it is the security boundary. It selects only service checks that
+// were explicitly published and returns their public names. The checked URL,
+// optional machine link and failure detail stay private.
 //
 // Nothing else about a machine leaves through here. No address, no group, no
 // tags, no error text, no status code, no latency. A status page that leaked
@@ -95,7 +94,7 @@ func (s *Store) pruneUptimeDays() error {
 // network, published, in service of a green dot.
 func (s *Store) PublicStatus() (model.PublicStatus, error) {
 	rows, err := s.rdb.Query(`SELECT id, COALESCE(NULLIF(public_name,''), name)
-FROM cluster_nodes WHERE public = 1 AND enabled = 1 ORDER BY name`)
+FROM health_checks WHERE public = 1 AND enabled = 1 ORDER BY name`)
 	if err != nil {
 		return model.PublicStatus{}, err
 	}
@@ -131,8 +130,8 @@ FROM cluster_nodes WHERE public = 1 AND enabled = 1 ORDER BY name`)
 			Days: make([]model.PublicDay, 0, StatusDays),
 		}
 
-		history, err := s.rdb.Query(`SELECT day, checks, ok FROM cluster_uptime_days
-WHERE node_id = ? AND day >= ? ORDER BY day`, item.id, first)
+		history, err := s.rdb.Query(`SELECT day, checks, ok FROM health_check_uptime_days
+WHERE check_id = ? AND day >= ? ORDER BY day`, item.id, first)
 		if err != nil {
 			return model.PublicStatus{}, err
 		}
@@ -181,7 +180,7 @@ WHERE node_id = ? AND day >= ? ORDER BY day`, item.id, first)
 		// Only `ok` is read. The status code, the latency and the error text
 		// all exist on that row and none of them belong on a public page.
 		var latest sql.NullBool
-		err = s.rdb.QueryRow(`SELECT ok FROM cluster_checks WHERE node_id = ?
+		err = s.rdb.QueryRow(`SELECT ok FROM health_check_results WHERE check_id = ?
 ORDER BY checked_at_ns DESC LIMIT 1`, item.id).Scan(&latest)
 		switch {
 		case err != nil && !errors.Is(err, sql.ErrNoRows):

@@ -462,6 +462,8 @@ var Panels = []PanelSpec{
 		Hint: "Top routes, busiest clients, errors by service."},
 	{Panel: "pie", Label: "Pie chart", Shape: ShapeCategorical, Needs: []string{"group", "agg", "value", "limit"},
 		Hint: "Shares of a whole. Unreadable past about eight slices."},
+	{Panel: "map", Label: "World map", Shape: ShapeCategorical, Needs: []string{"group", "agg", "value", "limit"},
+		Hint: "Locate public client IPs on a world map. Choose client.address (or another public-IP attribute) as the split field. Public addresses are resolved by ipwho.is when this panel is viewed; private and reserved addresses stay inside Guard."},
 	{Panel: "histogram", Label: "Histogram", Shape: ShapeDistribution, Needs: []string{"value", "buckets"},
 		Hint: "Where the values actually fall. The panel that finds bimodal latency."},
 	{Panel: "heatmap", Label: "Heatmap", Shape: ShapeHeatmap, Needs: []string{"value", "bucket", "buckets"},
@@ -474,7 +476,7 @@ var Panels = []PanelSpec{
 		Hint: "Open/high/low/close per bucket. Meaningful for a sampled quantity — queue depth, active carts — where opening and closing values exist."},
 	{Panel: "box", Label: "Box / range", Shape: ShapeOHLC, Needs: []string{"value", "bucket"},
 		Hint: "Min/p25/p75/max per bucket. The honest one for discrete events, where first and last in a bucket mean nothing."},
-	{Panel: "stat", Label: "Stat", Shape: ShapeSingle, Needs: []string{"agg", "value"},
+	{Panel: "stat", Label: "Big number", Shape: ShapeSingle, Needs: []string{"agg", "value"},
 		Hint: "One big number, with the change against the previous window."},
 	{Panel: "gauge", Label: "Gauge", Shape: ShapeSingle, Needs: []string{"agg", "value", "thresholds"},
 		Hint: "How far one number is from its threshold."},
@@ -760,10 +762,12 @@ func (q ViewQuery) Normalize(panel string) ViewQuery {
 		q.Buckets = 24
 	}
 	if q.Limit <= 0 {
-		switch spec.Shape {
-		case ShapeCategorical:
+		switch {
+		case panel == "map":
+			q.Limit = 100
+		case spec.Shape == ShapeCategorical:
 			q.Limit = 12
-		case ShapeScatter:
+		case spec.Shape == ShapeScatter:
 			q.Limit = 2000
 		default:
 			q.Limit = 500

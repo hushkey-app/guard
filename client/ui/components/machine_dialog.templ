@@ -59,11 +59,10 @@ templ MachineDialog() {
 					     came back. -->
 					@ClusterRow()
 				</div>
-				@ui.Note("Addresses, logins, and the lock") {
+				@ui.Note("Machines, logins, and the lock") {
 					<p>
-						The address is where the service answers and the health path hangs off it. The SSH
-						address is the machine itself, and it is optional — a machine reached through a
-						load balancer is watched without anyone logging in to it.
+						A machine is infrastructure: its placement, provider link, host statistics and optional SSH login.
+						HTTP services—including load balancers—are watched independently under Checks.
 					</p>
 					<p>
 						An SSH login has to connect before the machine is added, so a password that was
