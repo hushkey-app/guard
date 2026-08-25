@@ -22,13 +22,13 @@ import (
 	"github.com/hushkey-app/guard/internal/config"
 	"github.com/hushkey-app/guard/internal/deploy"
 	"github.com/hushkey-app/guard/internal/ingest"
-	"github.com/hushkey-app/guard/internal/vaultproxy"
 	"github.com/hushkey-app/guard/internal/notify"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/remote"
 	"github.com/hushkey-app/guard/internal/statuspage"
 	"github.com/hushkey-app/guard/internal/telemetry"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
+	"github.com/hushkey-app/guard/internal/vaultproxy"
 	"github.com/hushkey-app/guard/internal/viewalerts"
 	"github.com/hushkey-app/guard/server/apis"
 	apicollector "github.com/hushkey-app/guard/server/apis/collector"
@@ -40,6 +40,7 @@ import (
 	apisignin "github.com/hushkey-app/guard/server/apis/signin"
 	apistore "github.com/hushkey-app/guard/server/apis/store"
 	apiupdate "github.com/hushkey-app/guard/server/apis/update"
+	terminalhandler "github.com/hushkey-app/guard/server/terminal"
 	"github.com/mirairoad/howl-go/core/api"
 	"github.com/mirairoad/howl-go/core/app"
 	"github.com/mirairoad/howl-go/core/console"
@@ -51,6 +52,23 @@ import (
 
 //go:embed client/public
 var publicFS embed.FS
+
+// WebSocket handshakes must write their 101 response before hijacking the
+// connection. Middleware that buffers an ordinary HTTP response (compression
+// and request coalescing) cannot wrap an upgrade: delaying the status turns
+// the first WebSocket frame into an invalid HTTP response.
+func withoutWebSocket(buffered mw.Middleware) mw.Middleware {
+	return func(next http.Handler) http.Handler {
+		ordinary := buffered(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			ordinary.ServeHTTP(w, r)
+		})
+	}
+}
 
 func main() {
 	addr := flag.String("addr", ":4318", "HTTP and OTLP/HTTP listen address")
@@ -139,7 +157,7 @@ func main() {
 			// which host is half of what you open guard to find out.
 			mw.LogWith(mw.LogOptions{Callers: true, Skip: mw.SkipNoise}),
 			mw.Recover(nil),
-			mw.Compress{}.Handler,
+			withoutWebSocket((mw.Compress{}).Handler),
 			// Who is asking. It runs for every request — pages, API and
 			// static — and publishes the answer on the context, so nothing
 			// downstream has to remember to check. Outside the coalescer on
@@ -150,7 +168,7 @@ func main() {
 			// Identical ones now share a single query instead of racing each
 			// other through SQLite. Writes, and anything carrying an
 			// Authorization header, are passed straight through.
-			(&mw.Coalesce{}).Handler,
+			withoutWebSocket((&mw.Coalesce{}).Handler),
 			// The public status page's data, for the one path that renders it.
 			// A page cannot read the store itself — every page compiles into
 			// views.wasm too, and modernc.org/sqlite has no js/wasm build — so
@@ -361,6 +379,13 @@ func main() {
 		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Cache-Control", "private, max-age=3600")
 		w.Write(icon) //nolint:errcheck
+	})
+
+	// A real terminal is a WebSocket rather than a typed API response: browser
+	// keystrokes and remote PTY bytes remain on the same connection until the
+	// page, shell, or terminal timeout closes it.
+	mux.Handle("GET /api/cluster/terminal/{id}", terminalhandler.Handler{
+		Store: store, Runner: runner, Authorize: sessions.Authorize,
 	})
 
 	// Watching a deploy happen, as it happens.

@@ -55,6 +55,10 @@ type Runner struct {
 	// command that hangs must not hold a request open forever, and `apt-get
 	// upgrade` on a slow box is a legitimate two minutes.
 	Timeout time.Duration
+	// TerminalTimeout bounds an interactive PTY. Unlike a pressed command it
+	// stays open while somebody edits or inspects several things, but it must
+	// still end if a forgotten browser tab survives indefinitely.
+	TerminalTimeout time.Duration
 	// DialTimeout is separate and short. A machine that is not answering at all
 	// should say so in seconds, not at the end of the command budget.
 	DialTimeout time.Duration
@@ -66,9 +70,10 @@ type Runner struct {
 }
 
 const (
-	DefaultTimeout     = 2 * time.Minute
-	DefaultDialTimeout = 10 * time.Second
-	DefaultMaxOutput   = 256 << 10
+	DefaultTimeout         = 2 * time.Minute
+	DefaultTerminalTimeout = 30 * time.Minute
+	DefaultDialTimeout     = 10 * time.Second
+	DefaultMaxOutput       = 256 << 10
 )
 
 // ErrHostKeyChanged is the one failure worth its own type. Everything else is
@@ -83,6 +88,9 @@ func (r *Runner) prepare() {
 	}
 	if r.DialTimeout <= 0 {
 		r.DialTimeout = DefaultDialTimeout
+	}
+	if r.TerminalTimeout <= 0 {
+		r.TerminalTimeout = DefaultTerminalTimeout
 	}
 	if r.MaxOutput <= 0 {
 		r.MaxOutput = DefaultMaxOutput
@@ -142,64 +150,14 @@ func (r *Runner) stream(ctx context.Context, login Login, command string, onChun
 	started := time.Now()
 	result := Result{}
 
-	dialer := net.Dialer{Timeout: r.DialTimeout}
-	conn, err := dialer.DialContext(ctx, "tcp", login.Address)
+	client, conn, err := r.connect(ctx, login, &result)
 	if err != nil {
-		return result, fmt.Errorf("could not reach %s: %w", login.Address, reason(err))
+		return result, err
 	}
 	defer conn.Close()
+	defer client.Close()
 
-	config := &ssh.ClientConfig{
-		User: login.User,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(login.Password),
-			// The same password, offered the other way. Plenty of servers
-			// disable PasswordAuthentication and answer with
-			// keyboard-interactive instead, and to the person typing a
-			// password into a form those are the same thing.
-			ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
-				answers := make([]string, len(questions))
-				for i := range answers {
-					answers[i] = login.Password
-				}
-				return answers, nil
-			}),
-		},
-		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
-			result.Fingerprint = ssh.FingerprintSHA256(key)
-			if login.Fingerprint == "" {
-				// Trust on first use. Guard has no way to know a host key it
-				// has never seen, and refusing to connect until somebody pastes
-				// one in would mean nobody ever uses this at all — the same
-				// bargain ssh itself makes, minus the prompt.
-				return nil
-			}
-			if result.Fingerprint != login.Fingerprint {
-				return fmt.Errorf("%w: expected %s, got %s", ErrHostKeyChanged, login.Fingerprint, result.Fingerprint)
-			}
-			return nil
-		},
-		Timeout:       r.DialTimeout,
-		ClientVersion: "SSH-2.0-guard",
-	}
-
-	// The handshake and the command both run against a raw connection, so the
-	// deadline is the only thing that stops a server which accepts bytes and
-	// then says nothing.
-	if deadline, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(deadline)
-	}
-	client, chans, reqs, err := ssh.NewClientConn(conn, login.Address, config)
-	if err != nil {
-		if errors.Is(err, ErrHostKeyChanged) {
-			return result, err
-		}
-		return result, fmt.Errorf("ssh to %s@%s failed: %w", login.User, login.Address, reason(err))
-	}
-	session := ssh.NewClient(client, chans, reqs)
-	defer session.Close()
-
-	shell, err := session.NewSession()
+	shell, err := client.NewSession()
 	if err != nil {
 		return result, fmt.Errorf("could not open a session: %w", err)
 	}
@@ -243,6 +201,160 @@ func (r *Runner) stream(ctx context.Context, login Login, command string, onChun
 		return result, runErr
 	}
 	return result, nil
+}
+
+// TerminalSize is a browser terminal's character grid, not its pixel size.
+// SSH names the fields height and width; rows and columns are harder to swap by
+// accident at the websocket boundary.
+type TerminalSize struct {
+	Rows int
+	Cols int
+}
+
+// Terminal opens a persistent interactive shell with a PTY. It is deliberately
+// separate from Run: a PTY changes buffering, signal handling and stderr, and
+// interactive keystrokes cannot truthfully be logged as discrete commands.
+func (r *Runner) Terminal(ctx context.Context, login Login, input io.Reader, output io.Writer, sizes <-chan TerminalSize) (Result, error) {
+	r.prepare()
+	if login.User == "" || login.Address == "" {
+		return Result{}, errors.New("this machine has no ssh address")
+	}
+	if login.Password == "" {
+		return Result{}, errors.New("this machine has no stored password")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, r.TerminalTimeout)
+	defer cancel()
+	started := time.Now()
+	result := Result{}
+	client, conn, err := r.connect(ctx, login, &result)
+	if err != nil {
+		return result, err
+	}
+	defer conn.Close()
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return result, fmt.Errorf("could not open a terminal session: %w", err)
+	}
+	defer session.Close()
+
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-done:
+		}
+	}()
+
+	// ECHO and the ordinary control characters are what make nano, less, top
+	// and a normal shell behave like they do in ssh(1). The browser emulator
+	// understands xterm-256color's cursor and colour sequences.
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+	if err := session.RequestPty("xterm-256color", 24, 80, modes); err != nil {
+		return result, fmt.Errorf("the machine refused an interactive terminal: %w", err)
+	}
+	session.Stdin = input
+	session.Stdout = output
+	// A PTY normally merges stderr into its single terminal stream. Keeping the
+	// writer here also covers servers that still expose the extended channel.
+	session.Stderr = output
+	if err := session.Shell(); err != nil {
+		return result, fmt.Errorf("could not start the interactive shell: %w", err)
+	}
+
+	resizeDone := make(chan struct{})
+	defer close(resizeDone)
+	if sizes != nil {
+		go func() {
+			for {
+				select {
+				case <-resizeDone:
+					return
+				case size, ok := <-sizes:
+					if !ok {
+						return
+					}
+					if size.Rows < 2 || size.Rows > 500 || size.Cols < 2 || size.Cols > 500 {
+						continue
+					}
+					_ = session.WindowChange(size.Rows, size.Cols)
+				}
+			}
+		}()
+	}
+
+	waitErr := session.Wait()
+	result.DurationMS = float64(time.Since(started)) / float64(time.Millisecond)
+	var exit *ssh.ExitError
+	switch {
+	case waitErr == nil:
+	case errors.As(waitErr, &exit):
+		result.ExitCode = exit.ExitStatus()
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return result, fmt.Errorf("the interactive terminal reached its %s limit", r.TerminalTimeout)
+	case errors.Is(ctx.Err(), context.Canceled), errors.Is(waitErr, io.EOF):
+		// Closing the browser is a normal end to an interactive terminal.
+		return result, nil
+	default:
+		return result, waitErr
+	}
+	return result, nil
+}
+
+// connect is the shared SSH handshake for one-shot commands and interactive
+// terminals. The returned raw connection remains owned by the caller because
+// closing it is how a canceled context interrupts the SSH session immediately.
+func (r *Runner) connect(ctx context.Context, login Login, result *Result) (*ssh.Client, net.Conn, error) {
+	dialer := net.Dialer{Timeout: r.DialTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", login.Address)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not reach %s: %w", login.Address, reason(err))
+	}
+	config := &ssh.ClientConfig{
+		User: login.User,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(login.Password),
+			ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range answers {
+					answers[i] = login.Password
+				}
+				return answers, nil
+			}),
+		},
+		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			result.Fingerprint = ssh.FingerprintSHA256(key)
+			if login.Fingerprint == "" {
+				return nil
+			}
+			if result.Fingerprint != login.Fingerprint {
+				return fmt.Errorf("%w: expected %s, got %s", ErrHostKeyChanged, login.Fingerprint, result.Fingerprint)
+			}
+			return nil
+		},
+		Timeout:       r.DialTimeout,
+		ClientVersion: "SSH-2.0-guard",
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, login.Address, config)
+	if err != nil {
+		conn.Close()
+		if errors.Is(err, ErrHostKeyChanged) {
+			return nil, nil, err
+		}
+		return nil, nil, fmt.Errorf("ssh to %s@%s failed: %w", login.User, login.Address, reason(err))
+	}
+	return ssh.NewClient(sshConn, chans, reqs), conn, nil
 }
 
 // reason turns the transport's errors into something a person reading a

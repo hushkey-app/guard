@@ -29,6 +29,7 @@ type fakeSSH struct {
 	// commands records what was actually asked for, so a test can prove the
 	// line that arrived is the line that was stored.
 	commands chan string
+	ptys     chan string
 	signer   ssh.Signer
 	listener net.Listener
 	closed   sync.Once
@@ -50,7 +51,7 @@ func startSSH(t *testing.T, password, reply string, exit uint32) *fakeSSH {
 	}
 	server := &fakeSSH{
 		address: listener.Addr().String(), password: password, reply: reply, exit: exit,
-		commands: make(chan string, 4), signer: signer, listener: listener,
+		commands: make(chan string, 4), ptys: make(chan string, 4), signer: signer, listener: listener,
 	}
 	t.Cleanup(server.Close)
 	go server.serve()
@@ -97,7 +98,33 @@ func (s *fakeSSH) handle(conn net.Conn, config *ssh.ServerConfig) {
 			return
 		}
 		for request := range sessionRequests {
-			if request.Type != "exec" {
+			switch request.Type {
+			case "pty-req":
+				// RFC 4254: the terminal name is the first length-prefixed
+				// string in the request payload.
+				terminal := ""
+				if len(request.Payload) > 4 {
+					length := int(binary.BigEndian.Uint32(request.Payload[:4]))
+					if len(request.Payload) >= 4+length {
+						terminal = string(request.Payload[4 : 4+length])
+					}
+				}
+				s.ptys <- terminal
+				request.Reply(true, nil) //nolint:errcheck
+				continue
+			case "window-change":
+				request.Reply(true, nil) //nolint:errcheck
+				continue
+			case "shell":
+				request.Reply(true, nil)         //nolint:errcheck
+				io.WriteString(channel, s.reply) //nolint:errcheck
+				status := make([]byte, 4)
+				binary.BigEndian.PutUint32(status, s.exit)
+				channel.SendRequest("exit-status", false, status) //nolint:errcheck
+				channel.Close()
+				continue
+			case "exec":
+			default:
 				request.Reply(false, nil) //nolint:errcheck
 				continue
 			}
@@ -194,5 +221,24 @@ func TestOutputIsCapped(t *testing.T) {
 	}
 	if len(result.Output) != 100 || !result.Truncated {
 		t.Fatalf("kept %d bytes, truncated=%v", len(result.Output), result.Truncated)
+	}
+}
+
+func TestTerminalRequestsAPTY(t *testing.T) {
+	server := startSSH(t, "hunter2", "\x1b[2Jeditor\r\n", 0)
+	runner := &Runner{}
+	var output strings.Builder
+
+	result, err := runner.Terminal(context.Background(), Login{
+		User: "root", Address: server.address, Password: "hunter2",
+	}, strings.NewReader(""), &output, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 || output.String() != "\x1b[2Jeditor\r\n" {
+		t.Fatalf("got result=%+v output=%q", result, output.String())
+	}
+	if terminal := <-server.ptys; terminal != "xterm-256color" {
+		t.Fatalf("requested terminal %q", terminal)
 	}
 }

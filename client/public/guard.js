@@ -7,7 +7,7 @@
 import { adminHeaders, bytes, compact, duration, el, muted, number, palette, qs, qsa, relativeTime, request, shortID, since, svgNS, text, timeText } from "./core.js";
 import { drawWaterfall } from "./charts.js";
 import { mountViews, refreshViews, unmountViews } from "./views.js";
-import { refreshCluster, refreshMachine } from "./cluster.js";
+import { closeInteractiveTerminal, refreshCluster, refreshMachine } from "./cluster.js";
 import { refreshRegistries } from "./registries.js";
 import { refreshCloud } from "./cloud.js";
 import { refreshStorage } from "./storage.js";
@@ -1629,6 +1629,7 @@ globalThis.guardPageUnmount = () => {
   signalListObserver = undefined;
   // Every open event stream belongs to the page that is being thrown away.
   closeDeployStreams();
+  closeInteractiveTerminal();
   clearTimeout(filterTimer);
   filterTimer = undefined;
   for (const signal of signalRequests.keys()) signalRequests.set(signal, signalRequests.get(signal) + 1);

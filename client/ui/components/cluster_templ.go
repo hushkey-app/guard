@@ -2400,37 +2400,9 @@ func ClusterCard() templ.Component {
 //
 // **Run** runs what is typed — `POST /api/cluster/exec`, admin, refused on a
 // locked machine, and logged into the same history the stored commands write to.
-// The stored commands are still the vetted list: what is scheduled, what has a
-// staleness budget, what a card offers as a button. This is the thing you reach
-// for instead of opening a terminal, which is what people were doing anyway.
-//
-// It is built to be used like a terminal rather than like a form, because the
-// form version was one line, one output, and a pane that was replaced on every
-// run — so reading what you did two commands ago meant remembering it:
-//
-//   - **The pane is a transcript.** Every run appends: the command on a prompt
-//     line, then its output, then how it ended. Nothing is thrown away until
-//     Clear, and it scrolls to the bottom the way a terminal does.
-//   - **Up and Down walk the history**, seeded from what this machine has
-//     actually run rather than from this tab — so a command from last week, or
-//     from somebody else's browser, is one keypress away.
-//   - **A textarea, not an input.** Paste four lines and four lines run, one
-//     after another. Enter runs, Shift+Enter is a newline, and the box grows to
-//     what is in it.
-//   - **`cd` works.** Each exec is its own SSH session, so a directory would
-//     normally last exactly one line — `cd ..`, `ls`, and the same listing
-//     again, which reads as the terminal ignoring you. The browser carries the
-//     directory instead: it is put back in front of the next command and read
-//     back from the machine afterwards, so the prompt and the box agree with
-//     where you actually are.
-//   - **No confirmation.** A dialog in front of every command is in front of
-//     `ls` as often as anything else, which is how a confirmation stops being
-//     read. What guards this is the endpoint being admin, a locked machine
-//     refusing it, and every line landing in the run log.
-//
-// The transcript is a `<pre>`, so it selects and copies like a terminal does,
-// and Copy takes the whole of it — the reason to run `docker ps` from here is
-// usually to paste a line of it somewhere else.
+// A real SSH PTY is the machine page's command surface. Stored commands remain
+// the audited, schedulable actions elsewhere; this is for interactive work
+// where a shell, cursor keys and full-screen programs need to stay alive.
 func MachineTerminal() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -2452,7 +2424,7 @@ func MachineTerminal() templ.Component {
 			templ_7745c5c3_Var87 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "<section class=\"space-y-3 rounded-xl border border-border bg-card p-4\"><div class=\"flex flex-wrap items-center justify-between gap-3\"><h2 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Command line</h2><span data-machine-hint class=\"text-[.65rem] text-muted-foreground empty:hidden\"></span></div><!-- The transcript. Taller than the pane on a card, because this page is\n\t\t     where somebody reads output rather than glances at it. --><div class=\"space-y-1\"><div class=\"flex flex-wrap items-center justify-between gap-2\"><p data-machine-output-head class=\"truncate font-mono text-[.65rem] text-muted-foreground\"></p><div class=\"flex items-center gap-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "<section class=\"space-y-3 rounded-xl border border-border bg-card p-4\"><div class=\"flex flex-wrap items-center justify-between gap-3\"><div><h2 class=\"text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground\">Terminal</h2><span data-machine-hint class=\"mt-1 block text-[.65rem] text-muted-foreground empty:hidden\"></span></div><div class=\"flex flex-wrap items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2468,18 +2440,21 @@ func MachineTerminal() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "Copy")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "Interactive terminal")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
 		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantGhost,
+			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
-			Class:      "h-7 px-2 text-[.65rem] text-muted-foreground",
-			Attributes: templ.Attributes{"data-machine-copy": true, "title": "Copy everything in the pane"},
+			Attributes: templ.Attributes{"data-machine-interactive-open": true},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var88), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</div></div><!-- xterm is loaded only when asked, so every other page does not pay for\n\t\t     a terminal emulator it never uses. --><div data-machine-interactive hidden class=\"space-y-2 rounded-lg border border-border bg-background p-2\"><div class=\"flex items-center justify-between gap-3 px-1\"><p data-machine-interactive-status class=\"text-[.65rem] text-muted-foreground\">Connecting…</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2495,7 +2470,7 @@ func MachineTerminal() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "History")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "Disconnect")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2505,65 +2480,12 @@ func MachineTerminal() templ.Component {
 			Variant:    button.VariantGhost,
 			Size:       button.SizeSm,
 			Class:      "h-7 px-2 text-[.65rem] text-muted-foreground",
-			Attributes: templ.Attributes{"data-machine-history": true, "title": "The last runs on this machine"},
+			Attributes: templ.Attributes{"data-machine-interactive-close": true},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var89), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var90 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "Clear")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantGhost,
-			Size:       button.SizeSm,
-			Class:      "h-7 px-2 text-[.65rem] text-muted-foreground",
-			Attributes: templ.Attributes{"data-machine-clear": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var90), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</div></div><pre data-machine-output class=\"max-h-[28rem] min-h-[10rem] select-text overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap\">Nothing has run from this page yet.</pre></div><!-- The prompt sits under the transcript, where a terminal's is. --><div class=\"flex items-start gap-2\"><span aria-hidden=\"true\" class=\"select-none pt-2 font-mono text-xs text-primary\">$</span> <textarea data-machine-command rows=\"1\" spellcheck=\"false\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" placeholder=\"docker ps\" class=\"cn-input max-h-40 min-h-9 min-w-0 flex-1 resize-none overflow-y-auto py-2 font-mono text-xs leading-relaxed\"></textarea>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var91 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "Run")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Class: "h-9 shrink-0", Attributes: templ.Attributes{"data-machine-run": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var91), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</div><p class=\"text-[.65rem] leading-relaxed text-muted-foreground\">Enter runs · Shift+Enter for a new line · ↑ ↓ for what ran before. Each command is its own session; the directory you are in is carried between them, and the prompt says which it is.</p></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</div><div data-machine-xterm class=\"h-[28rem] overflow-hidden rounded-md\"></div><p class=\"px-1 text-[.65rem] leading-relaxed text-muted-foreground\">Live SSH PTY — nano, arrows and control keys work. Guard logs the session start and end, not each command typed inside it.</p></div><p class=\"text-[.65rem] leading-relaxed text-muted-foreground\">Open a persistent terminal for shell commands and full-screen programs. Disconnecting closes the SSH session cleanly.</p></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

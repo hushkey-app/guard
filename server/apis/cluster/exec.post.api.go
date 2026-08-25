@@ -10,7 +10,7 @@ import (
 	"github.com/mirairoad/howl-go/core/api"
 )
 
-// Command is one line to run on one machine.
+// Command is one shell command or multi-line script to run on one machine.
 type Command struct {
 	NodeID  int64  `json:"node_id"`
 	Command string `json:"command"`
@@ -23,11 +23,11 @@ func (c Command) Validate() error {
 	if strings.TrimSpace(c.Command) == "" {
 		return api.Invalid("command", "there is nothing to run")
 	}
-	// A line, not a script. Anything longer is a file, and a file belongs on the
-	// machine rather than in a text box — the runner would also be sending it
-	// through an argv that has a limit of its own.
-	if len(c.Command) > 4096 {
-		return api.Invalid("command", "that is longer than a command line — put it in a script on the machine")
+	// Large enough for a pasted config or runbook, bounded because the script is
+	// logged and returned through an API request. SSH sends the command as a
+	// length-prefixed string, so newlines and heredocs need no special transport.
+	if len(c.Command) > 64<<10 {
+		return api.Invalid("command", "that script is larger than 64 KiB — put it in a file on the machine")
 	}
 	if strings.ContainsRune(c.Command, 0) {
 		return api.Invalid("command", "a command cannot contain a NUL")
@@ -35,7 +35,8 @@ func (c Command) Validate() error {
 	return nil
 }
 
-// Exec runs one typed command on one machine: the command line on /cluster/{id}.
+// Exec runs one typed command or script on one machine: the command line on
+// /cluster/{id}.
 //
 // It is the one endpoint in guard that takes a command rather than an action id,
 // and it exists because the alternative was worse in practice: everything people
