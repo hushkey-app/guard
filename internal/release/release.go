@@ -71,7 +71,7 @@ type State struct {
 	Notes       string `json:"notes,omitempty"`
 	// Wanted is what /etc/guard/version asks for, if anything. Once it names
 	// the new release the button has done its job and the page says so — the
-	// installing happens somewhere else, on a timer, and may be minutes away.
+	// installing happens in the root-owned updater, started by a path unit.
 	Wanted string `json:"wanted,omitempty"`
 	// Managed says guard can write that file: a box set up with the units.
 	// Elsewhere — a container, a laptop, `go run .` — the page shows that a

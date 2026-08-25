@@ -155,13 +155,13 @@ func TestSnapshotsAreRememberedPerMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	ours, err := store.NodeSnapshots(node.ID)
-	if err != nil || !ours["snap-1"] {
+	if err != nil || ours["snap-1"].Description != "before the deploy" {
 		t.Fatalf("snapshot not remembered: %v %v", ours, err)
 	}
-	if err := store.ForgetSnapshot("snap-1"); err != nil {
+	if err := store.ForgetSnapshot(node.ID, "snap-1"); err != nil {
 		t.Fatal(err)
 	}
-	if ours, _ := store.NodeSnapshots(node.ID); ours["snap-1"] {
+	if ours, _ := store.NodeSnapshots(node.ID); len(ours) != 0 {
 		t.Fatal("a forgotten snapshot is still claimed")
 	}
 

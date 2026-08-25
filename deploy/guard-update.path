@@ -1,0 +1,11 @@
+[Unit]
+Description=install a requested guard release immediately
+
+[Path]
+# Guard rewrites this file when Update now is pressed. The timer remains as a
+# recovery sweep for changes missed while this unit was not running.
+PathChanged=/etc/guard/version
+Unit=guard-update.service
+
+[Install]
+WantedBy=multi-user.target

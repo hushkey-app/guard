@@ -50,7 +50,7 @@ var DeleteSnapshot = api.Define(api.Spec[SnapshotQuery, api.None, api.None]{
 		if err != nil {
 			return api.None{}, cloud.Fail(err)
 		}
-		if err := store.Get().ForgetSnapshot(r.Query.Snapshot); err != nil {
+		if err := store.Get().ForgetSnapshot(link.NodeID, r.Query.Snapshot); err != nil {
 			return api.None{}, err
 		}
 		return api.None{}, nil

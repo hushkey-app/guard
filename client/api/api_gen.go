@@ -432,6 +432,12 @@ func (c *Client) MetricSeries(ctx context.Context, query contract.SeriesQuery) (
 	return api.Call[[]model.MetricSeries](ctx, c.Transport, "GET", "/api/metrics/series", query, nil)
 }
 
+// NameMachineSnapshot calls PATCH /api/cluster/provider/snapshots.
+func (c *Client) NameMachineSnapshot(ctx context.Context, body provider.SnapshotUpdate) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "PATCH", "/api/cluster/provider/snapshots", nil, body)
+	return err
+}
+
 // ObjectStorage calls GET /api/cloud/storage.
 func (c *Client) ObjectStorage(ctx context.Context) ([]storage.AccountStorage, error) {
 	return api.Call[[]storage.AccountStorage](ctx, c.Transport, "GET", "/api/cloud/storage", nil, nil)

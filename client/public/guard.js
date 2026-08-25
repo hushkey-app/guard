@@ -1378,7 +1378,7 @@ function renderUpdate() {
   if (state.wanted && state.wanted === state.latest) {
     actions.hidden = true;
     note.hidden = false;
-    note.textContent = `${state.latest} requested — the updater installs it within 15 minutes.`;
+    note.textContent = `${state.latest} requested — installation is starting now.`;
     return;
   }
   // No /etc/guard on this box, so there is nothing to write and no unit to act
@@ -1467,7 +1467,7 @@ function renderInfo() {
     return;
   }
   if (state.wanted && state.wanted === state.latest) {
-    summary.textContent = `${state.latest} requested — the updater installs it within 15 minutes.`;
+    summary.textContent = `${state.latest} requested — installation is starting now.`;
     return;
   }
   if (!state.managed) {

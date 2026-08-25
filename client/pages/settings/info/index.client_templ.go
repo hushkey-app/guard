@@ -190,7 +190,7 @@ func Page() templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<span data-info-status class=\"text-sm text-muted-foreground empty:hidden\"></span></div><!-- Not a disclaimer: it is the difference between what this button\n\t\t\t\t     does and what somebody reasonably assumes it does. --> <p class=\"mt-3 text-xs leading-relaxed text-muted-foreground\">Update now writes the version into <code class=\"font-mono\">/etc/guard/version</code>. It installs nothing — <code class=\"font-mono\">guard-update</code> reads that file on its timer, verifies the download, restarts Guard and then the vault, and rolls either back if it does not answer.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<span data-info-status class=\"text-sm text-muted-foreground empty:hidden\"></span></div><!-- Not a disclaimer: it is the difference between what this button\n\t\t\t\t     does and what somebody reasonably assumes it does. --> <p class=\"mt-3 text-xs leading-relaxed text-muted-foreground\">Update now writes the version into <code class=\"font-mono\">/etc/guard/version</code>. The path unit starts <code class=\"font-mono\">guard-update</code> immediately; it verifies the download, restarts Guard and then the vault, and rolls either back if it does not answer.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

@@ -164,9 +164,9 @@ Install the units and the updater once:
 
 ```bash
 install -m 0755 deploy/guard-update /usr/local/bin/guard-update
-install -m 0644 deploy/*.service deploy/*.timer /etc/systemd/system/
+install -m 0644 deploy/*.service deploy/*.timer deploy/*.path /etc/systemd/system/
 useradd --system --home /var/lib/guard --create-home guard
-systemctl enable --now guard guard-vault guard-update.timer
+systemctl enable --now guard guard-vault guard-update.timer guard-update.path
 ```
 
 `/etc/guard` stays root's, with only `version` handed to the guard user — that is
@@ -174,10 +174,10 @@ the whole of what guard writes outside `/var/lib/guard`. Its own configuration
 goes in the database, so there is no env file to create and no directory to hand
 over for it.
 
-Everything after that is the timer. It checks every fifteen minutes, with a
-randomised delay so a fleet does not ask GitHub in lockstep — unauthenticated
-API calls are capped at 60 an hour per address, and four an hour per box leaves
-room for several boxes behind one NAT.
+An Update now request changes `/etc/guard/version`, which `guard-update.path`
+notices immediately and starts the updater. The fifteen-minute timer remains as
+a recovery sweep for missed events and versions changed while the path unit was
+not running, with a randomised delay so a fleet does not ask GitHub in lockstep.
 
 ### The Update button
 

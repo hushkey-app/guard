@@ -13,10 +13,10 @@ type Request struct {
 // Apply writes the wanted version down, and nothing else.
 //
 // It is not an install and it does not restart anything: `deploy/guard-update`
-// reads that file on its timer, verifies the checksum of what it downloads,
+// is started immediately by a path unit, verifies the checksum of what it downloads,
 // restarts guard and then the vault, and rolls either back if it does not
 // answer. So the answer here is "asked for", and the sidebar says so — the
-// change lands within a quarter of an hour, and the page it was pressed on is
+// change starts immediately, and the page it was pressed on is
 // one of the things that gets restarted.
 //
 // Only the release guard has actually seen may be named, because the file is
