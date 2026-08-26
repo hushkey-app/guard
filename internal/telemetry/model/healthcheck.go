@@ -35,6 +35,70 @@ type HealthCheck struct {
 	History    []float64 `json:"history,omitempty"`
 }
 
+type HealthIncident struct {
+	ID               int64                 `json:"id"`
+	CheckID          int64                 `json:"check_id"`
+	StartedAt        time.Time             `json:"started_at"`
+	EndedAt          time.Time             `json:"ended_at"`
+	DurationSeconds  int64                 `json:"duration_seconds"`
+	Comment          string                `json:"comment,omitempty"`
+	Severity         string                `json:"severity"`
+	AllocatedMinutes int                   `json:"allocated_minutes"`
+	Day              string                `json:"day"`
+	Confirmed        bool                  `json:"confirmed"`
+	Events           []HealthIncidentEvent `json:"events"`
+}
+
+type HealthIncidentEvent struct {
+	CheckedAt  time.Time `json:"checked_at"`
+	StatusCode int       `json:"status_code,omitempty"`
+	Error      string    `json:"error"`
+}
+
+type HealthIncidentReport struct {
+	Comment          string `json:"comment"`
+	Severity         string `json:"severity"`
+	AllocatedMinutes int    `json:"allocated_minutes"`
+	Confirmed        bool   `json:"confirmed"`
+}
+
+type HealthIncidentBoard struct {
+	Incidents        []HealthIncident `json:"incidents"`
+	AvailableMinutes map[string]int   `json:"available_minutes"`
+}
+
+type HealthIncidentCreate struct {
+	CheckID int64  `json:"check_id"`
+	Day     string `json:"day"`
+}
+
+func (c HealthIncidentCreate) Validate() error {
+	if c.CheckID <= 0 {
+		return errors.New("check id is required")
+	}
+	if _, err := time.Parse("2006-01-02", c.Day); err != nil {
+		return errors.New("day must be YYYY-MM-DD")
+	}
+	return nil
+}
+
+func (r HealthIncidentReport) Validate() error {
+	r.Comment = strings.TrimSpace(r.Comment)
+	if len(r.Comment) > 500 {
+		return errors.New("incident comment must be 500 characters or fewer")
+	}
+	if r.Severity != "partial" && r.Severity != "major" {
+		return errors.New("incident type must be partial or major outage")
+	}
+	if r.AllocatedMinutes < 0 {
+		return errors.New("incident minutes cannot be negative")
+	}
+	if r.Confirmed && r.AllocatedMinutes == 0 {
+		return errors.New("outage minutes are required before publishing")
+	}
+	return nil
+}
+
 func (h HealthCheck) Interval() time.Duration {
 	seconds := h.IntervalSeconds
 	if seconds < MinIntervalSeconds {

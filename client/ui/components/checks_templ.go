@@ -43,7 +43,7 @@ func HealthCheckDialog() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<input id=\"check-dialog\" type=\"checkbox\" class=\"peer sr-only\"><div class=\"fixed inset-0 z-50 hidden place-items-center overflow-y-auto p-4 peer-checked:grid\"><label for=\"check-dialog\" aria-label=\"Close\" class=\"absolute inset-0 bg-black/70\"></label><div role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"check-dialog-title\" class=\"relative z-10 w-full max-w-2xl rounded-2xl border border-border bg-card text-card-foreground shadow-2xl\"><div class=\"flex items-start justify-between gap-4 border-b border-border p-5\"><div><p class=\"text-xs font-semibold uppercase tracking-[.18em] text-primary\">Health check</p><h2 id=\"check-dialog-title\" data-check-dialog-title class=\"mt-1 text-lg font-semibold tracking-tight\">Add a health check</h2><p class=\"mt-1 text-sm text-muted-foreground\">Guard makes this request from the server, including to private addresses.</p></div><label for=\"check-dialog\" aria-label=\"Close\" class=\"grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<input id=\"check-dialog\" type=\"checkbox\" class=\"peer/check sr-only\"><div class=\"fixed inset-0 z-50 hidden place-items-center overflow-y-auto p-4 peer-checked/check:grid\"><label for=\"check-dialog\" aria-label=\"Close\" class=\"absolute inset-0 bg-black/70\"></label><div role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"check-dialog-title\" class=\"relative z-10 w-full max-w-2xl rounded-2xl border border-border bg-card text-card-foreground shadow-2xl\"><div class=\"flex items-start justify-between gap-4 border-b border-border p-5\"><div><p class=\"text-xs font-semibold uppercase tracking-[.18em] text-primary\">Health check</p><h2 id=\"check-dialog-title\" data-check-dialog-title class=\"mt-1 text-lg font-semibold tracking-tight\">Add a health check</h2><p class=\"mt-1 text-sm text-muted-foreground\">Guard makes this request from the server, including to private addresses.</p></div><label for=\"check-dialog\" aria-label=\"Close\" class=\"grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -278,6 +278,47 @@ func HealthCheckList() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		templ_7745c5c3_Err = HealthIncidentDialog().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func HealthIncidentDialog() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var10 == nil {
+			templ_7745c5c3_Var10 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<input id=\"health-incident-dialog\" type=\"checkbox\" class=\"peer/incident sr-only\"><div class=\"fixed inset-0 z-50 hidden place-items-center overflow-y-auto p-4 peer-checked/incident:grid\"><label for=\"health-incident-dialog\" aria-label=\"Close\" class=\"absolute inset-0 bg-black/70\"></label><div role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"health-incident-title\" class=\"relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-2xl\"><div class=\"flex items-start justify-between gap-4 border-b border-border p-5\"><div><p class=\"text-xs font-semibold uppercase tracking-[.18em] text-primary\">Incident report</p><h2 id=\"health-incident-title\" data-incident-dialog-title class=\"mt-1 text-lg font-semibold tracking-tight\">Incidents</h2><p class=\"mt-1 text-sm text-muted-foreground\">Review recent incidents like a task list. Press ✓ to confirm and publish an incident on the public status page.</p></div><label for=\"health-incident-dialog\" aria-label=\"Close\" class=\"grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = ui.Icon("close", "size-4").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</label></div><div data-incident-list class=\"min-h-0 space-y-3 overflow-y-auto p-5\"></div></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		return nil
 	})
 }
@@ -301,12 +342,12 @@ func HealthCheckCard() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var10 == nil {
-			templ_7745c5c3_Var10 = templ.NopComponent
+		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var11 == nil {
+			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<template data-check-row-template><article data-check-row class=\"flex min-w-0 flex-col rounded-xl border border-border bg-card p-4 text-card-foreground\"><div class=\"flex min-w-0 items-start gap-3\"><span data-check-dot class=\"mt-1.5 size-2.5 shrink-0 rounded-full\"></span><div class=\"min-w-0 flex-1\"><div class=\"flex min-w-0 items-center gap-2\"><h3 data-check-title class=\"truncate text-sm font-medium\"></h3><span data-check-badge class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span></div><p data-check-url class=\"mt-1 truncate font-mono text-[.68rem] text-muted-foreground\"></p></div></div><p data-check-error class=\"mt-2 truncate text-xs text-destructive empty:hidden\"></p><div class=\"mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3\"><div><p data-check-uptime class=\"font-mono text-sm tabular-nums\">—</p><p class=\"text-[.65rem] text-muted-foreground\">24h uptime</p></div><div class=\"text-right\"><p data-check-latency class=\"font-mono text-sm tabular-nums\">—</p><p data-check-checked class=\"text-[.65rem] text-muted-foreground\">not checked</p></div></div><div data-check-machine hidden class=\"mt-3 items-center gap-1.5 text-xs text-muted-foreground\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<template data-check-row-template><article data-check-row class=\"flex min-w-0 flex-col rounded-xl border border-border bg-card p-4 text-card-foreground\"><div class=\"flex min-w-0 items-start gap-3\"><span data-check-dot class=\"mt-1.5 size-2.5 shrink-0 rounded-full\"></span><div class=\"min-w-0 flex-1\"><div class=\"flex min-w-0 items-center gap-2\"><h3 data-check-title class=\"truncate text-sm font-medium\"></h3><span data-check-badge class=\"cn-badge inline-flex w-fit shrink-0 items-center justify-center whitespace-nowrap\"></span></div><p data-check-url class=\"mt-1 truncate font-mono text-[.68rem] text-muted-foreground\"></p></div></div><p data-check-error class=\"mt-2 truncate text-xs text-destructive empty:hidden\"></p><div class=\"mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3\"><div><p data-check-uptime class=\"font-mono text-sm tabular-nums\">—</p><p class=\"text-[.65rem] text-muted-foreground\">24h uptime</p></div><div class=\"text-right\"><p data-check-latency class=\"font-mono text-sm tabular-nums\">—</p><p data-check-checked class=\"text-[.65rem] text-muted-foreground\">not checked</p></div></div><div data-check-machine hidden class=\"mt-3 items-center gap-1.5 text-xs text-muted-foreground\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -314,11 +355,11 @@ func HealthCheckCard() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<span data-check-machine-name class=\"truncate\"></span></div><div data-check-strip class=\"mt-3 flex h-3 items-end gap-px\" title=\"Last sixty checks\"></div><div class=\"mt-auto flex items-center justify-between gap-2 pt-4\"><p data-check-note class=\"min-w-0 truncate text-xs text-muted-foreground\"></p><div class=\"ml-auto flex shrink-0 items-center gap-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<span data-check-machine-name class=\"truncate\"></span></div><div data-check-strip class=\"mt-3 flex h-3 items-end gap-px\" title=\"Last sixty checks\"></div><div class=\"mt-auto flex items-center justify-between gap-2 pt-4\"><p data-check-note class=\"min-w-0 truncate text-xs text-muted-foreground\"></p><div class=\"ml-auto flex shrink-0 items-center gap-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -330,17 +371,39 @@ func HealthCheckCard() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "Check now ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "Check now ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeXs, Attributes: templ.Attributes{"data-check-run": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeXs, Attributes: templ.Attributes{"data-check-run": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var13 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "Report accident ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeXs, Attributes: templ.Attributes{"data-check-incidents": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var13), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var14 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -358,11 +421,11 @@ func HealthCheckCard() templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"data-check-edit": true, "aria-label": "Edit health check", "title": "Edit"}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"data-check-edit": true, "aria-label": "Edit health check", "title": "Edit"}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var13 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var15 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -380,11 +443,11 @@ func HealthCheckCard() templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Class: "text-muted-foreground hover:text-destructive", Attributes: templ.Attributes{"data-check-delete": true, "aria-label": "Delete health check", "title": "Delete"}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var13), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Class: "text-muted-foreground hover:text-destructive", Attributes: templ.Attributes{"data-check-delete": true, "aria-label": "Delete health check", "title": "Delete"}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div></article></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div></div></article></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

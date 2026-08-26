@@ -3,6 +3,8 @@ package telemetry
 import (
 	"testing"
 	"time"
+
+	"github.com/hushkey-app/guard/internal/telemetry/model"
 )
 
 func TestHealthChecksAreIndependentAndPrivateByDefault(t *testing.T) {
@@ -128,5 +130,118 @@ func TestSeveralHealthChecksCanUseTheSameMachine(t *testing.T) {
 		if check.NodeID != node.ID {
 			t.Fatalf("%s machine = %d, want %d", service.name, check.NodeID, node.ID)
 		}
+	}
+}
+
+func TestHealthCheckDowntimeClosesOnNextProbeAndSplitsDays(t *testing.T) {
+	store := NewStore(100)
+	defer store.Close()
+
+	check, err := store.SaveHealthCheck(HealthCheck{
+		Name: "API", URL: "https://api.example.com/health", Enabled: true,
+		Public: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 7, 2, 23, 59, 30, 0, time.UTC)
+	if err := store.RecordHealthCheck(check.ID, Check{OK: false, CheckedAt: start}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordHealthCheck(check.ID, Check{OK: true, CheckedAt: start.Add(93 * time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+
+	type rollup struct {
+		day, seconds int64
+	}
+	rows, err := store.rdb.Query(`SELECT day,downtime_seconds FROM health_check_uptime_days
+WHERE check_id=? ORDER BY day`, check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []rollup
+	for rows.Next() {
+		var row rollup
+		if err := rows.Scan(&row.day, &row.seconds); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, row)
+	}
+	if len(got) != 2 || got[0].seconds != 30 || got[1].seconds != 63 {
+		t.Fatalf("downtime rollups = %#v", got)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	incidents, err := store.HealthIncidents(check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incidents) != 1 || incidents[0].DurationSeconds != 93 || len(incidents[0].Events) != 1 {
+		t.Fatalf("completed incidents = %#v", incidents)
+	}
+	if err := store.SaveHealthIncident(incidents[0].ID, model.HealthIncidentReport{
+		Comment: "Elevated errors on Claude Opus 4.8", Severity: "major", AllocatedMinutes: 1, Confirmed: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := store.PublicStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var published int
+	for _, day := range status.Services[0].Days {
+		published += len(day.Incidents)
+	}
+	if published != 1 {
+		t.Fatalf("published incident appears on %d days, want 1", published)
+	}
+}
+
+func TestManualHealthIncidentIsADraftForItsDay(t *testing.T) {
+	store := NewStore(100)
+	defer store.Close()
+	check, err := store.SaveHealthCheck(HealthCheck{
+		Name: "API", URL: "https://api.example.com/health", Enabled: true, Public: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := time.Now().UTC().Format("2006-01-02")
+	start := time.Now().UTC().Truncate(24 * time.Hour).Add(time.Hour)
+	if err := store.RecordHealthCheck(check.ID, Check{OK: false, CheckedAt: start}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordHealthCheck(check.ID, Check{OK: true, CheckedAt: start.Add(40 * time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	incident, err := store.CreateHealthIncident(model.HealthIncidentCreate{CheckID: check.ID, Day: day})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if incident.Confirmed || incident.StartedAt.Format("2006-01-02") != day || !incident.EndedAt.Equal(incident.StartedAt) {
+		t.Fatalf("manual incident = %#v", incident)
+	}
+	if err := store.SaveHealthIncident(incident.ID, model.HealthIncidentReport{Comment: "Provider disruption", Severity: "major", AllocatedMinutes: 18, Confirmed: true}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.CreateHealthIncident(model.HealthIncidentCreate{CheckID: check.ID, Day: day})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveHealthIncident(second.ID, model.HealthIncidentReport{Comment: "Elevated errors", Severity: "partial", AllocatedMinutes: 22, Confirmed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveHealthIncident(incident.ID, model.HealthIncidentReport{Comment: "Provider disruption", Severity: "major", AllocatedMinutes: 23, Confirmed: true}); err == nil {
+		t.Fatal("allocated 45 minutes from 40 available")
+	}
+	status, err := store.PublicStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := status.Services[0].Days[len(status.Services[0].Days)-1]
+	if len(today.Incidents) != 2 || today.Incidents[0].Minutes+today.Incidents[1].Minutes != 40 {
+		t.Fatalf("public manual incident = %#v", today.Incidents)
 	}
 }

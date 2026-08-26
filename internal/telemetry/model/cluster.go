@@ -839,8 +839,19 @@ type PublicService struct {
 // PublicDay is one bar. Checks is zero for a day guard was not watching, which
 // the page must draw as absence rather than as an outage.
 type PublicDay struct {
-	Date   string  `json:"date"`
-	Checks int64   `json:"checks"`
-	OK     int64   `json:"ok"`
-	Uptime float64 `json:"uptime"`
+	Date            string           `json:"date"`
+	Checks          int64            `json:"checks"`
+	OK              int64            `json:"ok"`
+	Uptime          float64          `json:"uptime"`
+	DowntimeSeconds int64            `json:"downtime_seconds"`
+	Incidents       []PublicIncident `json:"incidents,omitempty"`
+}
+
+// PublicIncident is an administrator-confirmed explanation attached to every
+// UTC day touched by one completed outage. Probe errors stay private.
+type PublicIncident struct {
+	ID       int64  `json:"id"`
+	Comment  string `json:"comment"`
+	Severity string `json:"severity"`
+	Minutes  int    `json:"minutes"`
 }

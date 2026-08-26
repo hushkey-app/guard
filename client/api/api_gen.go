@@ -14,6 +14,7 @@ import (
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/hushkey-app/guard/internal/vultr"
+	"github.com/hushkey-app/guard/server/apis/checks/incidents"
 	"github.com/hushkey-app/guard/server/apis/cloud/accounts"
 	"github.com/hushkey-app/guard/server/apis/cloud/storage"
 	"github.com/hushkey-app/guard/server/apis/cluster"
@@ -55,6 +56,11 @@ func (c *Client) AddClusterNode(ctx context.Context, body model.Node) (model.Nod
 // AddHealthCheck calls POST /api/checks.
 func (c *Client) AddHealthCheck(ctx context.Context, body model.HealthCheck) (model.HealthCheck, error) {
 	return api.Call[model.HealthCheck](ctx, c.Transport, "POST", "/api/checks", nil, body)
+}
+
+// AddHealthIncident calls POST /api/checks/incidents.
+func (c *Client) AddHealthIncident(ctx context.Context, body model.HealthIncidentCreate) (model.HealthIncident, error) {
+	return api.Call[model.HealthIncident](ctx, c.Transport, "POST", "/api/checks/incidents", nil, body)
 }
 
 // AddMember calls POST /api/members.
@@ -160,6 +166,11 @@ func (c *Client) ClusterRuns(ctx context.Context, query cluster.RunQuery) ([]mod
 // ClusterTopology calls GET /api/cluster/topology.
 func (c *Client) ClusterTopology(ctx context.Context) (model.ClusterTopology, error) {
 	return api.Call[model.ClusterTopology](ctx, c.Transport, "GET", "/api/cluster/topology", nil, nil)
+}
+
+// CompletedHealthIncidents calls GET /api/checks/incidents.
+func (c *Client) CompletedHealthIncidents(ctx context.Context, query incidents.IncidentQuery) (model.HealthIncidentBoard, error) {
+	return api.Call[model.HealthIncidentBoard](ctx, c.Transport, "GET", "/api/checks/incidents", query, nil)
 }
 
 // ComposeTemplate calls GET /api/deploy/templates/{id}.
@@ -521,6 +532,12 @@ func (c *Client) RemoveHealthCheck(ctx context.Context, id string) error {
 	return err
 }
 
+// RemoveManualHealthIncident calls DELETE /api/checks/incidents/{id}.
+func (c *Client) RemoveManualHealthIncident(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/checks/incidents/{id}", id), nil, nil)
+	return err
+}
+
 // RemoveMember calls DELETE /api/members/{email}.
 func (c *Client) RemoveMember(ctx context.Context, email string) (members.Removed, error) {
 	return api.Call[members.Removed](ctx, c.Transport, "DELETE", api.Path("/api/members/{email}", email), nil, nil)
@@ -617,6 +634,12 @@ func (c *Client) SaveDeployGroup(ctx context.Context, body groups.Group) (model.
 // SaveEventDestination calls PUT /api/webhooks.
 func (c *Client) SaveEventDestination(ctx context.Context, body model.Webhook) (model.Webhook, error) {
 	return api.Call[model.Webhook](ctx, c.Transport, "PUT", "/api/webhooks", nil, body)
+}
+
+// SaveHealthIncidentReport calls PUT /api/checks/incidents/{id}.
+func (c *Client) SaveHealthIncidentReport(ctx context.Context, id string, body model.HealthIncidentReport) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "PUT", api.Path("/api/checks/incidents/{id}", id), nil, body)
+	return err
 }
 
 // SaveMachineEnvironment calls PUT /api/cluster/env.
