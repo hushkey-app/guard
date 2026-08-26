@@ -616,7 +616,7 @@ SELECT id,?,?,'partial',? FROM health_checks WHERE id=?`, at, at, epochDay(day),
 }
 
 func (s *Store) DeleteHealthIncident(id int64) error {
-	result, err := s.db.Exec(`DELETE FROM health_check_incidents WHERE id=? AND confirmed=0
+	result, err := s.db.Exec(`DELETE FROM health_check_incidents WHERE id=?
 AND NOT EXISTS(SELECT 1 FROM health_check_incident_events WHERE incident_id=health_check_incidents.id)`, id)
 	if err != nil {
 		return err

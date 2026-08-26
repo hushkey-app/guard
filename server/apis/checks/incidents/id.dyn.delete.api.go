@@ -18,7 +18,7 @@ var Remove = api.Define(api.Spec[api.None, api.None, api.None]{
 			return api.None{}, api.Invalid("id", "must be a number")
 		}
 		if err := store.Get().DeleteHealthIncident(id); errors.Is(err, sql.ErrNoRows) {
-			return api.None{}, api.NotFound("only unconfirmed manual incidents can be removed")
+			return api.None{}, api.NotFound("only manually added incidents can be removed")
 		} else if err != nil {
 			return api.None{}, err
 		}

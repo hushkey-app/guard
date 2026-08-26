@@ -311,7 +311,7 @@ function incidentRow(incident, maximum) {
 	const state = el("p", "max-w-32 shrink-0 truncate text-xs text-muted-foreground", "");
 	state.dataset.incidentStatus = "";
 	line.append(state);
-	if (!incident.confirmed && !incident.events?.length) {
+	if (!incident.events?.length) {
 		const remove = el("button", "cn-button cn-button-variant-ghost cn-button-size-icon-xs text-muted-foreground hover:text-destructive", "X");
 		remove.type = "button";
 		remove.dataset.incidentRemove = incident.id;

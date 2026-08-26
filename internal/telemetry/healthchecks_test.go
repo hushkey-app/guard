@@ -283,4 +283,19 @@ func TestManualHealthIncidentIsADraftForItsDay(t *testing.T) {
 	if len(today.Incidents) != 2 || today.Incidents[0].Minutes+today.Incidents[1].Minutes != 40 {
 		t.Fatalf("public manual incident = %#v", today.Incidents)
 	}
+	if err := store.DeleteHealthIncident(incident.ID); err != nil {
+		t.Fatalf("delete published manual incident: %v", err)
+	}
+	remaining, err := store.HealthIncidents(check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundDeleted, foundSecond bool
+	for _, item := range remaining {
+		foundDeleted = foundDeleted || item.ID == incident.ID
+		foundSecond = foundSecond || item.ID == second.ID
+	}
+	if foundDeleted || !foundSecond {
+		t.Fatalf("incidents after removing published manual row = %#v", remaining)
+	}
 }
