@@ -72,6 +72,13 @@ CREATE TABLE IF NOT EXISTS health_check_incident_events (
   checked_at_ns INTEGER NOT NULL,
   status_code INTEGER NOT NULL DEFAULT 0,
   error TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS health_check_incident_updates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_id INTEGER NOT NULL REFERENCES health_check_incidents(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at_ns INTEGER NOT NULL
 );`
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate health checks: %w", err)
@@ -451,8 +458,73 @@ FROM health_check_incidents WHERE check_id=? AND ended_at_ns IS NOT NULL ORDER B
 		if err := events.Close(); err != nil {
 			return nil, err
 		}
+		updates, err := s.rdb.Query(`SELECT id,status,message,created_at_ns FROM health_check_incident_updates WHERE incident_id=? ORDER BY created_at_ns DESC,id DESC`, incidents[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		for updates.Next() {
+			var update model.HealthIncidentUpdate
+			var created int64
+			if err := updates.Scan(&update.ID, &update.Status, &update.Message, &created); err != nil {
+				updates.Close()
+				return nil, err
+			}
+			update.IncidentID = incidents[i].ID
+			update.CreatedAt = time.Unix(0, created).UTC()
+			incidents[i].Updates = append(incidents[i].Updates, update)
+		}
+		if err := updates.Close(); err != nil {
+			return nil, err
+		}
 	}
 	return incidents, nil
+}
+
+func (s *Store) AddHealthIncidentUpdate(input model.HealthIncidentUpdateCreate) (model.HealthIncidentUpdate, error) {
+	input.Message = strings.TrimSpace(input.Message)
+	if err := input.Validate(); err != nil {
+		return model.HealthIncidentUpdate{}, err
+	}
+	now := time.Now().UTC()
+	result, err := s.db.Exec(`INSERT INTO health_check_incident_updates(incident_id,status,message,created_at_ns)
+SELECT id,?,?,? FROM health_check_incidents WHERE id=? AND ended_at_ns IS NOT NULL`, input.Status, input.Message, now.UnixNano(), input.IncidentID)
+	if err != nil {
+		return model.HealthIncidentUpdate{}, err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return model.HealthIncidentUpdate{}, sql.ErrNoRows
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return model.HealthIncidentUpdate{}, err
+	}
+	return model.HealthIncidentUpdate{ID: id, IncidentID: input.IncidentID, Status: input.Status, Message: input.Message, CreatedAt: now}, nil
+}
+
+func (s *Store) SaveHealthIncidentUpdate(id int64, input model.HealthIncidentUpdateEdit) error {
+	input.Message = strings.TrimSpace(input.Message)
+	if err := input.Validate(); err != nil {
+		return err
+	}
+	result, err := s.db.Exec(`UPDATE health_check_incident_updates SET status=?,message=? WHERE id=?`, input.Status, input.Message, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) DeleteHealthIncidentUpdate(id int64) error {
+	result, err := s.db.Exec(`DELETE FROM health_check_incident_updates WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) HealthIncidentBoard(checkID int64) (model.HealthIncidentBoard, error) {

@@ -850,8 +850,15 @@ type PublicDay struct {
 // PublicIncident is an administrator-confirmed explanation attached to every
 // UTC day touched by one completed outage. Probe errors stay private.
 type PublicIncident struct {
-	ID       int64  `json:"id"`
-	Comment  string `json:"comment"`
-	Severity string `json:"severity"`
-	Minutes  int    `json:"minutes"`
+	ID       int64                  `json:"id"`
+	Comment  string                 `json:"comment"`
+	Severity string                 `json:"severity"`
+	Minutes  int                    `json:"minutes"`
+	Updates  []PublicIncidentUpdate `json:"updates,omitempty"`
+}
+
+type PublicIncidentUpdate struct {
+	Status    string    `json:"status"`
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"created_at"`
 }

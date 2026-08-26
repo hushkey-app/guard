@@ -63,6 +63,11 @@ func (c *Client) AddHealthIncident(ctx context.Context, body model.HealthInciden
 	return api.Call[model.HealthIncident](ctx, c.Transport, "POST", "/api/checks/incidents", nil, body)
 }
 
+// AddHealthIncidentUpdate calls POST /api/checks/incidents/updates.
+func (c *Client) AddHealthIncidentUpdate(ctx context.Context, body model.HealthIncidentUpdateCreate) (model.HealthIncidentUpdate, error) {
+	return api.Call[model.HealthIncidentUpdate](ctx, c.Transport, "POST", "/api/checks/incidents/updates", nil, body)
+}
+
 // AddMember calls POST /api/members.
 func (c *Client) AddMember(ctx context.Context, body members.Invite) (model.Member, error) {
 	return api.Call[model.Member](ctx, c.Transport, "POST", "/api/members", nil, body)
@@ -532,6 +537,12 @@ func (c *Client) RemoveHealthCheck(ctx context.Context, id string) error {
 	return err
 }
 
+// RemoveHealthIncidentUpdate calls DELETE /api/checks/incidents/updates/{id}.
+func (c *Client) RemoveHealthIncidentUpdate(ctx context.Context, id string) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/checks/incidents/updates/{id}", id), nil, nil)
+	return err
+}
+
 // RemoveManualHealthIncident calls DELETE /api/checks/incidents/{id}.
 func (c *Client) RemoveManualHealthIncident(ctx context.Context, id string) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "DELETE", api.Path("/api/checks/incidents/{id}", id), nil, nil)
@@ -639,6 +650,12 @@ func (c *Client) SaveEventDestination(ctx context.Context, body model.Webhook) (
 // SaveHealthIncidentReport calls PUT /api/checks/incidents/{id}.
 func (c *Client) SaveHealthIncidentReport(ctx context.Context, id string, body model.HealthIncidentReport) error {
 	_, err := api.Call[api.None](ctx, c.Transport, "PUT", api.Path("/api/checks/incidents/{id}", id), nil, body)
+	return err
+}
+
+// SaveHealthIncidentUpdate calls PUT /api/checks/incidents/updates/{id}.
+func (c *Client) SaveHealthIncidentUpdate(ctx context.Context, id string, body model.HealthIncidentUpdateEdit) error {
+	_, err := api.Call[api.None](ctx, c.Transport, "PUT", api.Path("/api/checks/incidents/updates/{id}", id), nil, body)
 	return err
 }
 

@@ -186,16 +186,55 @@ WHERE check_id=? ORDER BY day`, check.ID)
 	}); err != nil {
 		t.Fatal(err)
 	}
+	incidentID := incidents[0].ID
+	if _, err := store.AddHealthIncidentUpdate(model.HealthIncidentUpdateCreate{
+		IncidentID: incidentID, Status: "investigating", Message: "We are investigating elevated errors.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddHealthIncidentUpdate(model.HealthIncidentUpdateCreate{
+		IncidentID: incidentID, Status: "resolved", Message: "This issue has been resolved.",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	status, err := store.PublicStatus()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var published int
+	var publicUpdates []model.PublicIncidentUpdate
 	for _, day := range status.Services[0].Days {
 		published += len(day.Incidents)
+		if len(day.Incidents) > 0 {
+			publicUpdates = day.Incidents[0].Updates
+		}
 	}
 	if published != 1 {
 		t.Fatalf("published incident appears on %d days, want 1", published)
+	}
+	if len(publicUpdates) != 2 || publicUpdates[0].Status != "resolved" || publicUpdates[1].Status != "investigating" {
+		t.Fatalf("public incident updates = %#v", publicUpdates)
+	}
+	incidents, err = store.HealthIncidents(check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incidents[0].Updates) != 2 || incidents[0].Updates[0].Message != "This issue has been resolved." {
+		t.Fatalf("admin incident updates = %#v", incidents[0].Updates)
+	}
+	resolved := incidents[0].Updates[0]
+	if err := store.SaveHealthIncidentUpdate(resolved.ID, model.HealthIncidentUpdateEdit{Status: "monitoring", Message: "Recovery is stable."}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteHealthIncidentUpdate(resolved.ID); err != nil {
+		t.Fatal(err)
+	}
+	incidents, err = store.HealthIncidents(check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incidents[0].Updates) != 1 || incidents[0].Updates[0].Status != "investigating" {
+		t.Fatalf("updates after edit and removal = %#v", incidents[0].Updates)
 	}
 }
 

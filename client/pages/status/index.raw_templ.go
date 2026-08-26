@@ -471,20 +471,20 @@ func Page() templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div><p class=\"mt-10 text-center text-xs text-muted-foreground\">Updated ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div><footer class=\"mt-10 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground\"><a class=\"underline-offset-4 hover:text-foreground hover:underline\" href=\"/status/past\">Incident History</a> <span>Updated ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(status.AsOf.Format("2006-01-02 15:04 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/status/index.raw.templ`, Line: 225, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `client/pages/status/index.raw.templ`, Line: 226, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</p></main></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</span> <span>Powered by HUSHKEY</span></footer></main></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

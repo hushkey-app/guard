@@ -36,23 +36,69 @@ type HealthCheck struct {
 }
 
 type HealthIncident struct {
-	ID               int64                 `json:"id"`
-	CheckID          int64                 `json:"check_id"`
-	StartedAt        time.Time             `json:"started_at"`
-	EndedAt          time.Time             `json:"ended_at"`
-	DurationSeconds  int64                 `json:"duration_seconds"`
-	Comment          string                `json:"comment,omitempty"`
-	Severity         string                `json:"severity"`
-	AllocatedMinutes int                   `json:"allocated_minutes"`
-	Day              string                `json:"day"`
-	Confirmed        bool                  `json:"confirmed"`
-	Events           []HealthIncidentEvent `json:"events"`
+	ID               int64                  `json:"id"`
+	CheckID          int64                  `json:"check_id"`
+	StartedAt        time.Time              `json:"started_at"`
+	EndedAt          time.Time              `json:"ended_at"`
+	DurationSeconds  int64                  `json:"duration_seconds"`
+	Comment          string                 `json:"comment,omitempty"`
+	Severity         string                 `json:"severity"`
+	AllocatedMinutes int                    `json:"allocated_minutes"`
+	Day              string                 `json:"day"`
+	Confirmed        bool                   `json:"confirmed"`
+	Events           []HealthIncidentEvent  `json:"events"`
+	Updates          []HealthIncidentUpdate `json:"updates"`
 }
 
 type HealthIncidentEvent struct {
 	CheckedAt  time.Time `json:"checked_at"`
 	StatusCode int       `json:"status_code,omitempty"`
 	Error      string    `json:"error"`
+}
+
+type HealthIncidentUpdate struct {
+	ID         int64     `json:"id"`
+	IncidentID int64     `json:"incident_id"`
+	Status     string    `json:"status"`
+	Message    string    `json:"message"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type HealthIncidentUpdateCreate struct {
+	IncidentID int64  `json:"incident_id"`
+	Status     string `json:"status"`
+	Message    string `json:"message"`
+}
+
+type HealthIncidentUpdateEdit struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+func (u HealthIncidentUpdateCreate) Validate() error {
+	if u.IncidentID <= 0 {
+		return errors.New("incident id is required")
+	}
+	return validateIncidentUpdate(u.Status, u.Message)
+}
+
+func (u HealthIncidentUpdateEdit) Validate() error {
+	return validateIncidentUpdate(u.Status, u.Message)
+}
+
+func validateIncidentUpdate(status, message string) error {
+	switch status {
+	case "investigating", "identified", "update", "monitoring", "resolved":
+	default:
+		return errors.New("incident update status is not valid")
+	}
+	if strings.TrimSpace(message) == "" {
+		return errors.New("incident update message is required")
+	}
+	if len(message) > 1000 {
+		return errors.New("incident update message must be 1000 characters or fewer")
+	}
+	return nil
 }
 
 type HealthIncidentReport struct {

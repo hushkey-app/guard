@@ -178,6 +178,7 @@ WHERE check_id=? ORDER BY checked_at_ns DESC LIMIT 1`, item.id).Scan(&latestAt, 
 			}
 		}
 		incidentsByDay := make(map[int64][]model.PublicIncident)
+		incidentDayByID := make(map[int64]int64)
 		incidents, err := s.rdb.Query(`SELECT id,report_day,comment,severity,allocated_minutes
 FROM health_check_incidents WHERE check_id=? AND confirmed=1 AND ended_at_ns IS NOT NULL
 AND report_day>=? AND report_day<=? ORDER BY report_day,started_at_ns`, item.id, first, today)
@@ -195,8 +196,35 @@ AND report_day>=? AND report_day<=? ORDER BY report_day,started_at_ns`, item.id,
 			incidentsByDay[day] = append(incidentsByDay[day], model.PublicIncident{
 				ID: id, Comment: comment, Severity: severity, Minutes: minutes,
 			})
+			incidentDayByID[id] = day
 		}
 		if err := incidents.Close(); err != nil {
+			return model.PublicStatus{}, err
+		}
+		updates, err := s.rdb.Query(`SELECT u.incident_id,u.status,u.message,u.created_at_ns
+FROM health_check_incident_updates u JOIN health_check_incidents i ON i.id=u.incident_id
+WHERE i.check_id=? AND i.confirmed=1 AND i.report_day>=? AND i.report_day<=?
+ORDER BY u.created_at_ns DESC,u.id DESC`, item.id, first, today)
+		if err != nil {
+			return model.PublicStatus{}, err
+		}
+		for updates.Next() {
+			var incidentID, created int64
+			var update model.PublicIncidentUpdate
+			if err := updates.Scan(&incidentID, &update.Status, &update.Message, &created); err != nil {
+				updates.Close()
+				return model.PublicStatus{}, err
+			}
+			update.CreatedAt = time.Unix(0, created).UTC()
+			day := incidentDayByID[incidentID]
+			for i := range incidentsByDay[day] {
+				if incidentsByDay[day][i].ID == incidentID {
+					incidentsByDay[day][i].Updates = append(incidentsByDay[day][i].Updates, update)
+					break
+				}
+			}
+		}
+		if err := updates.Close(); err != nil {
 			return model.PublicStatus{}, err
 		}
 

@@ -51,6 +51,7 @@ func FsClientRoutes() []router.Route {
 		{Pattern: "/settings/members", Label: "Members", Page: p15.Page, Head: p15.Head, Mount: p15.Mount, Unmount: p15.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
 		{Pattern: "/settings/security", Label: "Security", Page: p16.Page, Head: p16.Head, Mount: p16.Mount, Unmount: p16.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
 		{Pattern: "/status", Label: "Status", Page: p17.Page, Head: nil, Mount: nil, Unmount: nil, Layouts: nil, Client: false, Raw: true},
+		{Pattern: "/status/past", Label: "Past", Page: p17.Past, Head: nil, Mount: nil, Unmount: nil, Layouts: nil, Client: false, Raw: true},
 		{Pattern: "/storage", Label: "Storage", Page: p18.Page, Head: p18.Head, Mount: p18.Mount, Unmount: p18.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
 		{Pattern: "/traces", Label: "Traces", Page: p19.Page, Head: p19.Head, Mount: p19.Mount, Unmount: p19.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},
 		{Pattern: "/views", Label: "Views", Page: p20.Page, Head: p20.Head, Mount: p20.Mount, Unmount: p20.Unmount, Layouts: []router.Wrapper{Layout}, Client: true, Raw: false},

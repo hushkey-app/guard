@@ -17,6 +17,7 @@ let inFlight = null;
 let machines = [];
 let machinesRequest = null;
 let incidentCheck = null;
+let expandedIncidentID = 0;
 
 function stateOf(check) { return check.enabled ? (check.status || "unknown") : "paused"; }
 function hasReading(check) {
@@ -267,14 +268,20 @@ function incidentRow(incident, maximum) {
 	const form = el("form", "border-b border-border py-2 last:border-b-0");
 	form.dataset.incidentId = incident.id;
 	const line = el("div", "flex items-center gap-2");
-	const severity = el("select", "cn-native-select h-9 w-40 shrink-0 text-xs");
+	const severityControl = el("div", "relative size-9 shrink-0");
+	const severityFace = el("span", "pointer-events-none absolute inset-0 flex items-center justify-center rounded-md border border-input bg-background text-base", incident.severity === "major" ? "❌" : "⚠️");
+	severityFace.dataset.severityFace = "";
+	const severity = el("select", "absolute inset-0 z-10 size-9 cursor-pointer appearance-none opacity-0");
 	severity.name = "severity";
+	severity.setAttribute("aria-label", "Outage severity");
 	const partial = el("option", "", "⚠️ Partial outage");
 	partial.value = "partial";
 	const major = el("option", "", "❌ Major outage");
 	major.value = "major";
 	severity.append(partial, major);
 	severity.value = incident.severity || "partial";
+	severity.title = severity.selectedOptions[0]?.textContent || "Outage severity";
+	severityControl.append(severityFace, severity);
 	const minutes = el("select", "cn-native-select h-9 w-24 shrink-0 text-xs tabular-nums");
 	minutes.name = "minutes";
 	fillMinuteOptions(minutes, maximum, incident.allocated_minutes || 0);
@@ -285,7 +292,7 @@ function incidentRow(incident, maximum) {
 	comment.maxLength = 500;
 	comment.placeholder = "Related issue";
 	comment.value = incident.comment || "";
-	line.append(severity, minutes, comment);
+	line.append(severityControl, minutes, comment);
 	if (incident.events?.length) {
 		const events = el("details", "relative shrink-0");
 		const summary = el("summary", "cursor-pointer whitespace-nowrap text-xs text-muted-foreground", `${incident.events.length} errors`);
@@ -312,12 +319,68 @@ function incidentRow(incident, maximum) {
 		remove.title = "Remove incident";
 		line.append(remove);
 	}
+	const comments = el("button", "cn-button cn-button-variant-ghost cn-button-size-icon-xs", "💬");
+	comments.type = "button";
+	comments.dataset.incidentComments = incident.id;
+	comments.setAttribute("aria-label", "Incident updates");
+	comments.title = "Incident updates";
+	line.append(comments);
 	const save = el("button", "cn-button cn-button-variant-outline cn-button-size-icon-xs", "✓");
 	save.type = "submit";
 	save.setAttribute("aria-label", "Save incident");
 	save.title = "Save incident";
 	line.append(save);
 	form.append(line);
+	const panel = el("div", "mt-2 space-y-2 border-t border-border pt-2");
+	panel.dataset.incidentUpdatesPanel = "";
+	panel.hidden = expandedIncidentID !== Number(incident.id);
+	for (const update of incident.updates || []) {
+		const row = el("div", "flex items-center gap-2");
+		row.dataset.incidentUpdateRow = update.id;
+		const rowStatus = el("select", "cn-native-select h-8 w-32 shrink-0 text-xs");
+		rowStatus.dataset.incidentUpdateRowStatus = "";
+		for (const [value, label] of [["investigating", "Investigating"], ["identified", "Identified"], ["update", "Update"], ["monitoring", "Monitoring"], ["resolved", "Resolved"]]) {
+			const option = el("option", "", label);
+			option.value = value;
+			rowStatus.append(option);
+		}
+		rowStatus.value = update.status;
+		const rowMessage = el("input", "cn-input h-8 min-w-0 flex-1 text-xs");
+		rowMessage.type = "text";
+		rowMessage.maxLength = 1000;
+		rowMessage.value = update.message;
+		rowMessage.dataset.incidentUpdateRowMessage = "";
+		const removeUpdate = el("button", "cn-button cn-button-variant-ghost cn-button-size-icon-xs text-muted-foreground hover:text-destructive", "X");
+		removeUpdate.type = "button";
+		removeUpdate.dataset.incidentUpdateRemove = update.id;
+		removeUpdate.setAttribute("aria-label", "Remove incident update");
+		const saveUpdate = el("button", "cn-button cn-button-variant-outline cn-button-size-icon-xs", "✓");
+		saveUpdate.type = "button";
+		saveUpdate.dataset.incidentUpdateSave = update.id;
+		saveUpdate.setAttribute("aria-label", "Save incident update");
+		row.append(rowStatus, rowMessage, removeUpdate, saveUpdate);
+		panel.append(row);
+	}
+	const updateForm = el("div", "flex items-center gap-2");
+	const updateStatus = el("select", "cn-native-select h-8 w-32 shrink-0 text-xs");
+	updateStatus.dataset.incidentUpdateStatus = "";
+	for (const [value, label] of [["investigating", "Investigating"], ["identified", "Identified"], ["update", "Update"], ["monitoring", "Monitoring"], ["resolved", "Resolved"]]) {
+		const option = el("option", "", label);
+		option.value = value;
+		updateStatus.append(option);
+	}
+	const updateMessage = el("input", "cn-input h-8 min-w-0 flex-1 text-xs");
+	updateMessage.type = "text";
+	updateMessage.maxLength = 1000;
+	updateMessage.placeholder = "Incident update";
+	updateMessage.dataset.incidentUpdateMessage = "";
+	const addUpdate = el("button", "cn-button cn-button-variant-outline cn-button-size-icon-xs", "✓");
+	addUpdate.type = "button";
+	addUpdate.dataset.incidentUpdateAdd = incident.id;
+	addUpdate.setAttribute("aria-label", "Add incident update");
+	updateForm.append(updateStatus, updateMessage, addUpdate);
+	panel.append(updateForm);
+	form.append(panel);
 	return form;
 }
 
@@ -445,6 +508,62 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("click", (event) => {
+	const saveUpdate = event.target.closest?.("[data-incident-update-save]");
+	if (saveUpdate) {
+		const row = saveUpdate.closest("[data-incident-update-row]");
+		const status = qs("[data-incident-update-row-status]", row);
+		const message = qs("[data-incident-update-row-message]", row);
+		if (!message.value.trim()) {
+			message.classList.add("border-destructive", "ring-2", "ring-destructive");
+			message.focus();
+			return;
+		}
+		saveUpdate.disabled = true;
+		request(`/api/checks/incidents/updates/${saveUpdate.dataset.incidentUpdateSave}`, {
+			method: "PUT", headers: adminHeaders(), body: JSON.stringify({ status: status.value, message: message.value.trim() }),
+		}).then(() => loadIncidentList()).catch((failure) => {
+			qs("[data-incident-status]", row.closest("[data-incident-id]")).textContent = failure.message;
+		}).finally(() => { saveUpdate.disabled = false; });
+		return;
+	}
+	const removeUpdate = event.target.closest?.("[data-incident-update-remove]");
+	if (removeUpdate) {
+		removeUpdate.disabled = true;
+		request(`/api/checks/incidents/updates/${removeUpdate.dataset.incidentUpdateRemove}`, { method: "DELETE", headers: adminHeaders() })
+			.then(() => loadIncidentList())
+			.catch((failure) => { qs("[data-incident-status]", removeUpdate.closest("[data-incident-id]")).textContent = failure.message; })
+			.finally(() => { removeUpdate.disabled = false; });
+		return;
+	}
+	const comments = event.target.closest?.("[data-incident-comments]");
+	if (comments) {
+		const form = comments.closest("[data-incident-id]");
+		const panel = qs("[data-incident-updates-panel]", form);
+		panel.hidden = !panel.hidden;
+		expandedIncidentID = panel.hidden ? 0 : Number(comments.dataset.incidentComments);
+		return;
+	}
+	const addUpdate = event.target.closest?.("[data-incident-update-add]");
+	if (addUpdate) {
+		const form = addUpdate.closest("[data-incident-id]");
+		const status = qs("[data-incident-update-status]", form);
+		const message = qs("[data-incident-update-message]", form);
+		if (!message.value.trim()) {
+			message.classList.add("border-destructive", "ring-2", "ring-destructive");
+			message.focus();
+			return;
+		}
+		addUpdate.disabled = true;
+		expandedIncidentID = Number(addUpdate.dataset.incidentUpdateAdd);
+		request("/api/checks/incidents/updates", {
+			method: "POST", headers: adminHeaders(), body: JSON.stringify({
+				incident_id: expandedIncidentID, status: status.value, message: message.value.trim(),
+			}),
+		}).then(() => loadIncidentList()).catch((failure) => {
+			qs("[data-incident-status]", form).textContent = failure.message;
+		}).finally(() => { addUpdate.disabled = false; });
+		return;
+	}
 	const remove = event.target.closest?.("[data-incident-remove]");
 	if (remove) {
 		remove.disabled = true;
@@ -482,6 +601,14 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+	if (event.target?.matches?.('[name="severity"]')) {
+		event.target.title = event.target.selectedOptions[0]?.textContent || "Outage severity";
+		qs("[data-severity-face]", event.target.parentElement).textContent = event.target.value === "major" ? "❌" : "⚠️";
+	}
+	if (event.target?.matches?.("[data-incident-update-status]")) {
+		const message = qs("[data-incident-update-message]", event.target.closest("[data-incident-updates-panel]"));
+		if (event.target.value === "resolved" && !message.value.trim()) message.value = "This issue has been resolved.";
+	}
 	if (event.target?.matches?.('[name="minutes"]')) {
 		event.target.classList.remove("border-destructive", "ring-2", "ring-destructive");
 		validateIncidentDay(event.target.closest("[data-available-minutes]"));

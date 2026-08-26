@@ -27,7 +27,10 @@ import (
 // Path is the one route this runs for. Named here rather than spelled twice,
 // because the other place it appears is internal/auth's list of paths that need
 // no session, and those two agreeing is what makes the page reachable.
-const Path = "/status"
+const (
+	Path     = "/status"
+	PastPath = "/status/past"
+)
 
 // Middleware publishes model.PublicStatus for the status page and does nothing
 // at all for every other request.
@@ -39,7 +42,7 @@ const Path = "/status"
 func Middleware(store *telemetry.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != Path {
+			if r.URL.Path != Path && r.URL.Path != PastPath {
 				next.ServeHTTP(w, r)
 				return
 			}

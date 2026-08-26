@@ -221,9 +221,11 @@ templ Page() {
 							</section>
 						}
 					</div>
-					<p class="mt-10 text-center text-xs text-muted-foreground">
-						Updated { status.AsOf.Format("2006-01-02 15:04 UTC") }
-					</p>
+					<footer class="mt-10 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+						<a class="underline-offset-4 hover:text-foreground hover:underline" href="/status/past">Incident History</a>
+						<span>Updated { status.AsOf.Format("2006-01-02 15:04 UTC") }</span>
+						<span>Powered by HUSHKEY</span>
+					</footer>
 			</main>
 		</body>
 	</html>
