@@ -1,0 +1,133 @@
+package status
+
+// The public incident archive. It consumes the same deliberately narrow
+// PublicStatus projection as the current status page: private checks, draft
+// incidents and raw probe errors never reach this template.
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/hushkey-app/guard/internal/telemetry/model"
+	"github.com/mirairoad/howl-go/core/router"
+	"github.com/mirairoad/howl-go/core/state"
+)
+
+type pastIncident struct {
+	Service  string
+	Incident model.PublicIncident
+}
+
+type pastDay struct {
+	Date      time.Time
+	Today     bool
+	Incidents []pastIncident
+}
+
+func pastIncidentDays(status model.PublicStatus) []pastDay {
+	asOf := status.AsOf.UTC()
+	if asOf.IsZero() {
+		asOf = time.Now().UTC()
+	}
+	count := status.Days
+	if count <= 0 {
+		count = 1
+	}
+	byDate := make(map[string][]pastIncident)
+	for _, service := range status.Services {
+		for _, day := range service.Days {
+			for _, incident := range day.Incidents {
+				byDate[day.Date] = append(byDate[day.Date], pastIncident{Service: service.Name, Incident: incident})
+			}
+		}
+	}
+	days := make([]pastDay, 0, count)
+	for offset := 0; offset < count; offset++ {
+		date := asOf.AddDate(0, 0, -offset)
+		key := date.Format("2006-01-02")
+		days = append(days, pastDay{Date: date, Today: offset == 0, Incidents: byDate[key]})
+	}
+	return days
+}
+
+func incidentTitle(incident pastIncident) string {
+	if title := strings.TrimSpace(incident.Incident.Comment); title != "" {
+		return fmt.Sprintf("%s in %s", title, incident.Service)
+	}
+	if incident.Incident.Severity == "major" {
+		return fmt.Sprintf("Major outage in %s", incident.Service)
+	}
+	return fmt.Sprintf("Partial outage in %s", incident.Service)
+}
+
+func incidentTitleColour(severity string) string {
+	if severity == "major" {
+		return "var(--destructive)"
+	}
+	return "var(--warning)"
+}
+
+func updateStatus(status string) string {
+	if status == "" {
+		return "Update"
+	}
+	return strings.ToUpper(status[:1]) + status[1:]
+}
+
+templ Past() {
+	{{ status := state.Get[model.PublicStatus](ctx) }}
+	{{ days := pastIncidentDays(status) }}
+	<!DOCTYPE html>
+	<html lang="en" class="dark style-nova">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>Past Incidents</title>
+			<link rel="stylesheet" href={ router.Asset(ctx, "app.css") }/>
+		</head>
+		<body class="min-h-screen bg-background p-6 font-sans text-foreground antialiased">
+			<main class="mx-auto w-full max-w-4xl py-8">
+				<h1 class="text-3xl font-semibold tracking-tight">Past Incidents</h1>
+				<div class="mt-10 space-y-12">
+					for _, day := range days {
+						<section>
+							<h2 class="border-b border-border pb-2 text-xl font-semibold">{ day.Date.Format("Jan 2, 2006") }</h2>
+							if len(day.Incidents) == 0 {
+								<p class="mt-3 text-sm text-muted-foreground">
+									if day.Today {
+										No incidents reported today.
+									} else {
+										No incidents reported.
+									}
+								</p>
+							}
+							<div class="space-y-10">
+								for _, incident := range day.Incidents {
+									<article class="mt-5">
+										<h3 class="text-xl font-semibold" style={ "color:" + incidentTitleColour(incident.Incident.Severity) }>{ incidentTitle(incident) }</h3>
+										if len(incident.Incident.Updates) == 0 {
+											<p class="mt-3 text-sm text-muted-foreground">No updates have been posted for this incident.</p>
+										}
+										<div class="mt-3 space-y-5">
+											for _, update := range incident.Incident.Updates {
+												<div>
+													<p class="text-sm leading-relaxed"><strong>{ updateStatus(update.Status) }</strong> - { update.Message }</p>
+													<time class="mt-1 block text-xs text-muted-foreground">{ update.CreatedAt.UTC().Format("Jan 2, 15:04 UTC") }</time>
+												</div>
+											}
+										</div>
+									</article>
+								}
+							</div>
+						</section>
+					}
+				</div>
+				<footer class="mt-12 flex items-center justify-between gap-4 border-t border-border pt-6 text-xs text-muted-foreground">
+					<a class="underline-offset-4 hover:text-foreground hover:underline" href="/status">← Current status</a>
+					<span>Powered by HUSHKEY</span>
+				</footer>
+			</main>
+		</body>
+	</html>
+}

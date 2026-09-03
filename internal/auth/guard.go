@@ -32,6 +32,7 @@ var open = []string{
 	// model.PublicStatus was written out field by field rather than filtered
 	// from Node: everything reachable here is reachable by anybody.
 	"/status",
+	"/status/past",
 	"/api/status",
 	"/auth/",
 	"/static/",

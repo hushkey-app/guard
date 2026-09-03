@@ -16,6 +16,8 @@ let checks = [];
 let inFlight = null;
 let machines = [];
 let machinesRequest = null;
+let incidentCheck = null;
+let expandedIncidentID = 0;
 
 function stateOf(check) { return check.enabled ? (check.status || "unknown") : "paused"; }
 function hasReading(check) {
@@ -241,7 +243,264 @@ async function deleteCheck(card) {
   await refreshHealthChecks(true);
 }
 
+function incidentDuration(seconds) {
+  const minutes = Math.ceil((seconds || 0) / 60);
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${minutes} mins`;
+  return rest ? `${hours} hrs ${rest} mins` : `${hours} hrs`;
+}
+
+function fillMinuteOptions(select, maximum, selected) {
+	const value = Math.min(Math.max(0, Number(selected) || 0), maximum);
+	const options = [];
+	for (let minute = 0; minute <= maximum; minute++) {
+		const option = el("option", "", `${minute} min`);
+		option.value = String(minute);
+		options.push(option);
+	}
+	select.replaceChildren(...options);
+	select.value = String(value);
+	select.dataset.optionMax = String(maximum);
+}
+
+function incidentRow(incident, maximum) {
+	const form = el("form", "border-b border-border py-2 last:border-b-0");
+	form.dataset.incidentId = incident.id;
+	const line = el("div", "flex items-center gap-2");
+	const severityControl = el("div", "relative size-9 shrink-0");
+	const severityFace = el("span", "pointer-events-none absolute inset-0 flex items-center justify-center rounded-md border border-input bg-background text-base", incident.severity === "major" ? "❌" : "⚠️");
+	severityFace.dataset.severityFace = "";
+	const severity = el("select", "absolute inset-0 z-10 size-9 cursor-pointer appearance-none opacity-0");
+	severity.name = "severity";
+	severity.setAttribute("aria-label", "Outage severity");
+	const partial = el("option", "", "⚠️ Partial outage");
+	partial.value = "partial";
+	const major = el("option", "", "❌ Major outage");
+	major.value = "major";
+	severity.append(partial, major);
+	severity.value = incident.severity || "partial";
+	severity.title = severity.selectedOptions[0]?.textContent || "Outage severity";
+	severityControl.append(severityFace, severity);
+	const minutes = el("select", "cn-native-select h-9 w-24 shrink-0 text-xs tabular-nums");
+	minutes.name = "minutes";
+	fillMinuteOptions(minutes, maximum, incident.allocated_minutes || 0);
+	const comment = el("input", "cn-input mt-2 h-9 w-full text-sm");
+	comment.className = "cn-input h-9 min-w-32 flex-1 text-sm";
+	comment.type = "text";
+	comment.name = "comment";
+	comment.maxLength = 500;
+	comment.placeholder = "Related issue";
+	comment.value = incident.comment || "";
+	line.append(severityControl, minutes, comment);
+	if (incident.events?.length) {
+		const events = el("details", "relative shrink-0");
+		const summary = el("summary", "cursor-pointer whitespace-nowrap text-xs text-muted-foreground", `${incident.events.length} errors`);
+		const list = el("div", "absolute right-0 top-[calc(100%+6px)] z-30 max-h-64 w-80 space-y-2 overflow-y-auto rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-xl");
+		for (const event of incident.events) {
+			const row = el("div", "grid gap-1 border-t border-border pt-2 text-xs sm:grid-cols-[auto_1fr]");
+			row.append(
+				el("time", "font-mono text-muted-foreground", new Date(event.checked_at).toLocaleTimeString()),
+				el("p", "min-w-0 break-words", event.error || (event.status_code ? `HTTP ${event.status_code}` : "Health check failed")),
+			);
+			list.append(row);
+		}
+		events.append(summary, list);
+		line.append(events);
+	}
+	const state = el("p", "max-w-32 shrink-0 truncate text-xs text-muted-foreground", "");
+	state.dataset.incidentStatus = "";
+	line.append(state);
+	if (!incident.events?.length) {
+		const remove = el("button", "cn-button cn-button-variant-ghost cn-button-size-icon-xs text-muted-foreground hover:text-destructive", "X");
+		remove.type = "button";
+		remove.dataset.incidentRemove = incident.id;
+		remove.setAttribute("aria-label", "Remove incident");
+		remove.title = "Remove incident";
+		line.append(remove);
+	}
+	const comments = el("button", "cn-button cn-button-variant-ghost cn-button-size-icon-xs", "💬");
+	comments.type = "button";
+	comments.dataset.incidentComments = incident.id;
+	comments.setAttribute("aria-label", "Incident updates");
+	comments.title = "Incident updates";
+	line.append(comments);
+	const save = el("button", "cn-button cn-button-variant-outline cn-button-size-icon-xs", "✓");
+	save.type = "submit";
+	save.setAttribute("aria-label", "Save incident");
+	save.title = "Save incident";
+	line.append(save);
+	form.append(line);
+	const panel = el("div", "mt-2 space-y-2 border-t border-border pt-2");
+	panel.dataset.incidentUpdatesPanel = "";
+	panel.hidden = expandedIncidentID !== Number(incident.id);
+	for (const update of incident.updates || []) {
+		const row = el("div", "flex items-center gap-2");
+		row.dataset.incidentUpdateRow = update.id;
+		const rowStatus = el("select", "cn-native-select h-8 w-32 shrink-0 text-xs");
+		rowStatus.dataset.incidentUpdateRowStatus = "";
+		for (const [value, label] of [["investigating", "Investigating"], ["identified", "Identified"], ["update", "Update"], ["monitoring", "Monitoring"], ["resolved", "Resolved"]]) {
+			const option = el("option", "", label);
+			option.value = value;
+			rowStatus.append(option);
+		}
+		rowStatus.value = update.status;
+		const rowMessage = el("input", "cn-input h-8 min-w-0 flex-1 text-xs");
+		rowMessage.type = "text";
+		rowMessage.maxLength = 1000;
+		rowMessage.value = update.message;
+		rowMessage.dataset.incidentUpdateRowMessage = "";
+		const removeUpdate = el("button", "cn-button cn-button-variant-ghost cn-button-size-icon-xs text-muted-foreground hover:text-destructive", "X");
+		removeUpdate.type = "button";
+		removeUpdate.dataset.incidentUpdateRemove = update.id;
+		removeUpdate.setAttribute("aria-label", "Remove incident update");
+		const saveUpdate = el("button", "cn-button cn-button-variant-outline cn-button-size-icon-xs", "✓");
+		saveUpdate.type = "button";
+		saveUpdate.dataset.incidentUpdateSave = update.id;
+		saveUpdate.setAttribute("aria-label", "Save incident update");
+		row.append(rowStatus, rowMessage, removeUpdate, saveUpdate);
+		panel.append(row);
+	}
+	const updateForm = el("div", "flex items-center gap-2");
+	const updateStatus = el("select", "cn-native-select h-8 w-32 shrink-0 text-xs");
+	updateStatus.dataset.incidentUpdateStatus = "";
+	for (const [value, label] of [["investigating", "Investigating"], ["identified", "Identified"], ["update", "Update"], ["monitoring", "Monitoring"], ["resolved", "Resolved"]]) {
+		const option = el("option", "", label);
+		option.value = value;
+		updateStatus.append(option);
+	}
+	const updateMessage = el("input", "cn-input h-8 min-w-0 flex-1 text-xs");
+	updateMessage.type = "text";
+	updateMessage.maxLength = 1000;
+	updateMessage.placeholder = "Incident update";
+	updateMessage.dataset.incidentUpdateMessage = "";
+	const addUpdate = el("button", "cn-button cn-button-variant-outline cn-button-size-icon-xs", "✓");
+	addUpdate.type = "button";
+	addUpdate.dataset.incidentUpdateAdd = incident.id;
+	addUpdate.setAttribute("aria-label", "Add incident update");
+	updateForm.append(updateStatus, updateMessage, addUpdate);
+	panel.append(updateForm);
+	form.append(panel);
+	return form;
+}
+
+function utcDay(offset = 0) {
+	const date = new Date();
+	date.setUTCDate(date.getUTCDate() - offset);
+	return date.toISOString().slice(0, 10);
+}
+
+function incidentDaySection(day, label, incidents, available) {
+	const section = el("section", "space-y-2");
+	section.dataset.incidentDay = day;
+	section.dataset.availableMinutes = String(available);
+	const head = el("div", "flex items-center justify-between gap-3");
+	const title = el("div", "min-w-0");
+	const items = incidents.filter((incident) => incident.day === day);
+	const assigned = items.reduce((sum, incident) => sum + (incident.allocated_minutes || 0), 0);
+	const remaining = Math.max(0, available - assigned);
+	title.append(
+		el("h3", "text-sm font-semibold", label),
+		el("p", "text-[.65rem] text-muted-foreground", `${day} · ${available} min available · `),
+	);
+	const remainingText = el("span", "text-[.65rem] text-muted-foreground", `${remaining} remaining`);
+	remainingText.dataset.incidentRemaining = "";
+	title.lastElementChild.append(remainingText);
+	const add = el("button", "cn-button cn-button-variant-ghost cn-button-size-icon-xs", "+");
+	add.type = "button";
+	add.dataset.incidentAdd = day;
+	add.setAttribute("aria-label", `Add incident for ${day}`);
+	head.append(title, add);
+	section.append(head);
+	if (items.length) {
+		const selected = items.map((incident) => incident.allocated_minutes || 0);
+		const firstUnallocated = selected.findIndex((minutes) => minutes === 0);
+		if (firstUnallocated >= 0 && remaining > 0) selected[firstUnallocated] = remaining;
+		const rows = items.map((incident, index) => {
+			const usedByOthers = selected.reduce((sum, minutes, other) => sum + (other === index ? 0 : minutes), 0);
+			return incidentRow({ ...incident, allocated_minutes: selected[index] }, Math.max(0, available - usedByOthers));
+		});
+		section.append(...rows);
+		validateIncidentDay(section);
+	} else {
+		section.append(el("p", "rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground", "No incidents"));
+	}
+	return section;
+}
+
+function validateIncidentDay(section) {
+	const inputs = qsa('[name="minutes"]', section);
+	const available = Number(section.dataset.availableMinutes) || 0;
+	const values = inputs.map((input) => Number(input.value) || 0);
+	for (const input of inputs) {
+		const index = inputs.indexOf(input);
+		const usedByOthers = values.reduce((sum, value, other) => sum + (other === index ? 0 : value), 0);
+		const maximum = Math.max(0, available - usedByOthers);
+		if (Number(input.dataset.optionMax) !== maximum) fillMinuteOptions(input, maximum, values[index]);
+	}
+	const total = inputs.reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+	const remaining = qs("[data-incident-remaining]", section);
+	if (remaining) remaining.textContent = `${Math.max(0, available - total)} remaining`;
+}
+
+async function loadIncidentList() {
+	const host = qs("[data-incident-list]");
+	host.replaceChildren(el("p", "text-sm text-muted-foreground", "Loading incidents…"));
+	try {
+		const board = await request(`/api/checks/incidents?check_id=${encodeURIComponent(incidentCheck.id)}`);
+		const incidents = board.incidents || [];
+		const available = board.available_minutes || {};
+		host.replaceChildren(
+			incidentDaySection(utcDay(0), "Today", incidents, available[utcDay(0)] || 0),
+			incidentDaySection(utcDay(1), "Yesterday", incidents, available[utcDay(1)] || 0),
+			incidentDaySection(utcDay(2), "2 days ago", incidents, available[utcDay(2)] || 0),
+		);
+	} catch (failure) {
+		host.replaceChildren(el("p", "text-sm text-destructive", failure.message));
+	}
+}
+
+async function openIncidents(check) {
+	incidentCheck = check;
+	document.getElementById("check-dialog").checked = false;
+	qs("[data-incident-dialog-title]").textContent = `${check.name} incidents`;
+	document.getElementById("health-incident-dialog").checked = true;
+	await loadIncidentList();
+}
+
+async function addIncident(day) {
+	await request("/api/checks/incidents", {
+		method: "POST", headers: adminHeaders(), body: JSON.stringify({ check_id: incidentCheck.id, day }),
+	});
+	await loadIncidentList();
+}
+
 document.addEventListener("submit", (event) => {
+	const incident = event.target.closest?.("[data-incident-id]");
+	if (incident) {
+		event.preventDefault();
+		const status = qs("[data-incident-status]", incident);
+		const submit = qs('[type="submit"]', incident);
+		const minutes = qs('[name="minutes"]', incident);
+		if ((Number(minutes.value) || 0) === 0) {
+			minutes.classList.add("border-destructive", "ring-2", "ring-destructive");
+			minutes.focus();
+			status.textContent = "";
+			return;
+		}
+		minutes.classList.remove("border-destructive", "ring-2", "ring-destructive");
+		status.textContent = "Saving…";
+		submit.disabled = true;
+		request(`/api/checks/incidents/${incident.dataset.incidentId}`, {
+			method: "PUT", headers: adminHeaders(), body: JSON.stringify({
+				comment: qs('[name="comment"]', incident).value.trim(),
+				severity: qs('[name="severity"]', incident).value,
+				allocated_minutes: Number(qs('[name="minutes"]', incident).value) || 0,
+				confirmed: true,
+			}),
+		}).then(() => loadIncidentList()).catch((failure) => { status.textContent = failure.message; }).finally(() => { submit.disabled = false; });
+		return;
+	}
   const form = event.target.closest?.("[data-check-form]");
   if (!form) return;
   event.preventDefault();
@@ -249,7 +508,82 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("click", (event) => {
+	const saveUpdate = event.target.closest?.("[data-incident-update-save]");
+	if (saveUpdate) {
+		const row = saveUpdate.closest("[data-incident-update-row]");
+		const status = qs("[data-incident-update-row-status]", row);
+		const message = qs("[data-incident-update-row-message]", row);
+		if (!message.value.trim()) {
+			message.classList.add("border-destructive", "ring-2", "ring-destructive");
+			message.focus();
+			return;
+		}
+		saveUpdate.disabled = true;
+		request(`/api/checks/incidents/updates/${saveUpdate.dataset.incidentUpdateSave}`, {
+			method: "PUT", headers: adminHeaders(), body: JSON.stringify({ status: status.value, message: message.value.trim() }),
+		}).then(() => loadIncidentList()).catch((failure) => {
+			qs("[data-incident-status]", row.closest("[data-incident-id]")).textContent = failure.message;
+		}).finally(() => { saveUpdate.disabled = false; });
+		return;
+	}
+	const removeUpdate = event.target.closest?.("[data-incident-update-remove]");
+	if (removeUpdate) {
+		removeUpdate.disabled = true;
+		request(`/api/checks/incidents/updates/${removeUpdate.dataset.incidentUpdateRemove}`, { method: "DELETE", headers: adminHeaders() })
+			.then(() => loadIncidentList())
+			.catch((failure) => { qs("[data-incident-status]", removeUpdate.closest("[data-incident-id]")).textContent = failure.message; })
+			.finally(() => { removeUpdate.disabled = false; });
+		return;
+	}
+	const comments = event.target.closest?.("[data-incident-comments]");
+	if (comments) {
+		const form = comments.closest("[data-incident-id]");
+		const panel = qs("[data-incident-updates-panel]", form);
+		panel.hidden = !panel.hidden;
+		expandedIncidentID = panel.hidden ? 0 : Number(comments.dataset.incidentComments);
+		return;
+	}
+	const addUpdate = event.target.closest?.("[data-incident-update-add]");
+	if (addUpdate) {
+		const form = addUpdate.closest("[data-incident-id]");
+		const status = qs("[data-incident-update-status]", form);
+		const message = qs("[data-incident-update-message]", form);
+		if (!message.value.trim()) {
+			message.classList.add("border-destructive", "ring-2", "ring-destructive");
+			message.focus();
+			return;
+		}
+		addUpdate.disabled = true;
+		expandedIncidentID = Number(addUpdate.dataset.incidentUpdateAdd);
+		request("/api/checks/incidents/updates", {
+			method: "POST", headers: adminHeaders(), body: JSON.stringify({
+				incident_id: expandedIncidentID, status: status.value, message: message.value.trim(),
+			}),
+		}).then(() => loadIncidentList()).catch((failure) => {
+			qs("[data-incident-status]", form).textContent = failure.message;
+		}).finally(() => { addUpdate.disabled = false; });
+		return;
+	}
+	const remove = event.target.closest?.("[data-incident-remove]");
+	if (remove) {
+		remove.disabled = true;
+		request(`/api/checks/incidents/${remove.dataset.incidentRemove}`, { method: "DELETE", headers: adminHeaders() })
+			.then(() => loadIncidentList())
+			.catch((failure) => { qs("[data-incident-status]", remove.closest("form")).textContent = failure.message; })
+			.finally(() => { remove.disabled = false; });
+		return;
+	}
+	const add = event.target.closest?.("[data-incident-add]");
+	if (add) {
+		add.disabled = true;
+		addIncident(add.dataset.incidentAdd).catch((failure) => {
+			const host = qs("[data-incident-list]");
+			host.prepend(el("p", "text-sm text-destructive", failure.message));
+		}).finally(() => { add.disabled = false; });
+		return;
+	}
   if (event.target.closest?.('[data-check-open="new"]')) {
+		document.getElementById("health-incident-dialog").checked = false;
     prepareNew();
     document.getElementById("check-dialog").checked = true;
     loadMachines().then(() => fillMachineSelect(0));
@@ -257,13 +591,33 @@ document.addEventListener("click", (event) => {
   const card = event.target.closest?.("[data-check-row]");
   if (!card) return;
   const check = checks.find((item) => String(item.id) === card.dataset.checkId);
-  if (event.target.closest("[data-check-edit]") && check) openEditor(check);
+	if (event.target.closest("[data-check-edit]") && check) {
+		document.getElementById("health-incident-dialog").checked = false;
+		openEditor(check);
+	}
+	if (event.target.closest("[data-check-incidents]") && check) openIncidents(check);
   if (event.target.closest("[data-check-run]")) runCheck(card);
   if (event.target.closest("[data-check-delete]")) deleteCheck(card).catch((failure) => { qs("[data-check-note]", card).textContent = failure.message; });
 });
 
 document.addEventListener("change", (event) => {
+	if (event.target?.matches?.('[name="severity"]')) {
+		event.target.title = event.target.selectedOptions[0]?.textContent || "Outage severity";
+		qs("[data-severity-face]", event.target.parentElement).textContent = event.target.value === "major" ? "❌" : "⚠️";
+	}
+	if (event.target?.matches?.("[data-incident-update-status]")) {
+		const message = qs("[data-incident-update-message]", event.target.closest("[data-incident-updates-panel]"));
+		if (event.target.value === "resolved" && !message.value.trim()) message.value = "This issue has been resolved.";
+	}
+	if (event.target?.matches?.('[name="minutes"]')) {
+		event.target.classList.remove("border-destructive", "ring-2", "ring-destructive");
+		validateIncidentDay(event.target.closest("[data-available-minutes]"));
+	}
   if (event.target?.id !== "check-dialog" || !event.target.checked) return;
   const selected = Number(qs("[data-check-form]")?.dataset.checkId) || 0;
   loadMachines().then(() => fillMachineSelect(checks.find((check) => check.id === selected)?.node_id || 0));
+});
+
+document.addEventListener("input", (event) => {
+	if (event.target?.matches?.('[name="minutes"]')) validateIncidentDay(event.target.closest("[data-available-minutes]"));
 });

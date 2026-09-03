@@ -51,7 +51,34 @@ CREATE TABLE IF NOT EXISTS health_check_uptime_days (
   day INTEGER NOT NULL,
   checks INTEGER NOT NULL DEFAULT 0,
   ok INTEGER NOT NULL DEFAULT 0,
+  downtime_seconds INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(check_id, day)
+);
+CREATE TABLE IF NOT EXISTS health_check_incidents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  check_id INTEGER NOT NULL REFERENCES health_checks(id) ON DELETE CASCADE,
+  started_at_ns INTEGER NOT NULL,
+  ended_at_ns INTEGER,
+  comment TEXT NOT NULL DEFAULT '',
+  severity TEXT NOT NULL DEFAULT 'partial',
+  allocated_minutes INTEGER NOT NULL DEFAULT 0,
+  report_day INTEGER NOT NULL DEFAULT 0,
+  confirmed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_health_check_incidents_check ON health_check_incidents(check_id, started_at_ns DESC);
+CREATE TABLE IF NOT EXISTS health_check_incident_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_id INTEGER NOT NULL REFERENCES health_check_incidents(id) ON DELETE CASCADE,
+  checked_at_ns INTEGER NOT NULL,
+  status_code INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS health_check_incident_updates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_id INTEGER NOT NULL REFERENCES health_check_incidents(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at_ns INTEGER NOT NULL
 );`
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate health checks: %w", err)
@@ -83,6 +110,28 @@ CREATE TABLE IF NOT EXISTS health_check_uptime_days (
 		if _, err := db.Exec(`ALTER TABLE health_checks ADD COLUMN machine_id INTEGER REFERENCES cluster_nodes(id) ON DELETE SET NULL`); err != nil {
 			return fmt.Errorf("add health check machine association: %w", err)
 		}
+	}
+	// These additive columns keep existing installations in place. Downtime is
+	// accumulated only for intervals whose preceding probe was down; the next
+	// probe closes the interval, including across a UTC midnight.
+	for _, column := range []struct{ table, name, definition string }{
+		{"health_check_uptime_days", "downtime_seconds", "INTEGER NOT NULL DEFAULT 0"},
+		{"health_check_incidents", "severity", "TEXT NOT NULL DEFAULT 'partial'"},
+		{"health_check_incidents", "allocated_minutes", "INTEGER NOT NULL DEFAULT 0"},
+		{"health_check_incidents", "report_day", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		var exists bool
+		if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM pragma_table_xinfo(?) WHERE name=?)`, column.table, column.name).Scan(&exists); err != nil {
+			return fmt.Errorf("inspect %s.%s: %w", column.table, column.name, err)
+		}
+		if !exists {
+			if _, err := db.Exec(`ALTER TABLE ` + column.table + ` ADD COLUMN ` + column.name + ` ` + column.definition); err != nil {
+				return fmt.Errorf("add %s.%s: %w", column.table, column.name, err)
+			}
+		}
+	}
+	if _, err := db.Exec(`UPDATE health_check_incidents SET report_day=started_at_ns/86400000000000 WHERE report_day=0`); err != nil {
+		return fmt.Errorf("date existing health incidents: %w", err)
 	}
 
 	// Lift legacy machine probes only while creating the dedicated table. Table
@@ -293,6 +342,34 @@ func (s *Store) RecordHealthCheck(checkID int64, result model.Check) error {
 	if result.CheckedAt.IsZero() {
 		result.CheckedAt = time.Now().UTC()
 	}
+	var previousAt int64
+	var previousOK bool
+	previousErr := s.rdb.QueryRow(`SELECT checked_at_ns,ok FROM health_check_results
+WHERE check_id=? ORDER BY checked_at_ns DESC LIMIT 1`, checkID).Scan(&previousAt, &previousOK)
+	if previousErr != nil && !errors.Is(previousErr, sql.ErrNoRows) {
+		return previousErr
+	}
+	if !previousOK && previousAt > 0 && result.CheckedAt.UnixNano() > previousAt {
+		if err := s.recordHealthCheckDowntime(checkID, time.Unix(0, previousAt), result.CheckedAt); err != nil {
+			return err
+		}
+	}
+	if result.OK {
+		if !previousOK && previousAt > 0 {
+			if _, err := s.db.Exec(`UPDATE health_check_incidents SET ended_at_ns=?
+WHERE id=(SELECT id FROM health_check_incidents WHERE check_id=? AND ended_at_ns IS NULL ORDER BY started_at_ns DESC LIMIT 1)`, result.CheckedAt.UnixNano(), checkID); err != nil {
+				return err
+			}
+		}
+	} else {
+		incidentStart := int64(0)
+		if previousAt > 0 && !previousOK {
+			incidentStart = previousAt
+		}
+		if err := s.recordHealthIncidentEvent(checkID, incidentStart, result); err != nil {
+			return err
+		}
+	}
 	if _, err := s.db.Exec(`INSERT INTO health_check_results
 (check_id,checked_at_ns,ok,status_code,latency_ms,error) VALUES(?,?,?,?,?,?)`, checkID,
 		result.CheckedAt.UnixNano(), result.OK, result.StatusCode, result.LatencyMS, result.Error); err != nil {
@@ -312,4 +389,260 @@ ON CONFLICT(check_id,day) DO UPDATE SET checks=checks+1,ok=ok+?`, checkID, epoch
 	}
 	_, err := s.db.Exec(`DELETE FROM health_check_uptime_days WHERE day<?`, epochDay(time.Now())-uptimeDayRetention)
 	return err
+}
+
+func (s *Store) recordHealthIncidentEvent(checkID, suggestedStart int64, result model.Check) error {
+	var incidentID int64
+	err := s.rdb.QueryRow(`SELECT id FROM health_check_incidents
+WHERE check_id=? AND ended_at_ns IS NULL ORDER BY started_at_ns DESC LIMIT 1`, checkID).Scan(&incidentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		started := result.CheckedAt.UnixNano()
+		if suggestedStart > 0 {
+			started = suggestedStart
+		}
+		created, createErr := s.db.Exec(`INSERT INTO health_check_incidents(check_id,started_at_ns,report_day) VALUES(?,?,?)`, checkID, started, epochDay(time.Unix(0, started)))
+		if createErr != nil {
+			return createErr
+		}
+		incidentID, err = created.LastInsertId()
+	}
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO health_check_incident_events(incident_id,checked_at_ns,status_code,error)
+VALUES(?,?,?,?)`, incidentID, result.CheckedAt.UnixNano(), result.StatusCode, result.Error)
+	return err
+}
+
+func (s *Store) HealthIncidents(checkID int64) ([]model.HealthIncident, error) {
+	rows, err := s.rdb.Query(`SELECT id,check_id,started_at_ns,ended_at_ns,comment,severity,allocated_minutes,report_day,confirmed
+FROM health_check_incidents WHERE check_id=? AND ended_at_ns IS NOT NULL ORDER BY started_at_ns DESC LIMIT 50`, checkID)
+	if err != nil {
+		return nil, err
+	}
+	incidents := make([]model.HealthIncident, 0)
+	for rows.Next() {
+		var incident model.HealthIncident
+		var started, ended, day int64
+		if err := rows.Scan(&incident.ID, &incident.CheckID, &started, &ended, &incident.Comment, &incident.Severity, &incident.AllocatedMinutes, &day, &incident.Confirmed); err != nil {
+			return nil, err
+		}
+		incident.StartedAt = time.Unix(0, started).UTC()
+		incident.EndedAt = time.Unix(0, ended).UTC()
+		incident.DurationSeconds = int64(incident.EndedAt.Sub(incident.StartedAt) / time.Second)
+		incident.Day = time.Unix(day*86400, 0).UTC().Format("2006-01-02")
+		incidents = append(incidents, incident)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range incidents {
+		events, err := s.rdb.Query(`SELECT checked_at_ns,status_code,error FROM health_check_incident_events WHERE incident_id=? ORDER BY checked_at_ns`, incidents[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		for events.Next() {
+			var event model.HealthIncidentEvent
+			var checked int64
+			if err := events.Scan(&checked, &event.StatusCode, &event.Error); err != nil {
+				events.Close()
+				return nil, err
+			}
+			event.CheckedAt = time.Unix(0, checked).UTC()
+			incidents[i].Events = append(incidents[i].Events, event)
+		}
+		if err := events.Close(); err != nil {
+			return nil, err
+		}
+		updates, err := s.rdb.Query(`SELECT id,status,message,created_at_ns FROM health_check_incident_updates WHERE incident_id=? ORDER BY created_at_ns DESC,id DESC`, incidents[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		for updates.Next() {
+			var update model.HealthIncidentUpdate
+			var created int64
+			if err := updates.Scan(&update.ID, &update.Status, &update.Message, &created); err != nil {
+				updates.Close()
+				return nil, err
+			}
+			update.IncidentID = incidents[i].ID
+			update.CreatedAt = time.Unix(0, created).UTC()
+			incidents[i].Updates = append(incidents[i].Updates, update)
+		}
+		if err := updates.Close(); err != nil {
+			return nil, err
+		}
+	}
+	return incidents, nil
+}
+
+func (s *Store) AddHealthIncidentUpdate(input model.HealthIncidentUpdateCreate) (model.HealthIncidentUpdate, error) {
+	input.Message = strings.TrimSpace(input.Message)
+	if err := input.Validate(); err != nil {
+		return model.HealthIncidentUpdate{}, err
+	}
+	now := time.Now().UTC()
+	result, err := s.db.Exec(`INSERT INTO health_check_incident_updates(incident_id,status,message,created_at_ns)
+SELECT id,?,?,? FROM health_check_incidents WHERE id=? AND ended_at_ns IS NOT NULL`, input.Status, input.Message, now.UnixNano(), input.IncidentID)
+	if err != nil {
+		return model.HealthIncidentUpdate{}, err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return model.HealthIncidentUpdate{}, sql.ErrNoRows
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return model.HealthIncidentUpdate{}, err
+	}
+	return model.HealthIncidentUpdate{ID: id, IncidentID: input.IncidentID, Status: input.Status, Message: input.Message, CreatedAt: now}, nil
+}
+
+func (s *Store) SaveHealthIncidentUpdate(id int64, input model.HealthIncidentUpdateEdit) error {
+	input.Message = strings.TrimSpace(input.Message)
+	if err := input.Validate(); err != nil {
+		return err
+	}
+	result, err := s.db.Exec(`UPDATE health_check_incident_updates SET status=?,message=? WHERE id=?`, input.Status, input.Message, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) DeleteHealthIncidentUpdate(id int64) error {
+	result, err := s.db.Exec(`DELETE FROM health_check_incident_updates WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) HealthIncidentBoard(checkID int64) (model.HealthIncidentBoard, error) {
+	incidents, err := s.HealthIncidents(checkID)
+	if err != nil {
+		return model.HealthIncidentBoard{}, err
+	}
+	board := model.HealthIncidentBoard{Incidents: incidents, AvailableMinutes: make(map[string]int)}
+	first := epochDay(time.Now().UTC()) - 2
+	rows, err := s.rdb.Query(`SELECT day,downtime_seconds FROM health_check_uptime_days WHERE check_id=? AND day>=?`, checkID, first)
+	if err != nil {
+		return model.HealthIncidentBoard{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var day, seconds int64
+		if err := rows.Scan(&day, &seconds); err != nil {
+			return model.HealthIncidentBoard{}, err
+		}
+		board.AvailableMinutes[time.Unix(day*86400, 0).UTC().Format("2006-01-02")] = int((seconds + 59) / 60)
+	}
+	return board, rows.Err()
+}
+
+func (s *Store) SaveHealthIncident(id int64, report model.HealthIncidentReport) error {
+	report.Comment = strings.TrimSpace(report.Comment)
+	if err := report.Validate(); err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var checkID, day int64
+	if err := tx.QueryRow(`SELECT check_id,report_day FROM health_check_incidents WHERE id=? AND ended_at_ns IS NOT NULL`, id).Scan(&checkID, &day); err != nil {
+		return err
+	}
+	var available, allocated int
+	if err := tx.QueryRow(`SELECT COALESCE((downtime_seconds+59)/60,0) FROM health_check_uptime_days WHERE check_id=? AND day=?`, checkID, day).Scan(&available); errors.Is(err, sql.ErrNoRows) {
+		available = 0
+	} else if err != nil {
+		return err
+	}
+	if err := tx.QueryRow(`SELECT COALESCE(SUM(allocated_minutes),0) FROM health_check_incidents WHERE check_id=? AND report_day=? AND id<>?`, checkID, day, id).Scan(&allocated); err != nil {
+		return err
+	}
+	if allocated+report.AllocatedMinutes > available {
+		return fmt.Errorf("only %d downtime minutes are available; %d are already assigned", available, allocated)
+	}
+	result, err := tx.Exec(`UPDATE health_check_incidents SET comment=?,severity=?,allocated_minutes=?,confirmed=? WHERE id=? AND ended_at_ns IS NOT NULL`, report.Comment, report.Severity, report.AllocatedMinutes, report.Confirmed, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
+func (s *Store) CreateHealthIncident(input model.HealthIncidentCreate) (model.HealthIncident, error) {
+	if err := input.Validate(); err != nil {
+		return model.HealthIncident{}, err
+	}
+	day, _ := time.Parse("2006-01-02", input.Day)
+	at := day.Add(12 * time.Hour).UnixNano()
+	result, err := s.db.Exec(`INSERT INTO health_check_incidents(check_id,started_at_ns,ended_at_ns,severity,report_day)
+SELECT id,?,?,'partial',? FROM health_checks WHERE id=?`, at, at, epochDay(day), input.CheckID)
+	if err != nil {
+		return model.HealthIncident{}, err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return model.HealthIncident{}, sql.ErrNoRows
+	}
+	id, err := result.LastInsertId()
+	if err != nil || id == 0 {
+		return model.HealthIncident{}, sql.ErrNoRows
+	}
+	incidents, err := s.HealthIncidents(input.CheckID)
+	if err != nil {
+		return model.HealthIncident{}, err
+	}
+	for _, incident := range incidents {
+		if incident.ID == id {
+			return incident, nil
+		}
+	}
+	return model.HealthIncident{}, sql.ErrNoRows
+}
+
+func (s *Store) DeleteHealthIncident(id int64) error {
+	result, err := s.db.Exec(`DELETE FROM health_check_incidents WHERE id=?
+AND NOT EXISTS(SELECT 1 FROM health_check_incident_events WHERE incident_id=health_check_incidents.id)`, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) recordHealthCheckDowntime(checkID int64, from, to time.Time) error {
+	for cursor := from.UTC(); cursor.Before(to); {
+		nextDay := time.Unix((epochDay(cursor)+1)*86400, 0).UTC()
+		end := to.UTC()
+		if nextDay.Before(end) {
+			end = nextDay
+		}
+		seconds := int64(end.Sub(cursor) / time.Second)
+		if seconds > 0 {
+			if _, err := s.db.Exec(`INSERT INTO health_check_uptime_days(check_id,day,downtime_seconds)
+VALUES(?,?,?) ON CONFLICT(check_id,day) DO UPDATE SET
+downtime_seconds=downtime_seconds+excluded.downtime_seconds`, checkID, epochDay(cursor), seconds); err != nil {
+				return err
+			}
+		}
+		cursor = end
+	}
+	return nil
 }

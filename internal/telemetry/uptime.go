@@ -130,22 +130,101 @@ FROM health_checks WHERE public = 1 AND enabled = 1 ORDER BY name`)
 			Days: make([]model.PublicDay, 0, StatusDays),
 		}
 
-		history, err := s.rdb.Query(`SELECT day, checks, ok FROM health_check_uptime_days
+		history, err := s.rdb.Query(`SELECT day, checks, ok, downtime_seconds FROM health_check_uptime_days
 WHERE check_id = ? AND day >= ? ORDER BY day`, item.id, first)
 		if err != nil {
 			return model.PublicStatus{}, err
 		}
-		byDay := map[int64][2]int64{}
+		type dayCounts struct {
+			checks, ok, downtime int64
+		}
+		byDay := map[int64]dayCounts{}
 		for history.Next() {
-			var day, checks, ok int64
-			if err := history.Scan(&day, &checks, &ok); err != nil {
+			var day int64
+			var counts dayCounts
+			if err := history.Scan(&day, &counts.checks, &counts.ok, &counts.downtime); err != nil {
 				history.Close()
 				return model.PublicStatus{}, err
 			}
-			byDay[day] = [2]int64{checks, ok}
+			byDay[day] = counts
 		}
 		history.Close()
 		if err := history.Err(); err != nil {
+			return model.PublicStatus{}, err
+		}
+
+		// An open outage has no following probe yet, so its final interval is not
+		// durable yet. Add it to this response only; the next probe will persist
+		// exactly the same interval and avoids counting any second twice.
+		var latestAt int64
+		var latestOK bool
+		latestErr := s.rdb.QueryRow(`SELECT checked_at_ns,ok FROM health_check_results
+WHERE check_id=? ORDER BY checked_at_ns DESC LIMIT 1`, item.id).Scan(&latestAt, &latestOK)
+		if latestErr != nil && !errors.Is(latestErr, sql.ErrNoRows) {
+			return model.PublicStatus{}, latestErr
+		}
+		if latestAt > 0 && !latestOK {
+			for cursor, end := time.Unix(0, latestAt).UTC(), status.AsOf; cursor.Before(end); {
+				nextDay := time.Unix((epochDay(cursor)+1)*86400, 0).UTC()
+				partEnd := end
+				if nextDay.Before(partEnd) {
+					partEnd = nextDay
+				}
+				day := epochDay(cursor)
+				counts := byDay[day]
+				counts.downtime += int64(partEnd.Sub(cursor) / time.Second)
+				byDay[day] = counts
+				cursor = partEnd
+			}
+		}
+		incidentsByDay := make(map[int64][]model.PublicIncident)
+		incidentDayByID := make(map[int64]int64)
+		incidents, err := s.rdb.Query(`SELECT id,report_day,comment,severity,allocated_minutes
+FROM health_check_incidents WHERE check_id=? AND confirmed=1 AND ended_at_ns IS NOT NULL
+AND report_day>=? AND report_day<=? ORDER BY report_day,started_at_ns`, item.id, first, today)
+		if err != nil {
+			return model.PublicStatus{}, err
+		}
+		for incidents.Next() {
+			var id, day int64
+			var comment, severity string
+			var minutes int
+			if err := incidents.Scan(&id, &day, &comment, &severity, &minutes); err != nil {
+				incidents.Close()
+				return model.PublicStatus{}, err
+			}
+			incidentsByDay[day] = append(incidentsByDay[day], model.PublicIncident{
+				ID: id, Comment: comment, Severity: severity, Minutes: minutes,
+			})
+			incidentDayByID[id] = day
+		}
+		if err := incidents.Close(); err != nil {
+			return model.PublicStatus{}, err
+		}
+		updates, err := s.rdb.Query(`SELECT u.incident_id,u.status,u.message,u.created_at_ns
+FROM health_check_incident_updates u JOIN health_check_incidents i ON i.id=u.incident_id
+WHERE i.check_id=? AND i.confirmed=1 AND i.report_day>=? AND i.report_day<=?
+ORDER BY u.created_at_ns DESC,u.id DESC`, item.id, first, today)
+		if err != nil {
+			return model.PublicStatus{}, err
+		}
+		for updates.Next() {
+			var incidentID, created int64
+			var update model.PublicIncidentUpdate
+			if err := updates.Scan(&incidentID, &update.Status, &update.Message, &created); err != nil {
+				updates.Close()
+				return model.PublicStatus{}, err
+			}
+			update.CreatedAt = time.Unix(0, created).UTC()
+			day := incidentDayByID[incidentID]
+			for i := range incidentsByDay[day] {
+				if incidentsByDay[day][i].ID == incidentID {
+					incidentsByDay[day][i].Updates = append(incidentsByDay[day][i].Updates, update)
+					break
+				}
+			}
+		}
+		if err := updates.Close(); err != nil {
 			return model.PublicStatus{}, err
 		}
 
@@ -155,12 +234,16 @@ WHERE check_id = ? AND day >= ? ORDER BY day`, item.id, first)
 			entry := model.PublicDay{
 				Date: time.Unix(day*86400, 0).UTC().Format("2006-01-02"),
 			}
-			if watched && counts[0] > 0 {
-				entry.Checks = counts[0]
-				entry.OK = counts[1]
-				entry.Uptime = float64(counts[1]) / float64(counts[0]) * 100
-				totalChecks += counts[0]
-				totalOK += counts[1]
+			if watched {
+				entry.DowntimeSeconds = counts.downtime
+			}
+			entry.Incidents = incidentsByDay[day]
+			if watched && counts.checks > 0 {
+				entry.Checks = counts.checks
+				entry.OK = counts.ok
+				entry.Uptime = float64(counts.ok) / float64(counts.checks) * 100
+				totalChecks += counts.checks
+				totalOK += counts.ok
 			}
 			service.Days = append(service.Days, entry)
 		}

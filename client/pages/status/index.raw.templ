@@ -24,6 +24,7 @@ package status
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/hushkey-app/guard/internal/telemetry/model"
 	"github.com/mirairoad/howl-go/core/router"
@@ -38,21 +39,42 @@ func dayColour(day model.PublicDay) string {
 	switch {
 	case day.Checks == 0:
 		return "var(--muted)"
-	case day.OK == day.Checks:
+	case day.DowntimeSeconds <= 10*60:
 		return "var(--success)"
-	case day.Uptime >= 99:
-		return "var(--warning)"
+	case day.DowntimeSeconds <= 30*60:
+		return "#eab308"
+	case day.DowntimeSeconds <= 120*60:
+		return "#f97316"
 	default:
 		return "var(--destructive)"
 	}
 }
 
-// dayTitle is the tooltip, and the only place a number appears per day.
-func dayTitle(day model.PublicDay) string {
-	if day.Checks == 0 {
-		return day.Date + " — no data"
+func dayDate(raw string) string {
+	at, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return raw
 	}
-	return fmt.Sprintf("%s — %.2f%% of %d checks", day.Date, day.Uptime, day.Checks)
+	return at.Format("2 Jan 2006")
+}
+
+func incidentMinutes(day model.PublicDay, severity string) int {
+	total := 0
+	for _, incident := range day.Incidents {
+		if incident.Severity == severity {
+			total += incident.Minutes
+		}
+	}
+	return total
+}
+
+func hasRelated(day model.PublicDay) bool {
+	for _, incident := range day.Incidents {
+		if incident.Comment != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func stateColour(state string) string {
@@ -136,12 +158,55 @@ templ Page() {
 								     never emitted by Tailwind, so a class here would be a
 								     class that silently does nothing. -->
 								<div class="mt-4 flex items-stretch gap-[2px]" style="height:34px">
-									for _, day := range service.Days {
+					for _, day := range service.Days {
+						{{ majorMinutes := incidentMinutes(day, "major") }}
+						{{ partialMinutes := incidentMinutes(day, "partial") }}
 										<div
-											class="min-w-[2px] flex-1 rounded-[2px]"
+											class="group relative min-w-[2px] flex-1 rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
 											style={ "background:" + dayColour(day) }
-											title={ dayTitle(day) }
-										></div>
+											tabindex="0"
+											aria-label={ dayDate(day.Date) }
+										>
+							<div role="tooltip" class="pointer-events-none absolute top-[calc(100%+10px)] left-1/2 z-20 hidden w-80 -translate-x-1/2 rounded-xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl group-first:left-0 group-first:translate-x-0 group-last:right-0 group-last:left-auto group-last:translate-x-0 group-hover:block group-focus:block">
+								<p class="text-base font-semibold">{ dayDate(day.Date) }</p>
+												if day.Checks == 0 {
+													<p class="mt-2 text-xs text-muted-foreground">No data recorded on this day.</p>
+												} else if day.DowntimeSeconds == 0 && len(day.Incidents) == 0 {
+													<p class="mt-2 text-xs text-muted-foreground">No downtime recorded on this day.</p>
+								} else {
+									<div class="mt-4 space-y-2">
+										if majorMinutes > 0 {
+											<div class="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded-lg bg-muted/50 px-3 py-3">
+												<span class="text-base font-bold text-destructive">✕</span>
+												<span class="text-sm font-semibold">Major outage</span>
+												<span class="font-mono text-sm font-semibold tabular-nums">{ fmt.Sprintf("%d hrs", majorMinutes/60) }</span>
+												<span class="font-mono text-sm font-semibold tabular-nums">{ fmt.Sprintf("%d mins", majorMinutes%60) }</span>
+											</div>
+										}
+										if partialMinutes > 0 {
+											<div class="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded-lg bg-muted/50 px-3 py-3">
+												<span class="text-base text-warning">▲</span>
+												<span class="text-sm font-semibold">Partial outage</span>
+												<span class="font-mono text-sm font-semibold tabular-nums">{ fmt.Sprintf("%d hrs", partialMinutes/60) }</span>
+												<span class="font-mono text-sm font-semibold tabular-nums">{ fmt.Sprintf("%d mins", partialMinutes%60) }</span>
+											</div>
+										}
+									</div>
+									if hasRelated(day) {
+										<p class="mt-4 text-[.65rem] font-semibold uppercase tracking-[.14em] text-muted-foreground">Related</p>
+										<div class="mt-2 space-y-1.5">
+											for _, incident := range day.Incidents {
+												if incident.Comment != "" {
+													<p class="text-xs leading-relaxed">{ incident.Comment }</p>
+												}
+											}
+										</div>
+									} else {
+										<p class="mt-4 text-xs leading-relaxed text-muted-foreground">No incidents or maintenance related to this downtime.</p>
+									}
+								}
+											</div>
+										</div>
 									}
 								</div>
 								<div class="mt-2 flex items-center justify-between text-[.7rem] text-muted-foreground">
@@ -156,9 +221,11 @@ templ Page() {
 							</section>
 						}
 					</div>
-					<p class="mt-10 text-center text-xs text-muted-foreground">
-						Updated { status.AsOf.Format("2006-01-02 15:04 UTC") }
-					</p>
+					<footer class="mt-10 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+						<a class="underline-offset-4 hover:text-foreground hover:underline" href="/status/past">Incident History</a>
+						<span>Updated { status.AsOf.Format("2006-01-02 15:04 UTC") }</span>
+						<span>Powered by HUSHKEY</span>
+					</footer>
 			</main>
 		</body>
 	</html>
