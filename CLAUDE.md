@@ -322,6 +322,19 @@ before changing any of it.
 - **Unknown, revoked and expired are one answer**, and **bookkeeping never fails
   a fetch**: last-used and the capped read log are written on a throttle, and a
   failed write still serves the secrets.
+- **Comparing and copying are one table.** `GET /api/secrets/compare` lays a
+  workspace's environments side by side — a row per key, up to eight columns —
+  and every cell arrives with its state already decided: green where every
+  environment here agrees, amber where they do not, red where it is absent or
+  unreadable. The state is about the *row* rather than the value, which is what
+  lets the table be read **with every value still masked**: three colours answer
+  "is production configured like staging" on a shared screen. Duplicate is the
+  same table over two environments with one press per row — an arrow while
+  there is something to copy, a cross once the two agree — and the copy is
+  `PUT /api/secrets/values` once per key, the same call the row's Save button
+  makes, because a bulk-write endpoint would be a second way to write a secret
+  and the rare path is the one that is wrong. Both stay inside one workspace:
+  two applications' environments hold unrelated keys.
 - **Import reports before it writes.** `model.ParseEnv` takes the dialect people
   actually paste — `export`, comments, quotes, and a double-quoted value running
   over several lines, which is how a PEM key ends up in a `.env` — and the same

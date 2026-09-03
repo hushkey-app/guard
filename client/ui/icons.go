@@ -58,6 +58,12 @@ var Icons = map[string]IconDef{
 	"dot":        {Fill: "currentColor", Body: `<circle cx="12" cy="12" r="4"/>`},
 	"info":       {Body: `<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>`},
 	"chevron":    {Body: `<path d="m6 9 6 6 6-6"/>`},
+	// The copy-across on /secrets: one value, from the column on the left into
+	// the column on the right, which is the whole gesture drawn as a glyph.
+	"arrow-right": {Body: `<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>`},
+	// Two stacked panes: the read-only comparison, where the same key is read
+	// down several environments at once.
+	"columns": {Body: `<rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/>`},
 }
 
 // icon resolves a name and fills in the defaults, so a registry entry only

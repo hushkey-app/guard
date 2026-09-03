@@ -764,3 +764,33 @@ func (s *Store) RevokeAPIKey(id int64) error {
 		time.Now().UTC().UnixNano(), id)
 	return err
 }
+
+// Compare reads several environments side by side.
+//
+// A read over the calls that already exist — Env and Secrets, once each — so
+// there is no second decryption path and no query that knows about columns
+// Secrets does not. What is new is only the layout, and that is decided in
+// model.Compare where it can be tested without a database.
+func (s *Store) Compare(ids []int64) (model.Comparison, error) {
+	if len(ids) < 2 {
+		return model.Comparison{}, errors.New("a comparison needs at least two environments")
+	}
+	if len(ids) > model.MaxCompare {
+		return model.Comparison{}, fmt.Errorf("compare up to %d environments at a time", model.MaxCompare)
+	}
+	envs := make([]model.Env, 0, len(ids))
+	values := make([][]model.Secret, 0, len(ids))
+	for _, id := range ids {
+		env, err := s.Env(id)
+		if err != nil {
+			return model.Comparison{}, fmt.Errorf("no environment %d", id)
+		}
+		secrets, err := s.Secrets(id)
+		if err != nil {
+			return model.Comparison{}, err
+		}
+		envs = append(envs, env)
+		values = append(values, secrets)
+	}
+	return model.Compare(envs, values), nil
+}

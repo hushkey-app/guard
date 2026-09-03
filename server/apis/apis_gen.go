@@ -152,6 +152,7 @@ func FsApiRoutes() []api.Route {
 		api.At("GET", "/api/registries/tags", e22.Tags),
 		api.At("GET", "/api/secrets", e23.List),
 		api.At("POST", "/api/secrets", e23.Save),
+		api.At("GET", "/api/secrets/compare", e23.CompareEnvs),
 		api.At("GET", "/api/secrets/envs", e24.List),
 		api.At("POST", "/api/secrets/envs", e24.Save),
 		api.At("DELETE", "/api/secrets/envs/{id}", e24.Delete),
