@@ -415,6 +415,301 @@ async function exportEnv() {
 }
 
 // ---------------------------------------------------------------------------
+// Compare, and copy across
+// ---------------------------------------------------------------------------
+//
+// One dialog, two modes. Compare reads several environments and writes
+// nothing; Duplicate reads exactly two and puts an arrow beside every key that
+// disagrees. They share a table because they are the same question — which
+// keys do not match — and two tables would eventually answer it differently.
+//
+// The colours come down decided (`GET /api/secrets/compare`), which is what
+// makes the table readable with every value still masked: three states answer
+// "is production configured like staging" without putting production on a
+// screen somebody is sharing. Show values is for the moment the difference
+// itself is the thing needed, and it is off every time the dialog opens.
+//
+// Copying is the PUT the row's own Save button uses, once per key. No bulk
+// write endpoint: a second way to write a secret is a second thing to get
+// wrong, and this one is exercised every day.
+
+// Matches model.MaxCompare. Eight fixed columns is where a row stops being
+// readable at a glance, and reading it at a glance is the point.
+const MAX_COMPARE = 8;
+
+// Which mode the dialog is in, which environments it is showing (in column
+// order) and the last answer drawn. Everything here is rebuilt on open, so a
+// closed dialog costs nothing on the page's tick — the rows are only ever
+// touched by a press.
+let compareMode = "";
+let comparePick = [];
+let comparison = null;
+
+// The three states, as the three colours already in the palette. Enumerated
+// literally rather than assembled, because Tailwind only emits classes it can
+// find in the source.
+const CELL_TONE = {
+  same: "border-success/40 bg-success/10 text-success",
+  different: "border-warning/40 bg-warning/15 text-warning",
+  missing: "border-destructive/40 bg-destructive/10 text-destructive",
+  unreadable: "border-destructive/40 bg-destructive/10 text-destructive",
+};
+
+function comparePanel() { return qs("[data-secret-compare]"); }
+
+function envName(id) {
+  const env = envs.find((entry) => entry.id === id);
+  return env ? env.name : "—";
+}
+
+function openCompare(mode) {
+  const panel = comparePanel();
+  if (!panel) return;
+  // Within one application, always. Two workspaces' environments hold
+  // unrelated keys, so a table comparing hushkey/production against
+  // auth/production is a page of red boxes that means nothing.
+  if (envs.length < 2) {
+    status("This application has one environment — there is nothing to compare it with.");
+    return;
+  }
+  compareMode = mode;
+  comparison = null;
+  const from = envs.some((env) => env.id === current) ? current : envs[0].id;
+  comparePick = mode === "duplicate"
+    ? [from, envs.find((env) => env.id !== from).id]
+    : envs.slice(0, MAX_COMPARE).map((env) => env.id);
+  qs("[data-compare-reveal]", panel).checked = false;
+  qs("[data-compare-only-diff]", panel).checked = false;
+  qs("[data-compare-status]", panel).textContent = "";
+  qs("[data-compare-pair]", panel).hidden = mode !== "duplicate";
+  qs("[data-compare-picker]", panel).hidden = mode === "duplicate";
+  qs("[data-compare-copy-all]", panel).hidden = mode !== "duplicate";
+  qs("[data-compare-title]", panel).textContent = mode === "duplicate"
+    ? "Duplicate an environment"
+    : "Compare environments";
+  qs("[data-compare-blurb]", panel).textContent = mode === "duplicate"
+    ? "An arrow copies that one value into the environment on the right; the × deletes it from there. Values already the same are shown with a ×, because there is nothing left to copy."
+    : "Read only. A cell is green when every environment here has that key with the same value, amber when they disagree, and red where it is not set at all — which works with the values still masked.";
+  renderComparePair();
+  renderComparePicker();
+  panel.showModal();
+  loadComparison();
+}
+
+function renderComparePair() {
+  const panel = comparePanel();
+  for (const [selector, chosen] of [["[data-compare-from]", comparePick[0]], ["[data-compare-to]", comparePick[1]]]) {
+    const picker = qs(selector, panel);
+    picker.replaceChildren(...envs.map((env) => {
+      const option = el("option", "", env.name);
+      option.value = env.id;
+      option.selected = env.id === chosen;
+      return option;
+    }));
+  }
+}
+
+function renderComparePicker() {
+  const host = qs("[data-compare-picker]", comparePanel());
+  host.replaceChildren(...envs.map((env) => {
+    const chosen = comparePick.includes(env.id);
+    const chip = el("label", `flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-xs ${
+      chosen ? "border-primary/50 bg-primary/10 text-foreground" : "border-border text-muted-foreground"}`);
+    const box = el("input", "cn-checkbox size-3.5");
+    box.type = "checkbox";
+    box.checked = chosen;
+    box.dataset.compareEnv = env.id;
+    chip.append(box, env.name);
+    return chip;
+  }));
+}
+
+async function loadComparison() {
+  const panel = comparePanel();
+  if (!panel?.open) return;
+  const note = qs("[data-compare-status]", panel);
+  try {
+    comparison = await request(`/api/secrets/compare?envs=${comparePick.join(",")}`, { headers: adminHeaders() });
+  } catch (failure) {
+    comparison = null;
+    note.textContent = failure.message;
+  }
+  renderComparison();
+}
+
+// The action beside a row, in duplicate mode. The rule the buttons draw:
+// there is something to copy until the two agree, and once they do the only
+// thing left to do to that key is take it away.
+function duplicateAction(row) {
+  const [from, into] = row.cells;
+  const agreed = from.state === "same" && into.state === "same";
+  if (into.present && (!from.present || agreed)) return "drop";
+  // Nothing readable to send: a value sealed with a key this instance no
+  // longer has would be copied across as an empty string.
+  if (from.present && from.state !== "unreadable") return "copy";
+  return "none";
+}
+
+function renderComparison() {
+  const panel = comparePanel();
+  const host = qs("[data-compare-rows]", panel);
+  const head = qs("[data-compare-head]", panel);
+  const template = qs("[data-compare-row-template]");
+  const empty = qs("[data-compare-empty]", panel);
+  const summary = qs("[data-compare-summary]", panel);
+  if (!host || !head || !template) return;
+  if (!comparison) {
+    head.replaceChildren();
+    host.replaceChildren();
+    summary.textContent = "";
+    empty.hidden = true;
+    return;
+  }
+
+  const names = comparison.envs.map((env) => env.name);
+  // A track per environment, plus one for the two presses where there are
+  // presses. Assembled as a style because a class built from a variable is
+  // one Tailwind never emits.
+  const columns = `minmax(8rem,14rem) repeat(${names.length}, minmax(0,1fr))${
+    compareMode === "duplicate" ? " 2.25rem" : ""}`;
+  head.style.gridTemplateColumns = columns;
+  head.replaceChildren(
+    el("span", "", "Key"),
+    ...names.map((name) => el("span", "truncate", name)),
+    ...(compareMode === "duplicate" ? [el("span", "")] : []),
+  );
+
+  const revealed = qs("[data-compare-reveal]", panel).checked;
+  const onlyDiff = qs("[data-compare-only-diff]", panel).checked;
+  const rows = onlyDiff ? comparison.rows.filter((row) => row.state !== "same") : comparison.rows;
+  host.replaceChildren(...rows.map((row) => comparisonRow(template, row, columns, names, revealed)));
+
+  empty.hidden = rows.length > 0;
+  empty.textContent = comparison.rows.length
+    ? "Every key matches in all of these environments."
+    : "None of these environments holds anything yet.";
+  summary.textContent = `${comparison.rows.length} key${comparison.rows.length === 1 ? "" : "s"} across ` +
+    `${names.length} environments — ${comparison.same} the same, ${comparison.different} differ, ` +
+    `${comparison.missing} missing somewhere.`;
+}
+
+function comparisonRow(template, row, columns, names, revealed) {
+  const node = template.content.firstElementChild.cloneNode(true);
+  node.dataset.compareRow = row.key;
+  node.style.gridTemplateColumns = columns;
+  const key = qs("[data-compare-key]", node);
+  key.textContent = row.key;
+  key.title = row.key;
+  const action = qs("[data-compare-action]", node);
+  for (const cell of row.cells) node.insertBefore(compareCell(cell, revealed), action);
+  if (compareMode !== "duplicate") {
+    action.hidden = true;
+    return node;
+  }
+  const verdict = duplicateAction(row);
+  const copy = qs("[data-compare-copy]", node);
+  const drop = qs("[data-compare-drop]", node);
+  copy.hidden = verdict !== "copy";
+  drop.hidden = verdict !== "drop";
+  copy.title = `Copy into ${names[1]}`;
+  drop.title = `Delete from ${names[1]}`;
+  return node;
+}
+
+function compareCell(cell, revealed) {
+  const box = el("input", `cn-input h-8 w-full min-w-0 font-mono text-xs ${CELL_TONE[cell.state] || ""}`);
+  box.readOnly = true;
+  box.spellcheck = false;
+  if (cell.state === "missing") {
+    box.placeholder = "not set";
+    return box;
+  }
+  if (cell.state === "unreadable") {
+    box.placeholder = "unreadable";
+    box.title = "sealed with a different key — set it again";
+    return box;
+  }
+  box.value = cell.value;
+  box.type = revealed ? "text" : "password";
+  return box;
+}
+
+// The write side. One PUT per key — the same call the row's Save button makes
+// — and then the whole comparison is read again, so what is on screen after a
+// press is the database rather than an assumption about it.
+async function copyAcross(rows) {
+  if (!rows.length) return;
+  const panel = comparePanel();
+  const note = qs("[data-compare-status]", panel);
+  const target = comparePick[1];
+  try {
+    for (const row of rows) {
+      await request("/api/secrets/values", {
+        method: "PUT", headers: adminHeaders(),
+        body: JSON.stringify({ env_id: target, key: row.key, value: row.cells[0].value }),
+      });
+    }
+    await afterCompareWrite(`${rows.length} value${rows.length === 1 ? "" : "s"} copied into ${envName(target)}.`);
+  } catch (failure) {
+    note.textContent = failure.message;
+    await loadComparison();
+  }
+}
+
+async function dropAcross(key) {
+  const row = comparison?.rows.find((entry) => entry.key === key);
+  const cell = row?.cells[1];
+  if (!cell?.secret_id) return;
+  const target = envName(comparePick[1]);
+  const agreed = await ask({
+    title: `Delete ${row.key} from ${target}?`,
+    body: `Anything reading ${target} gets one fewer variable on its next fetch. The copy in ${envName(comparePick[0])} is untouched.`,
+    confirm: "Delete secret",
+  });
+  if (!agreed) return;
+  try {
+    await request(`/api/secrets/values/${cell.secret_id}`, { method: "DELETE", headers: adminHeaders() });
+    await afterCompareWrite(`${row.key} deleted from ${target}.`);
+  } catch (failure) {
+    qs("[data-compare-status]", comparePanel()).textContent = failure.message;
+  }
+}
+
+async function copyEveryDifference() {
+  if (!comparison) return;
+  const pending = comparison.rows.filter((row) => duplicateAction(row) === "copy");
+  const target = envName(comparePick[1]);
+  if (!pending.length) {
+    qs("[data-compare-status]", comparePanel()).textContent = `Nothing to copy — ${target} already matches.`;
+    return;
+  }
+  const replacing = pending.filter((row) => row.cells[1].present).length;
+  const agreed = await ask({
+    title: `Copy ${pending.length} value${pending.length === 1 ? "" : "s"} into ${target}?`,
+    body: replacing
+      ? `${pending.length - replacing} new, ${replacing} replacing a different value. Nothing is deleted — a key ${target} has and ${envName(comparePick[0])} does not is left alone.`
+      : `All ${pending.length} are new. Nothing is replaced and nothing is deleted.`,
+    confirm: "Copy them",
+  });
+  if (!agreed) return;
+  await copyAcross(pending);
+}
+
+// After a write: the counts moved, one of these environments is the one the
+// page behind the dialog is showing, and the comparison itself is now out of
+// date. All three, rather than only the visible one — a stale row underneath
+// is how somebody presses Save on a value that has already changed.
+async function afterCompareWrite(message) {
+  forget("secrets.workspaces");
+  forget(`secrets.envs.${space}`);
+  for (const id of comparePick) forget(`secrets.values.${id}`);
+  await loadComparison();
+  qs("[data-compare-status]", comparePanel()).textContent = message;
+  await loadEnvs();
+  await loadValues();
+}
+
+// ---------------------------------------------------------------------------
 // Keys
 // ---------------------------------------------------------------------------
 
@@ -543,6 +838,27 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-secret-import-check]")) { runImport(true); return; }
   if (event.target.closest("[data-secret-import-apply]")) { runImport(false); return; }
 
+  if (event.target.closest("[data-secret-compare-open]")) { openCompare("compare"); return; }
+  if (event.target.closest("[data-secret-duplicate-open]")) { openCompare("duplicate"); return; }
+  if (event.target.closest("[data-compare-close]")) { comparePanel().close(); return; }
+  if (event.target.closest("[data-compare-copy-all]")) { copyEveryDifference(); return; }
+  if (event.target.closest("[data-compare-swap]")) {
+    comparePick = [comparePick[1], comparePick[0]];
+    renderComparePair();
+    loadComparison();
+    return;
+  }
+  const compareRow = event.target.closest("[data-compare-row]");
+  if (compareRow) {
+    const key = compareRow.dataset.compareRow;
+    if (event.target.closest("[data-compare-copy]")) {
+      copyAcross(comparison.rows.filter((row) => row.key === key));
+      return;
+    }
+    if (event.target.closest("[data-compare-drop]")) { dropAcross(key); return; }
+    return;
+  }
+
   if (event.target.closest("[data-key-add]")) { addKey(); return; }
   const revoke = event.target.closest("[data-key-revoke]");
   if (revoke) { revokeKey(Number(revoke.closest("[data-key-id]").dataset.keyId)); return; }
@@ -578,6 +894,48 @@ document.addEventListener("click", (event) => {
 // The workspace picker. A change here is a different application's secrets, so
 // everything below it is reloaded and nothing shown stays shown.
 document.addEventListener("change", (event) => {
+  // The compare dialog's own controls. Reveal and the filter are redraws of an
+  // answer already in hand; the pickers are a different question, so they ask
+  // it again.
+  if (event.target.matches("[data-compare-reveal], [data-compare-only-diff]")) {
+    renderComparison();
+    return;
+  }
+  if (event.target.matches("[data-compare-from], [data-compare-to]")) {
+    const from = Number(qs("[data-compare-from]").value);
+    const into = Number(qs("[data-compare-to]").value);
+    // An environment compared with itself is two identical columns proving
+    // nothing, so the other select steps aside rather than refusing.
+    comparePick = from === into
+      ? (event.target.matches("[data-compare-from]")
+        ? [from, envs.find((env) => env.id !== from).id]
+        : [envs.find((env) => env.id !== into).id, into])
+      : [from, into];
+    renderComparePair();
+    loadComparison();
+    return;
+  }
+  const chosen = event.target.closest("[data-compare-env]");
+  if (chosen) {
+    const id = Number(chosen.dataset.compareEnv);
+    const next = chosen.checked ? [...comparePick, id] : comparePick.filter((entry) => entry !== id);
+    const note = qs("[data-compare-status]");
+    if (next.length < 2 || next.length > MAX_COMPARE) {
+      chosen.checked = !chosen.checked;
+      note.textContent = next.length < 2
+        ? "A comparison needs at least two environments."
+        : `Compare up to ${MAX_COMPARE} at a time.`;
+      return;
+    }
+    note.textContent = "";
+    // Kept in the environment list's own order, so the columns do not
+    // rearrange themselves as boxes are ticked.
+    comparePick = envs.filter((env) => next.includes(env.id)).map((env) => env.id);
+    renderComparePicker();
+    loadComparison();
+    return;
+  }
+
   const picker = event.target.closest("[data-secret-workspaces]");
   if (!picker) return;
   space = Number(picker.value);

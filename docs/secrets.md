@@ -94,6 +94,61 @@ the last time anybody used this.
 byte-for-byte what an import reads back — one escaping rule, in one place, with
 a test that round-trips it.
 
+## Comparing, and copying across
+
+Two presses on the same table, because "does production have what staging has"
+and "give production what staging has" are one question asked twice.
+
+**Compare** puts the workspace's environments side by side, read-only: a row
+per key, a column per environment, up to eight of them — the point where a row
+stops being readable at a glance, which is the whole reason to draw it as a
+table. Every cell arrives with a state already decided by the server:
+
+| colour | means |
+|---|---|
+| green | every environment here has this key with the same value |
+| amber | they disagree |
+| red | this one does not have it at all, or cannot decrypt what it has |
+
+The state is about the **row**, not the value, so a key two environments share
+and a third lacks is green, green, red — the pair really does match, and
+saying otherwise sends somebody looking for a difference that is not there. A
+value that will not decrypt is never called a match: it is not equal to
+anything, least of all to an empty box beside it.
+
+**The comparison works with every value still masked**, which is why the states
+are computed on the server rather than by diffing strings in the browser. Three
+colours answer "is production configured like staging" on a screen that is
+being shared. *Show values* is there for the moment the difference itself is
+what is needed, and it is off every time the dialog opens.
+
+**Duplicate** is the same table over exactly two environments, with one press
+per row:
+
+- **→** copies that value into the environment on the right.
+- **×** deletes it from there, and appears exactly when there is nothing left
+  to copy — the two already agree, or the left-hand one does not have it.
+
+So the arrow turning into a cross is the row saying it is done. *Copy every
+difference* does the arrows in one press, after saying how many are new and how
+many replace a different value; it never deletes, so a key production has and
+staging does not is left alone.
+
+Copying is `PUT /api/secrets/values`, once per key — **the same call the row's
+own Save button makes**. There is deliberately no bulk-write endpoint: a second
+way to write a secret is a second thing to get wrong, and this one is exercised
+every day. After any press the whole comparison is read again, so what is on
+screen is the database rather than an assumption about it.
+
+Both modes stay **inside one workspace**. Two applications' environments hold
+unrelated keys, so a table comparing `hushkey/production` against
+`auth/production` would be a page of red boxes that means nothing.
+
+`GET /api/secrets/compare?envs=7,8,6` is the one endpoint behind both, `admin`
+like everything else here. The order of the ids is the order of the columns,
+because "staging then production" and "production then staging" are two
+different tables and whoever asked meant one of them.
+
 ## The keys
 
 One key reads one environment. That is what makes revocation mean something: a

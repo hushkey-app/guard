@@ -98,7 +98,7 @@ func SecretActions() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "Copy .env")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "Compare")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -107,7 +107,7 @@ func SecretActions() templ.Component {
 		templ_7745c5c3_Err = button.Button(button.Props{
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-secret-export": true, "title": "Copy this environment as .env text"},
+			Attributes: templ.Attributes{"data-secret-compare-open": true, "title": "Read this application's environments side by side"},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -124,7 +124,7 @@ func SecretActions() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "Import .env")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "Duplicate")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -133,7 +133,7 @@ func SecretActions() templ.Component {
 		templ_7745c5c3_Err = button.Button(button.Props{
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-secret-import-open": true},
+			Attributes: templ.Attributes{"data-secret-duplicate-open": true, "title": "Copy values from one environment into another"},
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var4), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -150,13 +150,65 @@ func SecretActions() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "Add secret")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "Copy .env")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-secret-add": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var5), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Attributes: templ.Attributes{"data-secret-export": true, "title": "Copy this environment as .env text"},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var5), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "Import .env")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Attributes: templ.Attributes{"data-secret-import-open": true},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var7 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "Add secret")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-secret-add": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -180,12 +232,12 @@ func SecretsPanel() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var6 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var6 == nil {
-			templ_7745c5c3_Var6 = templ.NopComponent
+		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var8 == nil {
+			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"space-y-6\"><p data-secret-status class=\"hidden rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive\"></p><div class=\"grid items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"space-y-6\"><p data-secret-status class=\"hidden rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive\"></p><div class=\"grid items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -197,7 +249,7 @@ func SecretsPanel() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -213,7 +265,7 @@ func SecretsPanel() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -222,6 +274,14 @@ func SecretsPanel() templ.Component {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = secretKeyRowTemplate().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = secretCompare().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = secretCompareRowTemplate().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -250,16 +310,16 @@ func secretEnvs() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var7 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var7 == nil {
-			templ_7745c5c3_Var7 = templ.NopComponent
+		templ_7745c5c3_Var9 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var9 == nil {
+			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<aside class=\"space-y-4 lg:sticky lg:top-24\"><div class=\"rounded-xl border border-border bg-card p-4 text-card-foreground\"><div class=\"flex items-center justify-between gap-2\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Workspace</p><div class=\"flex items-center gap-0.5\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<aside class=\"space-y-4 lg:sticky lg:top-24\"><div class=\"rounded-xl border border-border bg-card p-4 text-card-foreground\"><div class=\"flex items-center justify-between gap-2\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Workspace</p><div class=\"flex items-center gap-0.5\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var8 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -271,7 +331,7 @@ func secretEnvs() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "+")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "+")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -282,11 +342,11 @@ func secretEnvs() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground",
 			Attributes: templ.Attributes{"data-workspace-add": true, "aria-label": "Add an application", "title": "Add an application"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var9 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -309,11 +369,11 @@ func secretEnvs() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground hover:text-destructive",
 			Attributes: templ.Attributes{"data-workspace-remove": true, "aria-label": "Delete this application", "title": "Delete this application"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><span class=\"relative mt-2 flex items-center\"><select data-secret-workspaces class=\"cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground\"></select>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></div><span class=\"relative mt-2 flex items-center\"><select data-secret-workspaces class=\"cn-native-select text-sm text-foreground [&_option]:bg-popover [&_option]:text-popover-foreground\"></select>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -321,11 +381,11 @@ func secretEnvs() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</span><p data-workspace-counts class=\"mt-2 text-[.65rem] text-muted-foreground\"></p></div><div class=\"rounded-xl border border-border bg-card text-card-foreground\"><div class=\"flex items-center justify-between gap-2 border-b border-border px-4 py-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Environments</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</span><p data-workspace-counts class=\"mt-2 text-[.65rem] text-muted-foreground\"></p></div><div class=\"rounded-xl border border-border bg-card text-card-foreground\"><div class=\"flex items-center justify-between gap-2 border-b border-border px-4 py-3\"><p class=\"text-[.68rem] font-semibold uppercase tracking-[.18em] text-muted-foreground\">Environments</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -337,7 +397,7 @@ func secretEnvs() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "+")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "+")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -348,11 +408,11 @@ func secretEnvs() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground",
 			Attributes: templ.Attributes{"data-env-add": true, "aria-label": "Add an environment", "title": "Add an environment"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div><div data-secret-envs class=\"divide-y divide-border\"></div></div><p class=\"px-1 text-xs leading-relaxed text-muted-foreground\">One workspace per application in the VPC — pack, hushkey, auth. Its stages are its own, so two of them both having a production is unremarkable.</p></aside>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div><div data-secret-envs class=\"divide-y divide-border\"></div></div><p class=\"px-1 text-xs leading-relaxed text-muted-foreground\">One workspace per application in the VPC — pack, hushkey, auth. Its stages are its own, so two of them both having a production is unremarkable.</p></aside>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -377,12 +437,12 @@ func secretValues() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
+		templ_7745c5c3_Var13 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var13 == nil {
+			templ_7745c5c3_Var13 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"min-w-0 space-y-4\"><div class=\"rounded-xl border border-border bg-card text-card-foreground\"><div class=\"flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4\"><div class=\"min-w-0\"><p data-secret-env-name class=\"truncate text-sm font-semibold\">…</p><p data-secret-env-note class=\"text-xs text-muted-foreground\"></p></div></div><div data-secret-rows class=\"divide-y divide-border\"></div><p data-secret-empty hidden class=\"px-5 py-6 text-sm text-muted-foreground\">Nothing in this environment yet. Add one, or paste a whole .env file with Import.</p></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"min-w-0 space-y-4\"><div class=\"rounded-xl border border-border bg-card text-card-foreground\"><div class=\"flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4\"><div class=\"min-w-0\"><p data-secret-env-name class=\"truncate text-sm font-semibold\">…</p><p data-secret-env-note class=\"text-xs text-muted-foreground\"></p></div></div><div data-secret-rows class=\"divide-y divide-border\"></div><p data-secret-empty hidden class=\"px-5 py-6 text-sm text-muted-foreground\">Nothing in this environment yet. Add one, or paste a whole .env file with Import.</p></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -413,16 +473,16 @@ func secretRowTemplate() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var12 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var12 == nil {
-			templ_7745c5c3_Var12 = templ.NopComponent
+		templ_7745c5c3_Var14 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var14 == nil {
+			templ_7745c5c3_Var14 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<template data-secret-row-template><div data-secret-id class=\"flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 hover:bg-muted/30\"><input data-secret-key spellcheck=\"false\" autocomplete=\"off\" placeholder=\"DATABASE_URL\" class=\"cn-input h-8 w-full font-mono text-xs sm:w-64\"> <input data-secret-value type=\"password\" spellcheck=\"false\" autocomplete=\"new-password\" placeholder=\"value\" class=\"cn-input h-8 min-w-0 flex-1 font-mono text-xs\"> <span data-secret-unreadable hidden class=\"cn-badge cn-badge-variant-destructive shrink-0 whitespace-nowrap\" title=\"This was sealed with a different key — set it again\">unreadable</span> <span data-secret-updated class=\"hidden w-24 shrink-0 text-[.6rem] text-muted-foreground md:block\"></span><div class=\"ml-auto flex shrink-0 items-center gap-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<template data-secret-row-template><div data-secret-id class=\"flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 hover:bg-muted/30\"><input data-secret-key spellcheck=\"false\" autocomplete=\"off\" placeholder=\"DATABASE_URL\" class=\"cn-input h-8 w-full font-mono text-xs sm:w-64\"> <input data-secret-value type=\"password\" spellcheck=\"false\" autocomplete=\"new-password\" placeholder=\"value\" class=\"cn-input h-8 min-w-0 flex-1 font-mono text-xs\"> <span data-secret-unreadable hidden class=\"cn-badge cn-badge-variant-destructive shrink-0 whitespace-nowrap\" title=\"This was sealed with a different key — set it again\">unreadable</span> <span data-secret-updated class=\"hidden w-24 shrink-0 text-[.6rem] text-muted-foreground md:block\"></span><div class=\"ml-auto flex shrink-0 items-center gap-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var13 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var15 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -445,11 +505,11 @@ func secretRowTemplate() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground",
 			Attributes: templ.Attributes{"data-secret-show": true, "aria-label": "Show this value", "title": "Show this value"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var13), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var14 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var16 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -472,11 +532,11 @@ func secretRowTemplate() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground",
 			Attributes: templ.Attributes{"data-secret-copy": true, "aria-label": "Copy this value", "title": "Copy this value"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var15 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var17 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -488,17 +548,17 @@ func secretRowTemplate() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "Save")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "Save")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-secret-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-secret-save": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var17), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var16 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var18 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -521,11 +581,11 @@ func secretRowTemplate() templ.Component {
 			Size:       button.SizeIconSm,
 			Class:      "text-muted-foreground hover:text-destructive",
 			Attributes: templ.Attributes{"data-secret-remove": true, "aria-label": "Delete this secret"},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var18), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div></div></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -559,64 +619,12 @@ func secretImport() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var17 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var17 == nil {
-			templ_7745c5c3_Var17 = templ.NopComponent
+		templ_7745c5c3_Var19 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var19 == nil {
+			templ_7745c5c3_Var19 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<!-- Centred by a rule in app.css, not by a utility: the stylesheet's base\n\t     margin for block elements outranks m-auto, and a modal in the top-left\n\t     corner is what that costs. --><dialog data-secret-import class=\"max-h-[calc(100dvh-3rem)] w-[min(46rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60\"><div class=\"p-6\"><div class=\"flex flex-wrap items-baseline justify-between gap-3\"><div><p class=\"text-sm font-semibold\">Import .env</p><p class=\"text-xs text-muted-foreground\">Paste a whole file. <code class=\"font-mono\">export</code> prefixes, comments and quotes are understood, and a quoted value may run over several lines — which is how a private key ends up in one of these.</p></div><label class=\"flex items-center gap-2 text-xs text-muted-foreground\"><input data-secret-import-prune type=\"checkbox\" class=\"cn-checkbox size-4\"> Delete keys the file does not mention</label></div><!-- Big on purpose. This box is what the dialog is for: a whole\n\t\t\t     file goes in it, and a paste target the size of a search field\n\t\t\t     reads as \"type a line here\", which is not the job. Twenty rem\n\t\t\t     shows about twenty-five lines — enough to see what you pasted\n\t\t\t     and scroll the rest.\n\t\t\t     min-h, not rows: cn-input sets a fixed height for one-line\n\t\t\t     fields and it beats the rows attribute, which left this box\n\t\t\t     exactly one line tall. min-height wins over height whatever the\n\t\t\t     source order, which is why it is the one that works here. --><textarea data-secret-import-text rows=\"20\" spellcheck=\"false\" placeholder=\"DATABASE_URL=postgres://…&#10;API_TOKEN=…&#10;PRIVATE_KEY=&#34;-----BEGIN…&#34;\" class=\"cn-input mt-4 min-h-80 w-full resize-y p-3 font-mono text-xs\"></textarea><div data-secret-import-report hidden class=\"mt-3 space-y-2 rounded-lg border border-border bg-background/40 p-3 text-xs\"></div><div class=\"mt-4 flex flex-wrap items-center justify-end gap-3\"><span data-secret-import-status class=\"mr-auto text-sm text-muted-foreground empty:hidden\"></span>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var18 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "Close")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantOutline,
-			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-secret-import-cancel": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var18), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var19 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "What would this do?")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = button.Button(button.Props{
-			Variant:    button.VariantOutline,
-			Size:       button.SizeSm,
-			Attributes: templ.Attributes{"data-secret-import-check": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var19), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<!-- Centred by a rule in app.css, not by a utility: the stylesheet's base\n\t     margin for block elements outranks m-auto, and a modal in the top-left\n\t     corner is what that costs. --><dialog data-secret-import class=\"max-h-[calc(100dvh-3rem)] w-[min(46rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60\"><div class=\"p-6\"><div class=\"flex flex-wrap items-baseline justify-between gap-3\"><div><p class=\"text-sm font-semibold\">Import .env</p><p class=\"text-xs text-muted-foreground\">Paste a whole file. <code class=\"font-mono\">export</code> prefixes, comments and quotes are understood, and a quoted value may run over several lines — which is how a private key ends up in one of these.</p></div><label class=\"flex items-center gap-2 text-xs text-muted-foreground\"><input data-secret-import-prune type=\"checkbox\" class=\"cn-checkbox size-4\"> Delete keys the file does not mention</label></div><!-- Big on purpose. This box is what the dialog is for: a whole\n\t\t\t     file goes in it, and a paste target the size of a search field\n\t\t\t     reads as \"type a line here\", which is not the job. Twenty rem\n\t\t\t     shows about twenty-five lines — enough to see what you pasted\n\t\t\t     and scroll the rest.\n\t\t\t     min-h, not rows: cn-input sets a fixed height for one-line\n\t\t\t     fields and it beats the rows attribute, which left this box\n\t\t\t     exactly one line tall. min-height wins over height whatever the\n\t\t\t     source order, which is why it is the one that works here. --><textarea data-secret-import-text rows=\"20\" spellcheck=\"false\" placeholder=\"DATABASE_URL=postgres://…&#10;API_TOKEN=…&#10;PRIVATE_KEY=&#34;-----BEGIN…&#34;\" class=\"cn-input mt-4 min-h-80 w-full resize-y p-3 font-mono text-xs\"></textarea><div data-secret-import-report hidden class=\"mt-3 space-y-2 rounded-lg border border-border bg-background/40 p-3 text-xs\"></div><div class=\"mt-4 flex flex-wrap items-center justify-end gap-3\"><span data-secret-import-status class=\"mr-auto text-sm text-muted-foreground empty:hidden\"></span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -632,7 +640,59 @@ func secretImport() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "Import")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "Close")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Attributes: templ.Attributes{"data-secret-import-cancel": true},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var20), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var21 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "What would this do?")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Attributes: templ.Attributes{"data-secret-import-check": true},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var21), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var22 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "Import")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -641,11 +701,11 @@ func secretImport() templ.Component {
 		templ_7745c5c3_Err = button.Button(button.Props{
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-secret-import-apply": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var20), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var22), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div></div></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div></div></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -670,16 +730,16 @@ func secretKeys() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var21 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var21 == nil {
-			templ_7745c5c3_Var21 = templ.NopComponent
+		templ_7745c5c3_Var23 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var23 == nil {
+			templ_7745c5c3_Var23 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"rounded-xl border border-border bg-card text-card-foreground\"><div class=\"flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4\"><div><p class=\"text-sm font-semibold\">Access keys</p><p class=\"text-xs text-muted-foreground\">One key reads one environment, from <code class=\"font-mono\">guard-vault</code> — a second process on this database, so a bad guard release cannot stop a container from booting.</p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"rounded-xl border border-border bg-card text-card-foreground\"><div class=\"flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4\"><div><p class=\"text-sm font-semibold\">Access keys</p><p class=\"text-xs text-muted-foreground\">One key reads one environment, from <code class=\"font-mono\">guard-vault</code> — a second process on this database, so a bad guard release cannot stop a container from booting.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var22 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var24 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -691,17 +751,17 @@ func secretKeys() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "New key")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "New key")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-key-add": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var22), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"data-key-add": true}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var24), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div><div data-secret-keys class=\"divide-y divide-border\"></div><p data-secret-keys-empty hidden class=\"px-5 py-6 text-sm text-muted-foreground\">No keys yet. Nothing can read these secrets over HTTP until one exists.</p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div><div data-secret-keys class=\"divide-y divide-border\"></div><p data-secret-keys-empty hidden class=\"px-5 py-6 text-sm text-muted-foreground\">No keys yet. Nothing can read these secrets over HTTP until one exists.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -725,16 +785,16 @@ func secretKeyRowTemplate() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var23 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var23 == nil {
-			templ_7745c5c3_Var23 = templ.NopComponent
+		templ_7745c5c3_Var25 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var25 == nil {
+			templ_7745c5c3_Var25 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<template data-secret-key-row-template><div data-key-id class=\"flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3\"><div class=\"flex min-w-0 flex-1 flex-col gap-0.5\"><div class=\"flex min-w-0 items-center gap-2\"><p data-key-name class=\"truncate font-medium\"></p><span data-key-workspace class=\"cn-badge cn-badge-variant-outline shrink-0 whitespace-nowrap\"></span> <span data-key-env class=\"cn-badge cn-badge-variant-secondary shrink-0 whitespace-nowrap\"></span> <span data-key-revoked hidden class=\"cn-badge cn-badge-variant-destructive shrink-0 whitespace-nowrap\">revoked</span></div><p data-key-prefix class=\"truncate font-mono text-xs text-muted-foreground\"></p></div><div class=\"hidden w-32 shrink-0 flex-col md:flex\"><p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">Last used</p><p data-key-used class=\"text-sm\"></p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<template data-secret-key-row-template><div data-key-id class=\"flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3\"><div class=\"flex min-w-0 flex-1 flex-col gap-0.5\"><div class=\"flex min-w-0 items-center gap-2\"><p data-key-name class=\"truncate font-medium\"></p><span data-key-workspace class=\"cn-badge cn-badge-variant-outline shrink-0 whitespace-nowrap\"></span> <span data-key-env class=\"cn-badge cn-badge-variant-secondary shrink-0 whitespace-nowrap\"></span> <span data-key-revoked hidden class=\"cn-badge cn-badge-variant-destructive shrink-0 whitespace-nowrap\">revoked</span></div><p data-key-prefix class=\"truncate font-mono text-xs text-muted-foreground\"></p></div><div class=\"hidden w-32 shrink-0 flex-col md:flex\"><p class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">Last used</p><p data-key-used class=\"text-sm\"></p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var24 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var26 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -746,7 +806,7 @@ func secretKeyRowTemplate() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "Revoke")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "Revoke")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -757,11 +817,11 @@ func secretKeyRowTemplate() templ.Component {
 			Size:       button.SizeSm,
 			Class:      "shrink-0 text-muted-foreground hover:text-destructive",
 			Attributes: templ.Attributes{"data-key-revoke": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var24), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var26), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -790,16 +850,16 @@ func secretToken() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var25 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var25 == nil {
-			templ_7745c5c3_Var25 = templ.NopComponent
+		templ_7745c5c3_Var27 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var27 == nil {
+			templ_7745c5c3_Var27 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<div data-secret-token hidden><div class=\"rounded-xl border border-primary/40 bg-primary/5 p-5\"><p class=\"text-sm font-semibold\">Copy this key now</p><p class=\"mt-1 text-xs text-muted-foreground\">It is not stored — only a hash of it is — so this is the last time guard can show it. Losing it means making another one, which is the point.</p><div class=\"mt-3 flex items-center gap-2\"><code data-secret-token-value class=\"min-w-0 flex-1 truncate rounded bg-muted/60 px-3 py-2 font-mono text-xs\"></code>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div data-secret-token hidden><div class=\"rounded-xl border border-primary/40 bg-primary/5 p-5\"><p class=\"text-sm font-semibold\">Copy this key now</p><p class=\"mt-1 text-xs text-muted-foreground\">It is not stored — only a hash of it is — so this is the last time guard can show it. Losing it means making another one, which is the point.</p><div class=\"mt-3 flex items-center gap-2\"><code data-secret-token-value class=\"min-w-0 flex-1 truncate rounded bg-muted/60 px-3 py-2 font-mono text-xs\"></code>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var26 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var28 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -811,7 +871,7 @@ func secretToken() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "Copy")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "Copy")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -821,11 +881,11 @@ func secretToken() templ.Component {
 			Variant:    button.VariantOutline,
 			Size:       button.SizeSm,
 			Attributes: templ.Attributes{"data-secret-token-copy": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var26), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var28), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var27 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var29 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -837,7 +897,7 @@ func secretToken() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "Done")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "Done")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -848,11 +908,11 @@ func secretToken() templ.Component {
 			Size:       button.SizeSm,
 			Class:      "text-muted-foreground",
 			Attributes: templ.Attributes{"data-secret-token-done": true},
-		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var27), templ_7745c5c3_Buffer)
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var29), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -879,12 +939,251 @@ func iconEye() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var28 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var28 == nil {
-			templ_7745c5c3_Var28 = templ.NopComponent
+		templ_7745c5c3_Var30 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var30 == nil {
+			templ_7745c5c3_Var30 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<svg class=\"size-4\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z\"></path> <circle cx=\"12\" cy=\"12\" r=\"3\"></circle></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<svg class=\"size-4\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z\"></path> <circle cx=\"12\" cy=\"12\" r=\"3\"></circle></svg>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// secretCompare is the two environments side by side, and the one press that
+// makes one of them look like the other.
+//
+// One dialog for both jobs, opened in one of two modes, because they are the
+// same question asked twice: Compare reads several environments and changes
+// nothing, Duplicate reads exactly two and puts an arrow beside every key that
+// disagrees. Two dialogs would have been two tables, and the day they stopped
+// agreeing about what "the same" means is the day somebody copies the wrong
+// value into production.
+//
+// The table is legible with every value still masked, which is the reason the
+// states are decided on the server: a colour per cell answers "is production
+// configured like staging" without putting production on a screen that is
+// being shared. Show values is there for the moment somebody needs the
+// difference itself, and it is off every time the dialog opens.
+func secretCompare() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var31 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var31 == nil {
+			templ_7745c5c3_Var31 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<dialog data-secret-compare class=\"max-h-[calc(100dvh-3rem)] w-[min(78rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60\"><div class=\"p-6\"><div class=\"flex flex-wrap items-start justify-between gap-4\"><div class=\"min-w-0\"><p data-compare-title class=\"text-sm font-semibold\"></p><p data-compare-blurb class=\"max-w-2xl text-xs text-muted-foreground\"></p></div><div class=\"flex shrink-0 flex-wrap items-center gap-3\"><span class=\"inline-flex items-center gap-1.5 text-[.65rem] text-muted-foreground\"><span class=\"size-2 rounded-full bg-success\"></span> same everywhere</span> <span class=\"inline-flex items-center gap-1.5 text-[.65rem] text-muted-foreground\"><span class=\"size-2 rounded-full bg-warning\"></span> differs</span> <span class=\"inline-flex items-center gap-1.5 text-[.65rem] text-muted-foreground\"><span class=\"size-2 rounded-full bg-destructive\"></span> not set here</span></div></div><!-- Duplicate: two named directions, because \"from\" and \"into\" is\n\t\t\t     the one thing a person must not have to infer from column\n\t\t\t     order. Swap is a button rather than a re-pick, since the\n\t\t\t     mistake it fixes is noticed after the table is drawn. --><div data-compare-pair hidden class=\"mt-4 flex flex-wrap items-end gap-3\"><label class=\"flex min-w-0 flex-1 flex-col gap-1 sm:flex-none\"><span class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">From</span> <span class=\"relative flex items-center\"><select data-compare-from class=\"cn-native-select w-full text-sm text-foreground sm:w-56 [&_option]:bg-popover [&_option]:text-popover-foreground\"></select>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = ui.Chevron().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</span></label>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var32 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = ui.Icon("arrow-right", "size-4").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantGhost,
+			Size:       button.SizeIconSm,
+			Class:      "mb-1 shrink-0 text-muted-foreground",
+			Attributes: templ.Attributes{"data-compare-swap": true, "aria-label": "Swap the two environments", "title": "Swap the two environments"},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var32), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<label class=\"flex min-w-0 flex-1 flex-col gap-1 sm:flex-none\"><span class=\"text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\">Into</span> <span class=\"relative flex items-center\"><select data-compare-to class=\"cn-native-select w-full text-sm text-foreground sm:w-56 [&_option]:bg-popover [&_option]:text-popover-foreground\"></select>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = ui.Chevron().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</span></label></div><!-- Compare: checkboxes rather than a multi-select, because the\n\t\t\t     answer changes the table and a control you have to close\n\t\t\t     before you can see what it did is one people stop using. --><div data-compare-picker hidden class=\"mt-4 flex flex-wrap gap-2\"></div><div class=\"mt-4 flex flex-wrap items-center justify-between gap-3\"><p data-compare-summary class=\"text-xs text-muted-foreground\"></p><div class=\"flex flex-wrap items-center gap-4\"><label class=\"flex items-center gap-2 text-xs text-muted-foreground\"><input data-compare-only-diff type=\"checkbox\" class=\"cn-checkbox size-4\"> Only what disagrees</label> <label class=\"flex items-center gap-2 text-xs text-muted-foreground\"><input data-compare-reveal type=\"checkbox\" class=\"cn-checkbox size-4\"> Show values</label></div></div><div class=\"mt-3 overflow-x-auto rounded-lg border border-border\"><div data-compare-head class=\"grid items-center gap-x-3 border-b border-border bg-muted/30 px-4 py-2 text-[.6rem] uppercase tracking-[.14em] text-muted-foreground\"></div><div data-compare-rows class=\"divide-y divide-border\"></div><p data-compare-empty hidden class=\"px-4 py-6 text-sm text-muted-foreground\"></p></div><div class=\"mt-4 flex flex-wrap items-center justify-end gap-3\"><span data-compare-status class=\"mr-auto text-sm text-muted-foreground empty:hidden\"></span>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var33 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "Close")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantOutline,
+			Size:       button.SizeSm,
+			Attributes: templ.Attributes{"data-compare-close": true},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var33), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var34 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "Copy every difference")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Size:       button.SizeSm,
+			Attributes: templ.Attributes{"data-compare-copy-all": true},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var34), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div></div></dialog>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// secretCompareRowTemplate is one key across the environments on screen.
+//
+// The key and the two presses are markup; the cells are not, because how many
+// there are is the question being asked. They are inserted between the two, so
+// every box on the row is a direct child of the same grid and the columns line
+// up down the page — which is the only reason a table beats a list here.
+func secretCompareRowTemplate() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var35 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var35 == nil {
+			templ_7745c5c3_Var35 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<template data-compare-row-template><div data-compare-row class=\"grid items-center gap-x-3 px-4 py-1.5 hover:bg-muted/20\"><p data-compare-key class=\"truncate font-mono text-xs\"></p><div data-compare-action class=\"flex justify-end\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var36 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = ui.Icon("arrow-right", "size-4").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantGhost,
+			Size:       button.SizeIconSm,
+			Class:      "text-muted-foreground hover:text-success",
+			Attributes: templ.Attributes{"data-compare-copy": true, "aria-label": "Copy this value across"},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var36), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var37 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = ui.Icon("close", "size-4").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = button.Button(button.Props{
+			Variant:    button.VariantGhost,
+			Size:       button.SizeIconSm,
+			Class:      "text-muted-foreground hover:text-destructive",
+			Attributes: templ.Attributes{"data-compare-drop": true, "aria-label": "Delete this value"},
+		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var37), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</div></div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

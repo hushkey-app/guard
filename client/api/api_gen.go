@@ -173,6 +173,11 @@ func (c *Client) ClusterTopology(ctx context.Context) (model.ClusterTopology, er
 	return api.Call[model.ClusterTopology](ctx, c.Transport, "GET", "/api/cluster/topology", nil, nil)
 }
 
+// CompareSecrets calls GET /api/secrets/compare.
+func (c *Client) CompareSecrets(ctx context.Context, query secrets.CompareQuery) (model.Comparison, error) {
+	return api.Call[model.Comparison](ctx, c.Transport, "GET", "/api/secrets/compare", query, nil)
+}
+
 // CompletedHealthIncidents calls GET /api/checks/incidents.
 func (c *Client) CompletedHealthIncidents(ctx context.Context, query incidents.IncidentQuery) (model.HealthIncidentBoard, error) {
 	return api.Call[model.HealthIncidentBoard](ctx, c.Transport, "GET", "/api/checks/incidents", query, nil)

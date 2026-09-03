@@ -13,6 +13,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -378,4 +379,158 @@ func FormatEnv(secrets []Secret) string {
 func escapeEnv(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
 	return replacer.Replace(value)
+}
+
+// A Comparison is several environments' pairs read side by side: one row per
+// key, one cell per environment.
+//
+// The state of a cell is decided here rather than in the browser, because two
+// screens read this one answer — the read-only compare, and the copy-across
+// that puts an arrow beside every cell it could change. A colour and a button
+// that disagreed about whether staging matches production would be the worst
+// possible bug on this page.
+//
+// The state is about the row rather than about the value, which is what makes
+// this usable with everything still masked: three colours answer "is
+// production configured like staging" without putting production on a screen
+// somebody is sharing.
+type Comparison struct {
+	// Envs are the environments compared, in the order the cells come in.
+	Envs []Env        `json:"envs"`
+	Rows []CompareRow `json:"rows"`
+	// Same, Different and Missing count the rows by state, for the sentence
+	// over the table. A comparison is read to find the handful that disagree,
+	// so the count of those is the first thing worth saying.
+	Same      int `json:"same"`
+	Different int `json:"different"`
+	Missing   int `json:"missing"`
+}
+
+// A CompareRow is one key across every environment in the comparison.
+type CompareRow struct {
+	Key   string        `json:"key"`
+	Cells []CompareCell `json:"cells"`
+	// State is the row's worst cell: missing beats different beats same. It is
+	// what a filter down to "just the ones that disagree" reads.
+	State string `json:"state"`
+}
+
+// A CompareCell is one key in one environment.
+type CompareCell struct {
+	EnvID int64 `json:"env_id"`
+	// SecretID is what a delete needs. Zero when the environment does not have
+	// this key, which is also what Present says — carried as an id rather than
+	// re-looked-up, so nothing has to guess which row a button acts on.
+	SecretID int64  `json:"secret_id,omitempty"`
+	Value    string `json:"value"`
+	Present  bool   `json:"present"`
+	State    string `json:"state"`
+}
+
+// The four things a cell can be. Unreadable is its own answer rather than an
+// empty value, for the reason it is everywhere else here: a value sealed with
+// a key this instance no longer has is not equal to anything, and drawing it
+// green beside another empty box would be a lie somebody deploys.
+const (
+	CompareSame       = "same"
+	CompareDifferent  = "different"
+	CompareMissing    = "missing"
+	CompareUnreadable = "unreadable"
+)
+
+// MaxCompare is how many environments one comparison may hold.
+//
+// A ceiling rather than a scroll bar: eight fixed columns is the point where a
+// row stops being readable at a glance, and reading it at a glance is the
+// entire reason to draw the table. Refused rather than clamped, so nobody is
+// looking at four environments believing they asked about ten.
+const MaxCompare = 8
+
+// Compare lays several environments' secrets out as one table.
+//
+// values[i] belongs to envs[i]. Keys are the union, ordered the way one
+// environment's list already is — case-insensitively — so a key sits in the
+// same place whichever environments are being compared.
+func Compare(envs []Env, values [][]Secret) Comparison {
+	out := Comparison{Envs: envs, Rows: []CompareRow{}}
+	byEnv := make([]map[string]Secret, len(envs))
+	keys := []string{}
+	seen := map[string]bool{}
+	for i := range envs {
+		byEnv[i] = map[string]Secret{}
+		if i >= len(values) {
+			continue
+		}
+		for _, secret := range values[i] {
+			byEnv[i][secret.Key] = secret
+			if folded := strings.ToLower(secret.Key); !seen[folded] {
+				seen[folded] = true
+				keys = append(keys, secret.Key)
+			}
+		}
+	}
+	sort.Slice(keys, func(a, b int) bool {
+		left, right := strings.ToLower(keys[a]), strings.ToLower(keys[b])
+		if left == right {
+			return keys[a] < keys[b]
+		}
+		return left < right
+	})
+
+	for _, key := range keys {
+		row := CompareRow{Key: key, Cells: make([]CompareCell, len(envs)), State: CompareSame}
+		// Agreement is decided over the cells that can answer: a value that is
+		// absent or will not decrypt is not evidence either way, so it marks
+		// the row rather than voting on it.
+		agree, first, compared := true, "", 0
+		for i := range envs {
+			secret, ok := byEnv[i][key]
+			if !ok || secret.Unreadable {
+				continue
+			}
+			if compared == 0 {
+				first = secret.Value
+			} else if secret.Value != first {
+				agree = false
+			}
+			compared++
+		}
+		for i := range envs {
+			cell := CompareCell{EnvID: envs[i].ID}
+			secret, ok := byEnv[i][key]
+			switch {
+			case !ok:
+				cell.State = CompareMissing
+			case secret.Unreadable:
+				cell.SecretID, cell.Present = secret.ID, true
+				cell.State = CompareUnreadable
+			default:
+				cell.SecretID, cell.Present, cell.Value = secret.ID, true, secret.Value
+				if agree {
+					cell.State = CompareSame
+				} else {
+					cell.State = CompareDifferent
+				}
+			}
+			row.Cells[i] = cell
+			switch cell.State {
+			case CompareMissing:
+				row.State = CompareMissing
+			case CompareDifferent, CompareUnreadable:
+				if row.State != CompareMissing {
+					row.State = CompareDifferent
+				}
+			}
+		}
+		switch row.State {
+		case CompareMissing:
+			out.Missing++
+		case CompareDifferent:
+			out.Different++
+		default:
+			out.Same++
+		}
+		out.Rows = append(out.Rows, row)
+	}
+	return out
 }
