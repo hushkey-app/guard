@@ -304,3 +304,42 @@ func TestAMissingKeyFileIsRefusedRatherThanInvented(t *testing.T) {
 		t.Fatal("the vault started without the key that seals the secrets")
 	}
 }
+
+// The vault still cannot change anything, and a write key does not make it
+// able to.
+//
+// The read-only property is meant to be structural — this store has no method
+// that writes a secret, so no handler above it can grow one — and the whole
+// reason to pin it is that "add a PUT here, it is right next to the GET" is the
+// obvious wrong move for whoever comes next. Writes belong on guard's port,
+// where the process that owns every write already is.
+func TestTheVaultRefusesToWriteEvenForAKeyThatMay(t *testing.T) {
+	guard, server, key := setup(t)
+	writer, err := guard.CreateAPIKey(model.APIKey{EnvID: key.EnvID, Name: "the deploy", CanWrite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range []struct{ method, path string }{
+		{"PUT", "/v1/secrets/DATABASE_URL"},
+		{"POST", "/v1/secrets"},
+		{"DELETE", "/v1/secrets/DATABASE_URL"},
+		{"PATCH", "/v1/secrets/DATABASE_URL"},
+	} {
+		response := serve(t, server, call.method, call.path, writer.Token, nil)
+		if response.Code != http.StatusMethodNotAllowed && response.Code != http.StatusNotFound {
+			t.Fatalf("%s %s = %d — the vault answered a write", call.method, call.path, response.Code)
+		}
+	}
+	// And the values are what they were.
+	pairs, _, err := server.Store.Values(key.EnvID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	still := map[string]string{}
+	for _, pair := range pairs {
+		still[pair.Key] = pair.Value
+	}
+	if len(still) != 2 || still["DATABASE_URL"] != "postgres://db/app" || still["API_TOKEN"] != "t0ken" {
+		t.Fatalf("the values moved: %+v", still)
+	}
+}

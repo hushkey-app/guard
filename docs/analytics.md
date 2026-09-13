@@ -385,8 +385,8 @@ rollup's counts exact, and a day of it beyond the rows it explains is the table
 that grows with traffic growing for nothing. The ceiling on either is ten years,
 which is a refusal rather than a recommendation.
 
-These are rows in `settings`, not environment variables: the `GUARD_*`
-catalogue is twenty-two and stays twenty-two.
+These are rows in `settings`, not environment variables: analytics adds nothing
+to the `GUARD_*` catalogue, which is twenty-three.
 
 ## The walk into /traces
 

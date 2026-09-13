@@ -736,6 +736,10 @@ function keyRow(template, key) {
   qs("[data-key-workspace]", row).textContent = key.workspace || "";
   qs("[data-key-env]", row).textContent = key.env_name || "";
   qs("[data-key-prefix]", row).textContent = `${key.prefix}…`;
+  // A key that can change an environment says so in the list, because "which
+  // of these eleven tokens could have rewritten production" is the question
+  // asked on the bad afternoon and a prefix cannot answer it.
+  qs("[data-key-write]", row).hidden = !key.can_write;
   const revoked = !!key.revoked_at && !key.revoked_at.startsWith("0001");
   qs("[data-key-revoked]", row).hidden = !revoked;
   qs("[data-key-revoke]", row).hidden = revoked;
@@ -747,15 +751,36 @@ function keyRow(template, key) {
   return row;
 }
 
-async function addKey() {
+// Minting is two presses rather than one press and a checkbox: what a key may
+// do is fixed when it is made — there is no endpoint that promotes one later,
+// because a token already pasted into three deployments quietly gaining the
+// ability to empty an environment is not a thing to make possible. So the
+// permission is the button that was pressed, and the read key stays the easy
+// one to reach for.
+async function addKey(canWrite = false) {
   if (!current) return;
   const env = envs.find((entry) => entry.id === current);
-  const name = prompt(`What holds this key? (reads ${env ? `${env.workspace}/${env.name}` : "this environment"})`, "");
+  const scope = env ? `${env.workspace}/${env.name}` : "this environment";
+  const name = prompt(
+    canWrite
+      ? `What holds this key? (reads AND writes ${scope})`
+      : `What holds this key? (reads ${scope})`,
+    "");
   if (name === null || !name.trim()) return;
+  if (canWrite) {
+    const agreed = await ask({
+      title: `A key that can change ${scope}?`,
+      body: "It may set and remove any value in that environment, from wherever guard's port is reachable. "
+        + "Nothing can take that back except revoking it.",
+      detail: "It only works where GUARD_SECRETS_API is on. Reading needs neither.",
+      confirm: "Mint write key",
+    });
+    if (!agreed) return;
+  }
   try {
     const minted = await request("/api/secrets/keys", {
       method: "POST", headers: adminHeaders(),
-      body: JSON.stringify({ env_id: current, name: name.trim() }),
+      body: JSON.stringify({ env_id: current, name: name.trim(), can_write: canWrite }),
     });
     showToken(minted.token);
     forget("secrets.keys");
@@ -859,6 +884,10 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  // The write button first: it is inside no other, but closest() would match
+  // the plain one if the attributes ever shared a prefix, and the order is
+  // free insurance against that.
+  if (event.target.closest("[data-key-add-write]")) { addKey(true); return; }
   if (event.target.closest("[data-key-add]")) { addKey(); return; }
   const revoke = event.target.closest("[data-key-revoke]");
   if (revoke) { revokeKey(Number(revoke.closest("[data-key-id]").dataset.keyId)); return; }

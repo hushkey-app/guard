@@ -90,6 +90,32 @@ CREATE INDEX IF NOT EXISTS idx_secret_reads_key ON secret_reads(key_id, at_ns DE
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate secrets: %w", err)
 	}
+	// Two columns added after the fact, both defaulting to what every existing
+	// row already meant: a key read and nothing else, and every line in the log
+	// was a fetch. An ADD COLUMN rather than a rebuild because neither moves a
+	// constraint — and `can_write` defaulting to 0 is the important half, since
+	// a migration that handed write permission to every key that already
+	// existed is exactly the upgrade nobody would notice.
+	//
+	// Asked for rather than attempted-and-forgiven, because SQLite has no ADD
+	// COLUMN IF NOT EXISTS and xinfo is the pragma that sees every column.
+	for _, column := range []struct{ table, name, definition string }{
+		{"secret_keys", "can_write", "INTEGER NOT NULL DEFAULT 0"},
+		{"secret_reads", "action", "TEXT NOT NULL DEFAULT 'read'"},
+	} {
+		var exists bool
+		if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM pragma_table_xinfo(?) WHERE name = ?)`,
+			column.table, column.name).Scan(&exists); err != nil {
+			return fmt.Errorf("migrate secrets: %w", err)
+		}
+		if exists {
+			continue
+		}
+		if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`,
+			column.table, column.name, column.definition)); err != nil {
+			return fmt.Errorf("migrate secrets: add %s.%s: %w", column.table, column.name, err)
+		}
+	}
 	if err := rebuildEnvsForWorkspaces(db); err != nil {
 		return err
 	}
@@ -512,6 +538,15 @@ ON CONFLICT(env_id, key) DO UPDATE SET value = excluded.value, note = excluded.n
 	return s.Secret(secret.EnvID, secret.Key)
 }
 
+// SecretsRevision is the newest change in an environment, read without
+// decrypting anything — what a conditional request costs when nothing has
+// moved, which is the whole reason an application may poll this.
+func (s *Store) SecretsRevision(envID int64) (int64, error) {
+	var revision int64
+	err := s.rdb.QueryRow(`SELECT COALESCE(max(updated_ns), 0) FROM secrets WHERE env_id = ?`, envID).Scan(&revision)
+	return revision, err
+}
+
 // Secret reads one pair by its name in its group.
 func (s *Store) Secret(envID int64, key string) (model.Secret, error) {
 	var secret model.Secret
@@ -626,7 +661,7 @@ const tokenPrefix = "gsk_"
 
 // APIKeys lists the tokens, with the environment each belongs to.
 func (s *Store) APIKeys() ([]model.APIKey, error) {
-	rows, err := s.rdb.Query(`SELECT k.id, k.env_id, e.name, w.name, k.name, k.prefix,
+	rows, err := s.rdb.Query(`SELECT k.id, k.env_id, e.name, w.name, k.name, k.prefix, k.can_write,
 k.created_ns, k.expires_ns, k.last_used_ns, k.revoked_ns
 FROM secret_keys k
 JOIN secret_envs e ON e.id = k.env_id
@@ -641,7 +676,7 @@ ORDER BY k.revoked_ns, w.name COLLATE NOCASE, e.name COLLATE NOCASE, k.name COLL
 		var key model.APIKey
 		var created, expires, used, revoked int64
 		if err := rows.Scan(&key.ID, &key.EnvID, &key.EnvName, &key.Workspace, &key.Name, &key.Prefix,
-			&created, &expires, &used, &revoked); err != nil {
+			&key.CanWrite, &created, &expires, &used, &revoked); err != nil {
 			return nil, err
 		}
 		key.CreatedAt = stamp(created)
@@ -684,8 +719,9 @@ func (s *Store) CreateAPIKey(key model.APIKey) (model.APIKey, error) {
 	if !key.ExpiresAt.IsZero() {
 		expires = key.ExpiresAt.UTC().UnixNano()
 	}
-	result, err := s.db.Exec(`INSERT INTO secret_keys(env_id, name, hash, prefix, created_ns, expires_ns)
-VALUES(?,?,?,?,?,?)`, key.EnvID, key.Name, sum[:], tokenHead(token), time.Now().UTC().UnixNano(), expires)
+	result, err := s.db.Exec(`INSERT INTO secret_keys(env_id, name, hash, prefix, can_write, created_ns, expires_ns)
+VALUES(?,?,?,?,?,?,?)`, key.EnvID, key.Name, sum[:], tokenHead(token), key.CanWrite,
+		time.Now().UTC().UnixNano(), expires)
 	if err != nil {
 		return model.APIKey{}, err
 	}
@@ -762,6 +798,70 @@ func slugify(name string) string {
 func (s *Store) RevokeAPIKey(id int64) error {
 	_, err := s.db.Exec(`UPDATE secret_keys SET revoked_ns = ? WHERE id = ? AND revoked_ns = 0`,
 		time.Now().UTC().UnixNano(), id)
+	return err
+}
+
+// A KeyHolder is what a presented token turned out to be: which key, which
+// environment it is scoped to, and whether it may change anything.
+//
+// The same shape vault.Holder has, and deliberately so — two processes answer
+// the same token and neither may decide something different about it. What is
+// not here is the token: nothing needs it again.
+type KeyHolder struct {
+	KeyID     int64
+	Name      string
+	EnvID     int64
+	EnvName   string
+	Workspace string
+	CanWrite  bool
+}
+
+// SecretKeyHolder finds the key a token hashes to, if it is one that may still
+// be used.
+//
+// Unknown, revoked and expired are one error on purpose, exactly as in the
+// vault: a caller told which of the three it hit has learned something about a
+// token it does not hold.
+func (s *Store) SecretKeyHolder(hash []byte) (KeyHolder, error) {
+	var holder KeyHolder
+	var expires, revoked int64
+	err := s.rdb.QueryRow(`SELECT k.id, k.name, k.env_id, e.name, w.name, k.can_write, k.expires_ns, k.revoked_ns
+FROM secret_keys k
+JOIN secret_envs e ON e.id = k.env_id
+JOIN secret_workspaces w ON w.id = e.workspace_id
+WHERE k.hash = ?`, hash).
+		Scan(&holder.KeyID, &holder.Name, &holder.EnvID, &holder.EnvName, &holder.Workspace,
+			&holder.CanWrite, &expires, &revoked)
+	if err != nil {
+		return KeyHolder{}, err
+	}
+	if revoked != 0 || (expires != 0 && expires < time.Now().UTC().UnixNano()) {
+		return KeyHolder{}, sql.ErrNoRows
+	}
+	return holder, nil
+}
+
+// SecretKeyUsed records what a key did, into the same log the vault writes.
+//
+// One table for reads and writes, because "what has this token been doing" is
+// one question and two tables would eventually answer it differently. The
+// action is the column that tells them apart; a row written by the vault has
+// no opinion and takes the default, which is why that binary needed no change
+// to keep sharing this log.
+//
+// Fifty rows per key, the same depth the command runs keep — so what the list
+// shows is the last fifty things this token did, whichever kind they were.
+func (s *Store) SecretKeyUsed(holder KeyHolder, action, ip string, count int) error {
+	now := time.Now().UTC().UnixNano()
+	if _, err := s.db.Exec(`UPDATE secret_keys SET last_used_ns = ? WHERE id = ?`, now, holder.KeyID); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`INSERT INTO secret_reads(key_id, env_id, at_ns, ip, count, action) VALUES(?,?,?,?,?,?)`,
+		holder.KeyID, holder.EnvID, now, ip, count, action); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM secret_reads WHERE key_id = ? AND id NOT IN (
+SELECT id FROM secret_reads WHERE key_id = ? ORDER BY at_ns DESC LIMIT 50)`, holder.KeyID, holder.KeyID)
 	return err
 }
 

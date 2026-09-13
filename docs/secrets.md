@@ -166,6 +166,30 @@ guard can show it. Losing it means minting another, which is the point.
 **Rotation without downtime**: mint a second key for the same environment,
 deploy it, then revoke the first. Nothing limits an environment to one key.
 
+### Read keys and write keys
+
+A key reads. A key minted with **write** permission may also set and remove
+values in that same one environment — which is what a seeding script, a
+development tool or a deployment's cleanup needs, and what a container reading
+its configuration at boot does not.
+
+It is two buttons rather than one button and a checkbox, and the permission is
+fixed when the key is made. There is no endpoint that promotes one later: a
+token already pasted into three deployments quietly gaining the ability to
+empty an environment is not a thing worth making possible. Change your mind and
+you mint another and revoke the first, which is the same answer as losing one.
+
+It is a **column** rather than a claim inside the token, for the same reason the
+token is opaque: what a key may do has to be answerable by the database alone.
+So the prefix is still `gsk_` for both — one string for a secret scanner to look
+for — and the list draws a `write` badge on the ones that can, because "which of
+these eleven tokens could have rewritten production" is the question asked on
+the bad afternoon and a prefix cannot answer it.
+
+Writing needs one more thing: `GUARD_SECRETS_API=1` on the guard it is pointed
+at. Both halves, deliberately — the door is off by default and a key that may
+use it has to have been asked for.
+
 Revoking keeps the row, marked and dated — it is the only record the key ever
 existed, and "revoked in March" is the answer to somebody finding it in an old
 deployment file next year. It takes effect on the **next fetch**, because the
@@ -210,6 +234,151 @@ omission and omissions get helpfully fixed.
 
 `ETag` is the environment's revision, so an application can poll every minute
 for the price of a 304 and pick up a rotated secret without a redeploy.
+
+## Writing over HTTP
+
+Guard writes and the vault reads, and that is a property of the build rather
+than a promise: `internal/vault` has no method that changes a secret, so no
+handler above it can grow one by accident. That is the whole reason the vault is
+a second binary, and it is not worth deleting to save a port number.
+
+So the writing half lives on **guard's own port**, against guard's own store —
+the process that already owns every write:
+
+```
+GET    /v1/secrets            the same answer the vault gives, same shape
+GET    /v1/secrets?format=env
+GET    /v1/secrets/{key}
+PUT    /v1/secrets/{key}      set one value          — needs a write key
+DELETE /v1/secrets/{key}      remove one             — needs a write key
+POST   /v1/secrets            write a set, and prune — needs a write key
+GET    /v1/whoami             which environment this key is, and what it may do
+```
+
+The cost is honest and worth saying out loud: **pushing and removing need guard
+to be up.** Reading does not, and reading is the one an application does at
+boot.
+
+Four rules carry it, and three of them are the vault's own:
+
+- **The workspace and the environment come from the key**, here too. There is
+  no `?env=`. A write key's blast radius is exactly the one environment its own
+  name says, which is what keeps revoking it meaningful.
+- **Unknown, revoked and expired are one answer.**
+- **Reading is not writing.** A read key presenting itself here is refused in
+  words — `403`, "this key reads hushkey/develop and cannot change it" — rather
+  than with a 404, because the caller holds this key and already knows which
+  environment it names, so there is nothing to learn from the refusal except
+  what to do about it.
+- **Off unless switched on.** `GUARD_SECRETS_API` starts empty. Guard's port is
+  usually the published one, and this door writes; both switches — the variable
+  and the key's permission — have to have been chosen by somebody.
+
+`GUARD_SECRETS_API=1` supersedes `GUARD_VAULT_PROXY`: guard answers the reads
+from its own store rather than forwarding them, and the boot log says which
+switch won.
+
+### Setting one
+
+```bash
+curl -X PUT https://guard.example.com/v1/secrets/DATABASE_URL \
+  -H "Authorization: Bearer $GUARD_VAULT_KEY" \
+  -d '{"value":"postgres://…"}'
+```
+
+A `text/plain` body is the value itself, which is how a PEM key gets in without
+anybody hand-escaping it:
+
+```bash
+curl -X PUT https://guard.example.com/v1/secrets/TLS_KEY \
+  -H "Authorization: Bearer $GUARD_VAULT_KEY" \
+  -H "Content-Type: text/plain" --data-binary @key.pem
+```
+
+Deleting names one key, and a key that is not there is a `404` rather than a
+shrug: a cleanup naming a key that has already gone has usually named the wrong
+one.
+
+### Applying a set, and cleaning up
+
+`POST /v1/secrets` is the batch, and it is the deployment's half:
+
+```jsonc
+{
+  "secrets": {"DATABASE_URL": "postgres://…", "REDIS_URL": "redis://…"},
+  "prune": true,      // delete every key this call does not mention
+  "dry_run": true     // report what would happen and change nothing
+}
+```
+
+It is `Store.ImportSecrets` underneath — **the same call the dashboard's import
+dialog makes** — so there is one place that decides what a bulk write does, one
+parser for `.env` text, and one report describing it. A map is turned into that
+text rather than into a second loop over the save, which is what keeps the dry
+run honest: what it describes is what the same function does with `dry_run` off.
+`"env"` takes `.env` text directly, for the caller holding a file.
+
+The answer is the same report the dialog shows: what was added, changed, left
+alone and pruned, by name.
+
+**Pruning against an empty body is refused.** "Empty this environment" has to be
+said by naming what should be left, because the empty body is far more often a
+bug in a script than somebody meaning it.
+
+## From an agent, or a script
+
+`guard-vault mcp` is the same secrets as tools an agent can call — an MCP server
+over stdio. It is a subcommand on the vault binary because that is already the
+binary a developer has, and it shares nothing else with the server half: no
+database, no key file, no schema. It opens a socket and presents a bearer token,
+exactly as the application would.
+
+```bash
+export GUARD_SECRETS_URL=http://localhost:4318   # guard's port, not the vault's
+export GUARD_VAULT_KEY=gsk_hushkey_develop_…
+guard-vault mcp
+```
+
+In `.mcp.json`, which is how this repository wires it:
+
+```json
+{
+  "mcpServers": {
+    "guard-secrets": {
+      "command": "guard-vault",
+      "args": ["mcp"],
+      "env": {
+        "GUARD_SECRETS_URL": "${GUARD_SECRETS_URL:-http://localhost:4318}",
+        "GUARD_VAULT_KEY": "${GUARD_VAULT_KEY}"
+      }
+    }
+  }
+}
+```
+
+Six tools: `secrets_whoami`, `secrets_list`, `secrets_get`, `secrets_set`,
+`secrets_delete`, `secrets_apply`.
+
+- **Everything it can do is what the token can do.** There is no configuration
+  naming a workspace or an environment, and no tool takes one — a test scans
+  every schema for a field called `env` or `workspace`. So an agent handed a
+  develop key cannot be talked into writing production by any prompt, and the
+  refusal comes from guard rather than from a check in the server that somebody
+  could argue with.
+- **`secrets_whoami` is what to call first**, and it is the one call that needs
+  no permission: it says which workspace and environment you are acting on and
+  whether you may change anything.
+- **Listing withholds the values.** `secrets_list` answers with the names;
+  `reveal: true` adds the values. Forty live credentials in a transcript should
+  take an extra word rather than being the default.
+- **The three that change things are marked `destructiveHint`**, so a client
+  that asks before destructive calls gets the chance to.
+- **`secrets_apply` with `dry_run` first.** The tool says so in its own
+  description, because the model reading it is the one deciding.
+- Guard's refusals are passed through in guard's own words. A `404` on a write
+  is special-cased, because the likely cause is a URL pointing at `guard-vault`
+  on :4319 — which has no write routes at all — and that is a five-second fix
+  worth naming.
 
 ## Using it from an application
 
@@ -388,9 +557,13 @@ image. It belongs wherever your snapshots go.
   come up perfectly healthy and answer every fetch with values it could not
   decrypt — which reads as corrupted secrets rather than as the unmounted
   volume it is.
-- **It cannot change anything.** The store in `internal/vault` has no method
-  that writes a secret, an environment or a key, so no handler above it can grow
-  one by accident. The only writes are the two lines of bookkeeping.
+- **It cannot change anything**, and a write key does not make it able to. The
+  store in `internal/vault` has no method that writes a secret, an environment
+  or a key, so no handler above it can grow one by accident; the only writes are
+  the two lines of bookkeeping. A test presents a write-capable key to `PUT`,
+  `POST`, `DELETE` and `PATCH` here and checks all four bounce, because "add a
+  PUT, it is right next to the GET" is the obvious wrong move for whoever comes
+  next. Writing is on guard's port — see above.
 - **It does not serve the dashboard, ingest telemetry or talk to the cluster.**
   It imports none of it. That is what makes "guard is down, secrets are up" a
   property of the build rather than a hope.

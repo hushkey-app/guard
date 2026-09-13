@@ -9,6 +9,7 @@
 //	guard-vault -db /data/guard.db   the usual deployment
 //	guard-vault fetch -env local     print one environment as .env, no server
 //	guard-vault fetch -workspace hushkey -env local
+//	guard-vault mcp                  the same secrets as tools an agent can call
 //
 // The environment a request may read comes from the key it presents, so there
 // is nothing to configure per application beyond a URL and a token.
@@ -37,6 +38,16 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "fetch" {
 		if err := fetch(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	// Neither a server nor a reader of this database: it holds a key and talks
+	// HTTP to guard, like any other application would. It is a subcommand here
+	// because this is the binary a developer already has.
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if err := mcp(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

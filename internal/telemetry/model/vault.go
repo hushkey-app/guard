@@ -172,6 +172,16 @@ type APIKey struct {
 	// Prefix is the readable head of the token — enough to tell two keys apart
 	// in a list and in a log line, and not enough to be one.
 	Prefix string `json:"prefix"`
+	// CanWrite says this key may also set and remove values, not only read
+	// them. Off unless somebody ticked it, because the common key is a
+	// container reading its configuration at boot and a key that could rewrite
+	// production because nobody thought about it is the wrong default.
+	//
+	// It is a column rather than a claim inside the token for the same reason
+	// the token is opaque: what a key may do has to be answerable by the
+	// database alone, so revoking a permission is an UPDATE rather than a
+	// hunt for everywhere the token was pasted.
+	CanWrite bool `json:"can_write,omitempty"`
 	// Token is the whole thing, and it is set exactly once: in the answer to
 	// the request that created it. Nothing reads it back, because nothing can.
 	Token     string    `json:"token,omitempty"`

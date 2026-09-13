@@ -32,7 +32,9 @@ internal/remote/ssh.go        running one stored command on one machine
 internal/secrets/secrets.go   AES-GCM at rest, for the SSH passwords and the stored secrets
 internal/telemetry/vault.go   the secrets: environments, values, the keys that read them
 internal/vault/               the second binary's half: read the file, answer a key
+internal/secretsapi/          the writing half, on guard's port: a key that may push and remove
 cmd/vault/                    guard-vault — secrets served while guard is down
+cmd/vault/mcp.go              the same secrets as tools an agent calls, over stdio
 internal/hostinfo/            what the box guard runs on is: /proc, one statfs, nothing stored
 internal/vaultproxy/          /v1/secrets on guard's port, forwarded to the vault
 internal/config/config.go     every GUARD_* variable: the catalogue, stored, applied at startup
@@ -309,6 +311,34 @@ before changing any of it.
   can only write to just means the real copy lives in a file on a laptop. The
   page masks values until asked, because the person changing one should not have
   to expose forty.
+- **A key may also write, and then it writes on guard's port**
+  (`internal/secretsapi`, `GUARD_SECRETS_API=1`): `PUT` and `DELETE` one key,
+  `POST` a whole set with `prune` for a deployment's cleanup. It is here rather
+  than in the vault precisely because the vault's store has no method that could
+  — deleting that would delete the reason the vault is a second binary — so
+  pushing needs guard up and reading still does not, which is the half that runs
+  at boot. The batch is `Store.ImportSecrets`, the same call the dashboard's
+  import dialog makes, so `dry_run` cannot describe something other than what
+  happens; pruning against an empty body is refused, because that is a bug in a
+  script far more often than it is somebody meaning "empty production".
+- **Write is a column, decided at minting, and never promoted.** `can_write` on
+  `secret_keys`, off for every key that already existed, and there is no
+  endpoint that turns it on later — a token already pasted into three
+  deployments quietly gaining the ability to empty an environment is not worth
+  making possible. Two buttons on the page rather than one and a checkbox. The
+  prefix stays `gsk_` for both, so a secret scanner still has one string to look
+  for, and the list draws a `write` badge because "which of these could have
+  rewritten production" is a question a prefix cannot answer. A read key
+  reaching a write route is `403` **in words**, not a 404: the caller holds this
+  key and already knows what it names.
+- **`guard-vault mcp` is the same secrets as tools an agent can call.** A
+  subcommand on the binary a developer already has, sharing nothing else with
+  the server half — it opens a socket and presents a bearer token like any
+  application. Everything it can do is what the token can do: no tool takes a
+  workspace or an environment and a test scans every schema to keep it that way,
+  so an agent handed a develop key cannot be talked into production by any
+  prompt. Listing withholds the values unless asked, because forty live
+  credentials in a transcript should cost an extra word.
 - **The workspace and the environment come from the key, never from the
   request.** No `?env=`, no `?workspace=`, and there never can be: a leaked
   staging token cannot be pointed at production, and no application's key can
@@ -563,15 +593,21 @@ decrypt. `GUARD_VAULT_ADDR` (:4319) is where it listens; how often one key's use
 recorded is the server's own answer. `GUARD_VAULT_PROXY=1` also serves
 `/v1/secrets` on guard's port, forwarded to the vault — one door for the VPC,
 one for a caller that cannot reach it, and off by default because guard's port
-is the published one. `GUARD_SSH_TIMEOUT` bounds one command run,
+is the published one. `GUARD_SECRETS_API=1` opens guard's own secrets door on
+that port instead — the same reads, plus the writes the vault cannot do — and
+supersedes the proxy, which then has nothing left to forward. Off by default for
+the same reason and more so, since this one writes; a key still has to have been
+minted with permission to use it. `GUARD_SSH_TIMEOUT` bounds one command run,
 `GUARD_SCHEDULE_TIMEOUT` one scheduled run (30m). Alerts go to the destinations
 named on Settings → Alerts and to no environment variable.
 Every loop's cadence is a constant beside the loop — the budgets every 5m, the
 machine rules every 30s, the watched views every minute, a firing rule quiet for 6h
-between repeats. **Twenty-two `GUARD_*` variables, and that is the whole list**: the
-catalogue on Settings → Configuration holds the six somebody changes, Security holds
+between repeats. **Twenty-three `GUARD_*` variables, and that is the whole list**: the
+catalogue on Settings → Configuration holds the seven somebody changes, Security holds
 the ten about signing in, and the rest are the database, the key, the two tokens and
-the two escape hatches. Anything that reads like a tuning knob was deleted rather
+the two escape hatches. (`GUARD_SECRETS_URL` and `GUARD_VAULT_KEY` are not among
+them — they are what an *application* holds to reach guard, and they are
+configuration of the caller rather than of guard.) Anything that reads like a tuning knob was deleted rather
 than made configurable — a number nobody has ever changed is a number with one right
 answer, and the place for it is twenty lines from where it is read.
 

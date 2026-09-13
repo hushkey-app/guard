@@ -3,6 +3,14 @@
     "howl": {
       "command": "go",
       "args": ["run", "github.com/mirairoad/howl-go/core/cmd/howl", "mcp"]
+    },
+    "guard-secrets": {
+      "command": "go",
+      "args": ["run", "./cmd/vault", "mcp"],
+      "env": {
+        "GUARD_SECRETS_URL": "${GUARD_SECRETS_URL:-http://localhost:4318}",
+        "GUARD_VAULT_KEY": "${GUARD_VAULT_KEY}"
+      }
     }
   }
 }
