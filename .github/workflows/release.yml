@@ -58,6 +58,23 @@ jobs:
         id: version
         run: echo "value=${{ github.event.inputs.version || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
+      # Refuse a tag the fleet cannot recognise, before anything is built.
+      #
+      # This triggers on `v*`, which is far broader than a version, and the
+      # binaries carry whatever it is stamped with. v0.4.4.1 was published that
+      # way and every box that installed it read as a *development* build, which
+      # is the one state where the update card goes quiet — so a correctly
+      # installed release stranded the fleet with no button to leave it.
+      #
+      # It asks internal/build the same question the sidebar asks, rather than
+      # re-describing the rule in a shell pattern here, because two places
+      # deciding what a release looks like is the bug itself.
+      - name: Check the tag is a shape guard recognises
+        working-directory: guard
+        env:
+          GUARD_RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: go test ./internal/build/ -run TestTheTagBeingReleasedIsARelease
+
       # The generated artifacts — templ, the route tables, the wasm bundle and
       # the stylesheet — are committed and embedded, so this needs Go and
       # nothing else. No templ, no Node, no wasm step.

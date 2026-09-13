@@ -42,10 +42,23 @@ func Tag() string {
 	return "v" + strings.TrimPrefix(strings.TrimSpace(Version), "v")
 }
 
-// release is what a stamped release looks like and nothing else: v1.2.3, or
-// v1.2.3-rc1. What `git describe` adds to a tag — the commit count, the abbrev
-// sha, -dirty — fails it, and so does the unstamped default.
-var release = regexp.MustCompile(`^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`)
+// release is what a stamped release looks like and nothing else: v1.2.3,
+// v1.2.3.4, or v1.2.3-rc1. What `git describe` adds to a tag — the commit
+// count, the abbrev sha, -dirty — fails it, and so does the unstamped default.
+//
+// The fourth component is not decoration. This used to insist on exactly three,
+// and then v0.4.4.1 was tagged and published — the release workflow triggers on
+// `v*`, so the pipeline built it, uploaded it and the fleet installed it. Every
+// box then ran a genuinely published release that this package called a
+// development build, which is the one state where the update card goes quiet:
+// State() sets Available to false for a development build, so those boxes could
+// see v0.5.0 and had no button to take it. A release nobody can update *to* is
+// bad; a release nobody can update *from* strands the fleet.
+//
+// So the rule is what the pipeline publishes, not what semver prefers. A
+// hotfix numbered onto the end of a tag is a thing people do at 2am and the
+// updater must survive it.
+var release = regexp.MustCompile(`^v\d+\.\d+\.\d+(\.\d+)*(-[0-9A-Za-z.]+)?$`)
 
 // described is what `git describe` adds to a tag: seven commits past it, and
 // the abbreviated sha. The count-and-sha suffix is the part a real pre-release
