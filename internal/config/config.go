@@ -207,6 +207,12 @@ var Entries = []Entry{
 			"Guard's port is usually the published one, so this makes a leaked key usable wherever that port is. Empty is off.",
 	},
 	{
+		Name: "GUARD_SECRETS_API", Group: GroupVault, Label: "Let keys write secrets over HTTP", Kind: KindText,
+		Help: "1 serves /v1/secrets here from guard's own store — read, set, remove and apply — so a script or a deploy " +
+			"can change an environment without the dashboard. A key still has to have been minted with permission to write. " +
+			"Guard's port is usually the published one, so this is a real widening. Empty is off.",
+	},
+	{
 		Name: "GUARD_GOOGLE_CLIENT_ID", Group: GroupGoogle, Label: "Google client id", Kind: KindText,
 		Help: "Set both halves to draw the Google button. Half a configuration is fatal at startup, on purpose.",
 	},

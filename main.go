@@ -25,6 +25,7 @@ import (
 	"github.com/hushkey-app/guard/internal/notify"
 	"github.com/hushkey-app/guard/internal/release"
 	"github.com/hushkey-app/guard/internal/remote"
+	"github.com/hushkey-app/guard/internal/secretsapi"
 	"github.com/hushkey-app/guard/internal/statuspage"
 	"github.com/hushkey-app/guard/internal/telemetry"
 	"github.com/hushkey-app/guard/internal/telemetry/model"
@@ -224,15 +225,30 @@ func main() {
 	// wrong to take from the payload.
 	receiver.RegisterBrowser(mux, ingest.Browser{Origins: splitList(os.Getenv("GUARD_RUM_ORIGINS"))})
 
-	// The secrets endpoints, forwarded to guard-vault, for the caller that
-	// cannot reach :4319. Off unless asked for: guard's port is usually the
-	// published one, and this is the one route where that difference decides
-	// whether a leaked key is usable from the internet. It sits under /v1/, so
-	// it is outside sign-in like every other machine route — and it has to be,
+	// The writing half of the secrets surface, against guard's own store —
+	// guard writes and the vault reads, so a script pushing a value or a deploy
+	// cleaning one up comes here rather than to :4319, whose store has no
+	// method that could. Off unless asked for, and a key still has to have been
+	// minted with permission to write.
+	local, err := secretsapi.Register(mux, secretsapi.Config{
+		Enabled: config.On("GUARD_SECRETS_API"),
+		Store:   store,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// The reading half forwarded to guard-vault, for the caller that cannot
+	// reach :4319. Off unless asked for: guard's port is usually the published
+	// one, and this is the one route where that difference decides whether a
+	// leaked key is usable from the internet. It sits under /v1/, so it is
+	// outside sign-in like every other machine route — and it has to be,
 	// because the credential it takes is a vault key rather than a session.
+	// Skipped when the door above is open, which claims the same two patterns.
 	if err := vaultproxy.Register(mux, vaultproxy.Config{
-		Enabled:  config.On("GUARD_VAULT_PROXY"),
-		Upstream: vaultproxy.UpstreamFrom(os.Getenv("GUARD_VAULT_ADDR")),
+		Enabled:    config.On("GUARD_VAULT_PROXY"),
+		Upstream:   vaultproxy.UpstreamFrom(os.Getenv("GUARD_VAULT_ADDR")),
+		Superseded: local,
 	}); err != nil {
 		log.Fatal(err)
 	}

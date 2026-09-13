@@ -59,6 +59,11 @@ type Config struct {
 	Enabled bool
 	// Upstream is where guard-vault answers, as host:port.
 	Upstream string
+	// Superseded says guard is already serving /v1/secrets from its own store
+	// (GUARD_SECRETS_API), so there is nothing left here to forward and the two
+	// would claim the same routes. Reported rather than silently ignored: a
+	// proxy that was switched on and did nothing should say which switch won.
+	Superseded bool
 }
 
 // UpstreamFrom turns the vault's *listen* address into an address to dial.
@@ -91,6 +96,13 @@ func UpstreamFrom(listen string) string {
 // proxy is not an error and says so at info, because "why is /v1/secrets a 404"
 // should be answerable from the boot log.
 func Register(mux *http.ServeMux, cfg Config) error {
+	if cfg.Superseded {
+		if cfg.Enabled {
+			slog.Info("the secrets proxy is not needed — guard's own secrets API already serves /v1/secrets here",
+				slog.String("note", "GUARD_SECRETS_API answers reads from guard's store rather than forwarding them"))
+		}
+		return nil
+	}
 	if !cfg.Enabled {
 		slog.Info("the secrets proxy is off — /v1/secrets answers on the vault's port only",
 			slog.String("fix", "GUARD_VAULT_PROXY=1 to also serve it here"))
